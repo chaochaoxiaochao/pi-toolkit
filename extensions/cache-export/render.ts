@@ -32,6 +32,7 @@ export function parseEntries(entries) {
   const toolCounts = {};
   let compactions = 0;
   let prevKey = null;
+  const longCacheUntilByKey = new Map();
   let gapTools = []; // tool results accumulated since the previous request
 
   const addEvent = (num, kind, label, ts) =>
@@ -88,11 +89,26 @@ export function parseEntries(entries) {
     const num = requests.length + 1;
     const provider = m.provider || "?";
     const model = m.model || "?";
+    const api = m.api || "";
     const key = `${provider}/${model}`;
     if (prevKey !== null && key !== prevKey && !events.some((ev) => ev.requestNumber === num && ev.kind === "model")) {
       addEvent(num, "model", `Model changed to ${provider}/${model}`, ts);
     }
     prevKey = key;
+
+    const tsMs = Date.parse(String(ts || ""));
+    let longCacheUntil = longCacheUntilByKey.get(key) || 0;
+    if (u.cacheRead === 0 && u.cacheWrite > 0 && !u.cacheWrite1h) {
+      longCacheUntil = 0;
+      longCacheUntilByKey.delete(key);
+    }
+    if (u.cacheWrite1h > 0 && Number.isFinite(tsMs)) {
+      longCacheUntil = Math.max(longCacheUntil, tsMs + LONG_TTL_MINUTES * 60000);
+      longCacheUntilByKey.set(key, longCacheUntil);
+    }
+    const cacheTtlMinutes = Number.isFinite(tsMs) && tsMs <= longCacheUntil
+      ? LONG_TTL_MINUTES
+      : DEFAULT_TTL_MINUTES;
 
     const cost = u.cost && typeof u.cost.total === "number" ? u.cost.total : null;
     requests.push({
@@ -101,11 +117,13 @@ export function parseEntries(entries) {
       timestamp: hhmmss(ts),
       provider,
       model,
+      api,
       responseProvider: null,
       fresh,
       cached,
       cacheWrite,
       cacheWrite1h: u.cacheWrite1h || 0,
+      cacheTtlMinutes,
       output,
       reasoning: u.reasoning || 0,
       stopReason: m.stopReason || "",
@@ -114,11 +132,6 @@ export function parseEntries(entries) {
       prevOutput: requests.length ? requests[requests.length - 1].output : 0,
     });
     gapTools = [];
-  }
-
-  // tau flushes trailing events onto the last request so chart tooltips can find them
-  if (requests.length > 0) {
-    for (const ev of events) ev.requestNumber = Math.min(ev.requestNumber, requests.length);
   }
 
   const toolCalls = Object.entries(toolCounts).sort((a, b) => b[1] - a[1]);
@@ -211,18 +224,20 @@ function lineChart(title, series, opts = {}) {
     `<line class="hover-line" x1="${left}" y1="${top}" x2="${left}" y2="${top + plotHeight}" visibility="hidden"/>`,
   );
   const [evDark, evLight] = seriesColor("event");
-  events.forEach((event, eventIndex) => {
-    const [x] = point(Math.max(0, Math.min(count - 1, event.requestNumber - 1)), 0);
-    const markerY = top + 7 + (eventIndex % 3) * 9;
-    const description = `${event.label} before request ${event.requestNumber} at ${event.timestamp}`;
-    parts.push(
-      `<g class="usage-event usage-event-${esc(event.kind, true)}" data-request="${event.requestNumber}" ` +
-        `data-event-info="${esc(description, true)}" role="img" aria-label="${esc(description, true)}">` +
-        `<title>${esc(description)}</title>` +
-        `<line class="event-line" data-dark="${evDark}" data-light="${evLight}" x1="${x.toFixed(1)}" y1="${top}" x2="${x.toFixed(1)}" y2="${top + plotHeight}" stroke="${evDark}"/>` +
-        `<circle class="event-marker" data-dark="${evDark}" data-light="${evLight}" cx="${x.toFixed(1)}" cy="${markerY.toFixed(1)}" r="4" fill="${evDark}"/></g>`,
-    );
-  });
+  events
+    .filter((event) => event.requestNumber >= 1 && event.requestNumber <= count)
+    .forEach((event, eventIndex) => {
+      const [x] = point(Math.max(0, Math.min(count - 1, event.requestNumber - 1)), 0);
+      const markerY = top + 7 + (eventIndex % 3) * 9;
+      const description = `${event.label} before request ${event.requestNumber} at ${event.timestamp}`;
+      parts.push(
+        `<g class="usage-event usage-event-${esc(event.kind, true)}" data-request="${event.requestNumber}" ` +
+          `data-event-info="${esc(description, true)}" role="img" aria-label="${esc(description, true)}">` +
+          `<title>${esc(description)}</title>` +
+          `<line class="event-line" data-dark="${evDark}" data-light="${evLight}" x1="${x.toFixed(1)}" y1="${top}" x2="${x.toFixed(1)}" y2="${top + plotHeight}" stroke="${evDark}"/>` +
+          `<circle class="event-marker" data-dark="${evDark}" data-light="${evLight}" cx="${x.toFixed(1)}" cy="${markerY.toFixed(1)}" r="4" fill="${evDark}"/></g>`,
+      );
+    });
   series.forEach(([name, values], seriesIndex) => {
     const [dark, light] = seriesColor(name);
     const points = values.map((value, i) => point(i, value).map((c) => c.toFixed(1)).join(",")).join(" ");
@@ -262,7 +277,20 @@ const figure = (chart) =>
 // ---------------------------------------------------------------------------
 
 const MISS_THRESHOLD = 0.5; // hit rate below this gets an explanation row
-const TTL_MINUTES = 5;      // Anthropic-style default prefix retention
+const PREFIX_REUSE_THRESHOLD = 0.5;
+const DEFAULT_TTL_MINUTES = 5;
+const LONG_TTL_MINUTES = 60;
+
+function reusablePrefix(request) {
+  const prompt = request.fresh + request.cached + request.cacheWrite;
+  if (request.api !== "anthropic-messages") return prompt;
+  const explicitlyCached = request.cached + request.cacheWrite;
+  return explicitlyCached > 0 ? explicitlyCached : prompt;
+}
+
+function ttlMinutesAfter(request) {
+  return request.cacheTtlMinutes ?? (request.cacheWrite1h > 0 ? LONG_TTL_MINUTES : DEFAULT_TTL_MINUTES);
+}
 
 export function analyzeMisses(requests, events) {
   const evByReq = new Map();
@@ -284,9 +312,11 @@ export function analyzeMisses(requests, events) {
 
     const causes = [];
     const prev = i > 0 ? requests[i - 1] : null;
+    const expectedPrefix = prev ? reusablePrefix(prev) : 0;
+    const prefixReuse = expectedPrefix > 0 ? Math.min(1, r.cached / expectedPrefix) : 0;
 
     if (i === 0) {
-      causes.push(["first request", "cold session: nothing cached yet, first write builds the prefix"]);
+      causes.push(["first request", "cold session: nothing cached yet; the prefix can only be reused by a later request"]);
     }
     if (prev && (prev.provider !== r.provider || prev.model !== r.model)) {
       causes.push(["model switch", `${prev.provider}/${prev.model} -> ${r.provider}/${r.model}: prefix invalidated by provider/model change`]);
@@ -302,19 +332,23 @@ export function analyzeMisses(requests, events) {
     }
     if (prev && r.isoTs && prev.isoTs) {
       const gapMin = (Date.parse(r.isoTs) - Date.parse(prev.isoTs)) / 60000;
-      if (gapMin > TTL_MINUTES && !causes.some(([c]) => c === "compaction" || c === "model switch")) {
-        causes.push(["TTL expiry", `gap ${gapMin.toFixed(0)}min > ${TTL_MINUTES}min retention: cached prefix likely expired`]);
+      const ttlMinutes = ttlMinutesAfter(prev);
+      if (gapMin > ttlMinutes && prefixReuse < PREFIX_REUSE_THRESHOLD && !causes.some(([c]) => c === "compaction" || c === "model switch")) {
+        causes.push(["possible TTL expiry", `idle gap ${gapMin.toFixed(0)}min > ${ttlMinutes}min heuristic; actual retention depends on the provider`]);
       }
     }
-    if (r.cacheWrite > 0 && r.fresh > r.cached && !causes.length) {
-      causes.push(["cache rebuild", "fresh prefix written this turn (write-heavy); next turn should read it back"]);
+    if (prev && prefixReuse < PREFIX_REUSE_THRESHOLD && !causes.length) {
+      const writeDetail = r.cacheWrite > 0 ? `; provider also reported ${r.cacheWrite.toLocaleString("en-US")} tokens written for the replacement prefix` : "";
+      causes.push(["cache rebuild", `only ${(prefixReuse * 100).toFixed(1)}% of the prior reusable prefix was read; the cache was likely lost or invalidated${writeDetail}`]);
+    }
+    if (r.cacheWrite > 0 && !causes.length) {
+      causes.push(["cache write", `provider reported ${r.cacheWrite.toLocaleString("en-US")} tokens written; a low read-hit rate is expected while a prefix is created or extended`]);
     }
     if (prev && !causes.length) {
-      const pPrompt = prev.fresh + prev.cached + prev.cacheWrite;
-      const pHit = pPrompt > 0 ? prev.cached / pPrompt : 0;
-      if (pHit < MISS_THRESHOLD) {
-        causes.push(["cache rebuild", "previous turn lost the cache; this turn still pays fresh input while the new prefix is rebuilt"]);
-      }
+      const toolChars = (r.gapTools || []).reduce((sum, tool) => sum + tool.chars, 0);
+      const toolTokens = Math.round(toolChars / 4);
+      const toolDetail = toolTokens > 0 ? `, including ~${toolTokens.toLocaleString("en-US")} estimated tool-output tokens` : "";
+      causes.push(["new input", `reused ${(prefixReuse * 100).toFixed(1)}% of the prior prefix; ${r.fresh.toLocaleString("en-US")} fresh tokens were newly appended${toolDetail}`]);
     }
     if (!causes.length) {
       causes.push(["unclassified", "no rule matched; usually new content appended beyond the cached prefix (large tool results / long user input)"]);
@@ -330,7 +364,8 @@ export function analyzeMisses(requests, events) {
   }
 
   const summaryArr = [...summary.entries()].sort((a, b) => b[1].fresh - a[1].fresh);
-  return { misses, summary: summaryArr, noCacheReporting, threshold: MISS_THRESHOLD, ttlMinutes: TTL_MINUTES };
+  return { misses, summary: summaryArr, noCacheReporting, threshold: MISS_THRESHOLD,
+    ttlMinutes: DEFAULT_TTL_MINUTES, longTtlMinutes: LONG_TTL_MINUTES };
 }
 
 // Streak detection: many consecutive requests stuck in a mid hit-rate band.
@@ -344,20 +379,31 @@ const STREAK_HIGH = 0.975;
 const STREAK_MIN_LEN = 3;
 const STREAK_MIN_FRESH = 800;   // tokens per request to count as a streak member
 const STREAK_MIN_PROMPT = 4000; // ignore tiny prefixes where ratios are meaningless
-// Membership hit rate excludes cacheWrite from the denominator: during an
-// Anthropic-style rebuild cacheWrite is huge and would fake a mid-band hit.
+// Requests that report cacheWrite are cache-creation/rebuild events, not
+// append-heavy read-hit streak members, so they terminate the current streak.
 
-export function analyzeStreaks(requests) {
+export function analyzeStreaks(requests, events = []) {
   const streaks = [];
   let cur = null;
   let gaps = 0; // consecutive non-member requests inside the current run
+  let prevKey = null;
+  const resetBefore = new Set(events
+    .filter((event) => event.kind === "compaction" || event.kind === "model")
+    .map((event) => event.requestNumber));
   const close = () => {
     if (cur && cur.hits.length >= STREAK_MIN_LEN) streaks.push(cur);
     cur = null;
     gaps = 0;
   };
   for (const r of requests) {
-    const prompt = r.fresh + r.cached; // cacheWrite excluded (see note above)
+    const key = `${r.provider}/${r.model}`;
+    if ((prevKey !== null && key !== prevKey) || resetBefore.has(r.number)) close();
+    prevKey = key;
+    if (r.cacheWrite > 0) {
+      close();
+      continue;
+    }
+    const prompt = r.fresh + r.cached;
     let hit = 0;
     let member = false;
     if (prompt >= STREAK_MIN_PROMPT) {
@@ -407,7 +453,7 @@ function renderStreakPanel(streaks) {
     .join("");
   return `<div class="usage-panel"><h2>Hit-rate streak analysis</h2>` +
     `<p class="usage-note">Rule-based, no LLM. A streak is ${STREAK_MIN_LEN}+ requests (single healthy outlier tolerated) with hit rate ` +
-    `${(STREAK_LOW * 100).toFixed(0)}–${(STREAK_HIGH * 100).toFixed(1)}% (hit excludes cacheWrite; fresh ≥ ${STREAK_MIN_FRESH} tok, prefix ≥ ${STREAK_MIN_PROMPT}): ` +
+    `${(STREAK_LOW * 100).toFixed(0)}–${(STREAK_HIGH * 100).toFixed(1)}% (requests reporting cacheWrite break the streak; fresh ≥ ${STREAK_MIN_FRESH} tok, prefix ≥ ${STREAK_MIN_PROMPT}): ` +
     `usually each turn appends large fresh content (big tool outputs / long replies), not a cache failure. ` +
     `Below ${(MISS_THRESHOLD * 100).toFixed(0)}% see the miss panel above. Tool tokens estimated at 4 chars/token.</p>` +
     `<div class="usage-table-wrap" style="max-height:260px"><table>` +
@@ -418,7 +464,7 @@ function renderStreakPanel(streaks) {
 function renderMissPanel(miss) {
   if (miss.noCacheReporting) {
     return `<div class="usage-panel"><h2>Cache miss analysis</h2>` +
-      `<p class="empty">This provider reports no cache token fields (cacheRead/cacheWrite always 0), so hit rate is always 0 and misses cannot be attributed.</p></div>`;
+      `<p class="empty">No cache reads or writes were reported. The provider may omit cache token fields, caching may be disabled, or this session may not have reused a prefix; hit rate cannot be determined.</p></div>`;
   }
   const summaryHtml = miss.summary
     .map(([cause, s]) => `<div class="usage-tool"><span>${esc(cause)} (${s.count})</span><strong>${fmtInt(s.fresh)} fresh</strong></div>`)
@@ -431,7 +477,7 @@ function renderMissPanel(miss) {
     .join("");
   return `<div class="usage-panel"><h2>Cache miss analysis</h2>` +
     `<p class="usage-note">Rule-based attribution, no LLM. Rows are requests below ${(miss.threshold * 100).toFixed(0)}% hit rate. ` +
-    `TTL rule assumes ${miss.ttlMinutes}min prefix retention.</p>` +
+    `TTL attribution uses a ${miss.ttlMinutes}min idle-gap heuristic, or ${miss.longTtlMinutes}min after a reported 1h cache write; actual retention is provider-specific.</p>` +
     `<div class="usage-table-wrap" style="max-height:340px"><table>` +
     `<thead><tr><th>#</th><th>Time</th><th>Hit rate</th><th>Fresh</th><th>Cause</th></tr></thead>` +
     `<tbody>${rows || `<tr><td colspan="5" class="empty">None</td></tr>`}</tbody></table></div>` +
@@ -474,7 +520,7 @@ export function renderDashboard(data) {
     ["Model requests", fmtInt(requests.length)],
     ["Cache hit rate", cacheHitRate !== null ? fmtPct1(cacheHitRate) : "N/A"],
     ["Cached input", fmtInt(totalCached)],
-    ["Cache writes", fmtInt(totalWrite)],
+    ["Reported cache writes", fmtInt(totalWrite)],
     ["Fresh input", fmtInt(totalFresh)],
     ["Total prompt input", fmtInt(totalPrompt)],
     ["Output tokens", fmtInt(totalOutput)],
@@ -517,10 +563,10 @@ export function renderDashboard(data) {
     `<div class="usage-cards">${cardsHtml}</div>` +
     `<p class="usage-note">Hover a request for exact values, ` +
     `select a legend item to hide a series, and use PNG to save a chart. Event markers show ` +
-    `compactions, model or thinking changes.</p>` +
+    `compactions, model or thinking changes. Some providers report cache reads but not cache writes.</p>` +
     `<div class="usage-charts">${charts.join("")}</div>` +
     renderMissPanel(analyzeMisses(requests, events)) +
-    renderStreakPanel(analyzeStreaks(requests)) +
+    renderStreakPanel(analyzeStreaks(requests, events)) +
     `<div class="usage-details">` +
     `<div class="usage-panel"><h2>Requests</h2><div class="usage-table-wrap"><table>` +
     `<thead><tr><th>#</th><th>Time</th><th>Provider</th><th>Response Provider</th><th>Model</th>` +
