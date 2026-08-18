@@ -1,0 +1,35 @@
+{
+  "name": "pi-toolkit",
+  "version": "0.1.0",
+  "description": "Personal pi coding agent toolkit: /todos extension + /cache_export interactive cache dashboard.",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension"
+  ],
+  "files": [
+    "extensions",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/<YOUR-GITHUB-USER>/pi-toolkit.git"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/todo.ts",
+      "./extensions/cache-export/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "scripts": {
+    "test": "cd extensions/cache-export && node --experimental-strip-types tests/run-tests.mjs",
+    "load-test": "pi -e ./extensions/todo.ts && pi -e ./extensions/cache-export/index.ts"
+  }
+}
