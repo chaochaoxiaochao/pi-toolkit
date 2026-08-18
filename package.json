@@ -1,6 +1,6 @@
 {
   "name": "@maxiaochao/pi-toolkit",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Personal pi coding agent toolkit: /todos extension + /cache_export interactive cache dashboard.",
   "type": "module",
   "keywords": [
