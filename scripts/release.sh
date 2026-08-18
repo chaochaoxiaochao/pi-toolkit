@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Release script for pi-toolkit: test -> version -> changelog -> tag -> push -> publish.
-# Usage: ./scripts/release.sh [patch|minor|major]   (default: patch)
+# Release script for pi-toolkit: test -> version -> changelog -> commit -> tag -> push -> CI publish.
+# Usage: ./scripts/release.sh [patch|minor|major] [changelog note]   (default: patch)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 LEVEL="${1:-patch}"
+NOTE="${2:-release maintenance updates}"
 
 echo "==> 1/6 tests"
 npm test || { echo "tests failed"; exit 1; }
@@ -16,29 +17,22 @@ npm version "$LEVEL" --no-git-tag-version
 VERSION=$(node -p "require('./package.json').version")
 
 echo "==> 4/6 changelog"
-CHANGELOG_ENTRY="## $(date +%F) - v${VERSION}\n\n- tbd\n"
-if [ -f CHANGELOG.md ]; then
-  sed -i "1i ${CHANGELOG_ENTRY}" CHANGELOG.md
-else
-  printf "# Changelog\n\n${CHANGELOG_ENTRY}" > CHANGELOG.md
-fi
+TMP_CHANGELOG=$(mktemp)
+{
+  printf '## %s - v%s\n\n- %s\n\n' "$(date +%F)" "$VERSION" "$NOTE"
+  [ ! -f CHANGELOG.md ] || cat CHANGELOG.md
+} > "$TMP_CHANGELOG"
+mv "$TMP_CHANGELOG" CHANGELOG.md
 
-echo "==> 5/6 commit, tag, push"
+echo "==> 5/6 commit and tag"
 git add -A
 git commit -m "release v${VERSION}"
 git tag "v${VERSION}"
+
+echo "==> 6/6 push commit and tag"
 git push origin main
 git push origin "v${VERSION}"
-
-echo "==> 6/6 publish (via GitHub Actions; tag push triggers .github/workflows/publish.yml)"
-# 本地自动发布可选：若 ~/.npmrc 配了 bypass-2fa token 可直接发
-if npm config get "//registry.npmjs.org/:_authToken" >/dev/null 2>&1 \
-   && [ -n "$(npm config get "//registry.npmjs.org/:_authToken")" ]; then
-  npm publish
-  echo "published v${VERSION} locally"
-else
-  echo "tag v${VERSION} pushed — waiting for GitHub Actions to publish (or add a bypass-2fa token to ~/.npmrc to publish locally)"
-fi
+echo "tag v${VERSION} pushed; .github/workflows/publish.yml will publish it to npm"
 
 echo
 echo "next: pi update npm:@maxiaochao/pi-toolkit  (or on other machines: pi install npm:@maxiaochao/pi-toolkit)"

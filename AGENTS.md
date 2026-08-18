@@ -57,29 +57,21 @@ pi install npm:@maxiaochao/pi-toolkit
    # 或旧方式： git remote add origin git@github.com:<你>/pi-toolkit.git && git push -u origin main
    ```
 2. package.json 的 `repository.url` 改成真实地址（占位符 `<YOUR-GITHUB-USER>`）。
-3. npm 登录：
-   ```bash
-   npm login                          # 输入 npmjs 账号/OTP
-   ```
+3. 在 GitHub 仓库 Actions Secrets 中配置 `NPM_TOKEN`（见下文）。
 
 ### 发布流程（每次发版）
 
-1. `./scripts/release.sh <patch|minor|major>`：本地跑测试 + 升版本（如 `v0.1.2`）＋写 CHANGELOG＋commit＋打 tag＋push。
-2. **帮推 tag 会自动触发 GitHub Actions（.github/workflows/publish.yml）发布到 npm**——无人值守。
+1. `./scripts/release.sh <patch|minor|major> "<changelog note>"`：本地跑测试 + 升版本（如 `v0.1.5`）＋写 CHANGELOG＋commit＋打 tag＋推 main 和 tag。
+2. tag push 自动触发 GitHub Actions（`.github/workflows/publish.yml`）发布到 npm，这是唯一发布通道。
    - 前提：仓库 Secrets 里配好了 `NPM_TOKEN`（npm 的 granular access token + **Bypass 2FA**）。
-   - 若本地 `~/.npmrc` 也配了 bypass token，脚本会顺带在本地直接 publish（可跳过 CI）。
+   - CI 会校验 tag 与 `package.json` 版本一致，再运行测试和 `npm publish`。
 
-手动等价命令（CI 存在时只需 push tag）：
-
-```bash
-npm test && npm version patch && git push && git push --tags
-```
+手动等价流程同样必须先更新版本和 CHANGELOG，再推送精确 tag；不要在本地执行 `npm publish`。
 
 ### 首次启用自动发布（一次性）
 
 1. npm 网页生成 token：`https://www.npmjs.com/settings/<你>/tokens` → Generate New Token → **Granular Access Token** → 勾 **Bypass 2FA** → 权限 Packages Read and write。
 2. 存进 GitHub 仓库 Secrets：Settings → Secrets and variables → Actions → New secret → 名字 `NPM_TOKEN`。
-3. （可选）想本地直发：`echo '//registry.npmjs.org/:_authToken=你的token' >> ~/.npmrc`。
 
 ### 更新已装机器的包
 

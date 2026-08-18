@@ -1,11 +1,10 @@
 name: publish
 
-# 推 tag (v*) 或手动触发时，自动测试并发布到 npm。
+# 推 tag (v*) 时自动测试并发布到 npm。
 on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
 
 jobs:
   publish:
@@ -20,6 +19,10 @@ jobs:
           registry-url: https://registry.npmjs.org/
           # 用仓库 Secrets 里的 NPM_TOKEN（granular access token + Bypass 2FA）
           scope: ""
+      - name: Verify tag matches package version
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          test "$GITHUB_REF_NAME" = "v$PACKAGE_VERSION"
       - name: Run extension tests
         run: npm test
       - name: Publish to npm

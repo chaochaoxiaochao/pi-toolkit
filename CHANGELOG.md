@@ -1,3 +1,7 @@
+## 2026-08-18 - v0.1.5
+
+- fix cache rebuild attribution and cache retention reporting
+
 ## 2026-08-18 - v0.1.4
 
 - tbd
