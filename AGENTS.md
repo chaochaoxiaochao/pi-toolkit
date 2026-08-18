@@ -7,6 +7,7 @@
 ```
 pi-toolkit/
 ├── package.json            # pi manifest：pi.extensions 声明两个扩展入口
+├── global/AGENTS.md        # ★ 全局个人指令的权威源（见下方“全局 AGENTS 安装”）
 ├── extensions/
 │   ├── todo.ts             # /todos 扩展（来源于 ~/.pi/agent/extensions/todo.ts）
 │   └── cache-export/       # /cache_export 交互式缓存仪表盘
@@ -23,6 +24,26 @@ pi-toolkit/
 - **不改 `tau-assets.ts`**：该文件从 `huggingface/tau` 的 `src/tau_coding/session_usage.py` 提取（USAGE_STYLES / USAGE_SCRIPT），保证与上游逐字节一致。需要更新时用提取脚本重生成，不要手改。
 - **别用 `.mjs` 放扩展代码**：pi 的 `/reload` 走 jiti（moduleCache:false），只对 `.ts/.js` 生效；`.mjs` 走 Node 原生 ESM 缓存，reload 刷不掉，会导致“改了不生效”。
 - 扩展依赖 pi 内置包时写进 `peerDependencies`（`@earendil-works/pi-*`、`typebox`），不要实装。
+
+## 安装部署（用户视角）
+
+```bash
+# 1) 全局扩展包（todo + cache_export，所有项目生效）
+pi install npm:@maxiaochao/pi-toolkit
+
+# 2) 全局 AGENTS（个人跨项目指令）
+bash scripts/install.sh        # cp global/AGENTS.md -> ~/.pi/agent/AGENTS.md
+# 然后 /reload 或重启 pi 生效
+```
+
+**两层 AGENTS 的区别**
+
+| 文件 | 作用范围 | 装载点 |
+|---|---|---|
+| `global/AGENTS.md`（仓库内） | 所有项目（个人行为准则） | 拷到 `~/.pi/agent/AGENTS.md`，pi 启动自动加载 |
+| `AGENTS.md`（仓库根） | 仅本仓库（开发/发版规则） | pi 进本目录自动发现 |
+
+改 `global/AGENTS.md` 后重跑 `bash scripts/install.sh` 即可同步到全局（用拷贝而非软链，保持运行不依赖仓库目录）。
 
 ## 打包发布
 
