@@ -30,9 +30,15 @@ git tag "v${VERSION}"
 git push origin main
 git push origin "v${VERSION}"
 
-echo "==> 6/6 publish"
-npm publish
-echo "published v${VERSION}"
+echo "==> 6/6 publish (via GitHub Actions; tag push triggers .github/workflows/publish.yml)"
+# 本地自动发布可选：若 ~/.npmrc 配了 bypass-2fa token 可直接发
+if npm config get "//registry.npmjs.org/:_authToken" >/dev/null 2>&1 \
+   && [ -n "$(npm config get "//registry.npmjs.org/:_authToken")" ]; then
+  npm publish
+  echo "published v${VERSION} locally"
+else
+  echo "tag v${VERSION} pushed — waiting for GitHub Actions to publish (or add a bypass-2fa token to ~/.npmrc to publish locally)"
+fi
 
 echo
 echo "next: pi update npm:pi-toolkit  (or on other machines: pi install npm:pi-toolkit)"

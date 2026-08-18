@@ -42,20 +42,22 @@ pi-toolkit/
 
 ### 发布流程（每次发版）
 
-推荐跑 `scripts/release.sh`，它自动做下面 1–6：
+1. `./scripts/release.sh <patch|minor|major>`：本地跑测试 + 升版本（如 `v0.1.2`）＋写 CHANGELOG＋commit＋打 tag＋push。
+2. **帮推 tag 会自动触发 GitHub Actions（.github/workflows/publish.yml）发布到 npm**——无人值守。
+   - 前提：仓库 Secrets 里配好了 `NPM_TOKEN`（npm 的 granular access token + **Bypass 2FA**）。
+   - 若本地 `~/.npmrc` 也配了 bypass token，脚本会顺带在本地直接 publish（可跳过 CI）。
 
-1. `npm test` + 两个扩展的 `pi -e` 加载测试 —— 全过才继续。
-2. 升版本：`npm version <patch|minor|major>`（也生成 git tag，如 `v0.1.0`）。
-3. 更新 `CHANGELOG.md`（追加本次变更，格式见文件内范例）。
-4. 提交并推送：`git push` + `git push --tags`（tag 与版本一致）。
-5. 发布：`npm publish`（包名 `pi-toolkit`，已确认 npm 上可用；发布产物 = package.json `files` 白名单）。
-6. 验证：`pi install npm:pi-toolkit` 后 `/reload`，试 `/todos` 与 `/cache_export`。
-
-手动执行等价命令：
+手动等价命令（CI 存在时只需 push tag）：
 
 ```bash
-npm version patch && git push && git push --tags && npm publish
+npm test && npm version patch && git push && git push --tags
 ```
+
+### 首次启用自动发布（一次性）
+
+1. npm 网页生成 token：`https://www.npmjs.com/settings/<你>/tokens` → Generate New Token → **Granular Access Token** → 勾 **Bypass 2FA** → 权限 Packages Read and write。
+2. 存进 GitHub 仓库 Secrets：Settings → Secrets and variables → Actions → New secret → 名字 `NPM_TOKEN`。
+3. （可选）想本地直发：`echo '//registry.npmjs.org/:_authToken=你的token' >> ~/.npmrc`。
 
 ### 更新已装机器的包
 
