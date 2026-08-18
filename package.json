@@ -32,7 +32,7 @@
   },
   "scripts": {
     "test": "cd extensions/cache-export && node --experimental-strip-types tests/run-tests.mjs",
-    "load-test": "pi -e ./extensions/todo.ts && pi -e ./extensions/cache-export/index.ts",
+    "load-test": "pi -ne -e ./extensions/todo.ts && pi -ne -e ./extensions/cache-export/index.ts",
     "postinstall": "node scripts/install-agents.mjs"
   },
   "publishConfig": {
