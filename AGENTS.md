@@ -62,14 +62,14 @@ npm test && npm version patch && git push && git push --tags
 ### 更新已装机器的包
 
 ```bash
-pi update npm:pi-toolkit      # 更新到最新发布版
-pi remove npm:pi-toolkit      # 卸载
+pi update npm:@maxiaochao/pi-toolkit      # 更新到最新发布版
+pi remove npm:@maxiaochao/pi-toolkit      # 卸载
 ```
 
 ## 回滚
 
 - **npm 侧**：`npm unpublish pi-toolkit@<坏版本>`（24h 内）或 `npm deprecate pi-toolkit@<坏版本> "broken, use X"`。
-- **装包侧**：`pi install npm:pi-toolkit@<上一个好版本>` 或 `pi remove npm:pi-toolkit`。
+- **装包侧**：`pi install npm:@maxiaochao/pi-toolkit@<上一个好版本>` 或 `pi remove npm:@maxiaochao/pi-toolkit`。
 
 ## 迁移遗留的清理步骤（已装过旧版时）
 

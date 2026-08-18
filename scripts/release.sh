@@ -41,4 +41,4 @@ else
 fi
 
 echo
-echo "next: pi update npm:pi-toolkit  (or on other machines: pi install npm:pi-toolkit)"
+echo "next: pi update npm:@maxiaochao/pi-toolkit  (or on other machines: pi install npm:@maxiaochao/pi-toolkit)"

@@ -1,5 +1,5 @@
 {
-  "name": "pi-toolkit",
+  "name": "@maxiaochao/pi-toolkit",
   "version": "0.1.2",
   "description": "Personal pi coding agent toolkit: /todos extension + /cache_export interactive cache dashboard.",
   "type": "module",
@@ -31,5 +31,8 @@
   "scripts": {
     "test": "cd extensions/cache-export && node --experimental-strip-types tests/run-tests.mjs",
     "load-test": "pi -e ./extensions/todo.ts && pi -e ./extensions/cache-export/index.ts"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
