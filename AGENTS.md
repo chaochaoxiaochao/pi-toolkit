@@ -32,8 +32,9 @@ pi-toolkit/
 pi install npm:@maxiaochao/pi-toolkit
 
 # 2) 全局 AGENTS（个人跨项目指令）
-bash scripts/install.sh        # cp global/AGENTS.md -> ~/.pi/agent/AGENTS.md
-# 然后 /reload 或重启 pi 生效
+（自动：包 postinstall 会同步 global/AGENTS.md -> ~/.pi/agent/AGENTS.md）
+# 改规则流程：改 global/AGENTS.md -> 发新版 -> pi update npm:@maxiaochao/pi-toolkit
+# （手动同步：bash scripts/install.sh）
 ```
 
 **两层 AGENTS 的区别**

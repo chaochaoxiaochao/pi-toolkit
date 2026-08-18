@@ -10,7 +10,9 @@
   "files": [
     "extensions",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "global/AGENTS.md",
+    "scripts/install-agents.mjs"
   ],
   "repository": {
     "type": "git",
@@ -30,7 +32,8 @@
   },
   "scripts": {
     "test": "cd extensions/cache-export && node --experimental-strip-types tests/run-tests.mjs",
-    "load-test": "pi -e ./extensions/todo.ts && pi -e ./extensions/cache-export/index.ts"
+    "load-test": "pi -e ./extensions/todo.ts && pi -e ./extensions/cache-export/index.ts",
+    "postinstall": "node scripts/install-agents.mjs"
   },
   "publishConfig": {
     "access": "public"
