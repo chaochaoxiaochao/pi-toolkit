@@ -14,7 +14,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/<YOUR-GITHUB-USER>/pi-toolkit.git"
+    "url": "git+https://github.com/chaochaoxiaochao/pi-toolkit.git"
   },
   "pi": {
     "extensions": [
