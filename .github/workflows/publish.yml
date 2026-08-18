@@ -1,0 +1,28 @@
+name: publish
+
+# 推 tag (v*) 或手动触发时，自动测试并发布到 npm。
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org/
+          # 用仓库 Secrets 里的 NPM_TOKEN（granular access token + Bypass 2FA）
+          scope: ""
+      - name: Run extension tests
+        run: npm test
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
