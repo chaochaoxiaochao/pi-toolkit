@@ -13,6 +13,7 @@ Before implementing:
 - If multiple interpretations exist, present them - don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
 - If something is unclear, stop. Name what's confusing. Ask.
+- If requirements conflict (e.g., durability vs latency, correctness vs speed), name the conflict explicitly. Never average conflicting requirements into something that satisfies neither.
 
 ## 2. Simplicity First
 
@@ -41,6 +42,11 @@ When your changes create orphans:
 - Don't remove pre-existing dead code unless asked.
 
 The test: Every changed line should trace directly to the user's request.
+
+When fixing a bug, fix the root cause, not the symptom. Find where the defect actually lives:
+- Grep every caller of the function you touch; a report names a symptom, and patching only the path the ticket mentions leaves sibling callers still broken.
+- If the shared function is wrong, fix it once - do not scatter per-caller guards.
+- If one caller is wrong, fix that caller - do not add defensive handling to a correct shared function.
 
 ## 4. Goal-Driven Execution
 
@@ -85,6 +91,14 @@ After each significant step:
 - "Completed" is wrong if anything was silently skipped.
 - "Tests pass" is wrong if any test was skipped.
 - Default to surfacing uncertainty. When in doubt, over-communicate what you're unsure about.
+- If a required input, file, or tool is missing (or a step is impossible under the stated constraints), do NOT fabricate it to make a check pass. Report what is missing and what you need.
+
+## 8. Reuse Before Writing
+
+**Before writing new code, check in order:**
+1. Does it already exist in this codebase? Reuse it - do not re-implement it yourself, even with the standard library. (If the existing helper is itself the bug, fix it once - see Rule 3.)
+2. Does the standard library cover it? Use it.
+3. Only then: write the minimum code that works.
 
 ---
 

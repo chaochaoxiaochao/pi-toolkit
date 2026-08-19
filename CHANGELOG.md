@@ -1,3 +1,7 @@
+## 2026-08-19 - v0.1.6
+
+- expand global agent guidance and reuse-before-writing rules
+
 ## 2026-08-18 - v0.1.5
 
 - fix cache rebuild attribution and cache retention reporting
