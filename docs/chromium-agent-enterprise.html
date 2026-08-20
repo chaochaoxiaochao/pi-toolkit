@@ -1,0 +1,838 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Chromium Coding Agents 工程体系分析：源码目录、Agent Skills、MCP、工作流、评测、治理与企业启示。">
+  <title>Chromium Coding Agents | 企业研发提效体系分析</title>
+  <style>
+    :root {
+      --ink: #1f2933;
+      --muted: #5b6773;
+      --line: #d9e0e6;
+      --paper: #ffffff;
+      --canvas: #f4f6f8;
+      --blue: #1a73e8;
+      --blue-soft: #e8f0fe;
+      --red: #d93025;
+      --red-soft: #fce8e6;
+      --yellow: #b77900;
+      --yellow-soft: #fff4ce;
+      --green: #137333;
+      --green-soft: #e6f4ea;
+      --violet: #6a3db8;
+      --violet-soft: #f0e8ff;
+      --max: 1440px;
+      --radius: 6px;
+      --shadow: 0 8px 24px rgba(31, 41, 51, .07);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--canvas);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+      line-height: 1.7;
+    }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code, pre, .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    code { color: #263746; background: #eef1f4; border-radius: 3px; padding: 1px 5px; font-size: .9em; }
+    h1, h2, h3, h4 { line-height: 1.25; margin: 0; letter-spacing: 0; }
+    h1 { font-size: clamp(2rem, 4vw, 3.8rem); max-width: 900px; }
+    h2 { font-size: clamp(1.5rem, 2.5vw, 2.2rem); }
+    h3 { font-size: 1.12rem; }
+    p { margin: 0 0 1rem; }
+    ul, ol { margin: .4rem 0 1rem; padding-left: 1.3rem; }
+    li + li { margin-top: .28rem; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      min-height: 58px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, .96);
+      backdrop-filter: blur(12px);
+    }
+    .topbar-inner {
+      width: min(var(--max), calc(100% - 40px));
+      min-height: 58px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--ink);
+      font-size: .92rem;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+    .brand-mark {
+      width: 22px;
+      height: 22px;
+      border: 5px solid var(--blue);
+      border-top-color: var(--red);
+      border-radius: 50%;
+      position: relative;
+    }
+    .brand-mark::after {
+      content: "";
+      position: absolute;
+      width: 7px;
+      height: 7px;
+      left: 3px;
+      top: 3px;
+      border-radius: 50%;
+      background: var(--yellow);
+    }
+    .topbar-tools { display: flex; align-items: center; gap: 10px; }
+    .search {
+      width: min(360px, 36vw);
+      height: 36px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: #fff;
+      color: var(--ink);
+      outline: none;
+    }
+    .search:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+    .print-btn {
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: #fff;
+      color: var(--ink);
+      padding: 0 11px;
+      cursor: pointer;
+      font-weight: 650;
+    }
+    .print-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+    .layout {
+      width: min(var(--max), calc(100% - 40px));
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 236px minmax(0, 1fr);
+      gap: 36px;
+    }
+    aside {
+      position: sticky;
+      top: 88px;
+      align-self: start;
+      height: calc(100vh - 112px);
+      overflow: auto;
+      padding: 32px 0;
+    }
+    .toc-title {
+      color: var(--muted);
+      font-size: .72rem;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .toc a {
+      display: block;
+      padding: 6px 10px;
+      border-left: 2px solid transparent;
+      color: var(--muted);
+      font-size: .88rem;
+      line-height: 1.35;
+    }
+    .toc a:hover, .toc a.active {
+      border-left-color: var(--blue);
+      color: var(--blue);
+      background: var(--blue-soft);
+      text-decoration: none;
+    }
+    .toc .toc-sub { padding-left: 22px; font-size: .82rem; }
+    main { min-width: 0; }
+
+    .hero {
+      padding: 74px 0 54px;
+      border-bottom: 1px solid var(--line);
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--blue);
+      font-size: .8rem;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      margin-bottom: 18px;
+    }
+    .eyebrow::before { content: ""; width: 25px; height: 3px; background: var(--red); }
+    .hero h1 { margin-bottom: 22px; }
+    .hero-lede {
+      max-width: 880px;
+      color: var(--muted);
+      font-size: clamp(1.03rem, 1.5vw, 1.26rem);
+    }
+    .source-note {
+      margin-top: 24px;
+      color: var(--muted);
+      font-size: .88rem;
+    }
+    .source-note a { font-weight: 650; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin: 30px 0 0;
+    }
+    .stat {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-top: 3px solid var(--blue);
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+    .stat:nth-child(2) { border-top-color: var(--red); }
+    .stat:nth-child(3) { border-top-color: var(--yellow); }
+    .stat:nth-child(4) { border-top-color: var(--green); }
+    .stat-value { display: block; font-size: 1.75rem; font-weight: 800; line-height: 1.1; }
+    .stat-label { display: block; margin-top: 5px; color: var(--muted); font-size: .82rem; }
+
+    section {
+      padding: 58px 0;
+      border-bottom: 1px solid var(--line);
+      scroll-margin-top: 82px;
+    }
+    .section-heading { margin-bottom: 24px; }
+    .section-kicker { color: var(--blue); font-size: .8rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; }
+    .section-heading p { color: var(--muted); max-width: 820px; margin-top: 12px; }
+    .callout {
+      padding: 18px 20px;
+      border-left: 4px solid var(--blue);
+      background: var(--blue-soft);
+      margin: 22px 0;
+    }
+    .callout strong { color: #174ea6; }
+    .callout.warning { border-left-color: var(--yellow); background: var(--yellow-soft); }
+    .callout.warning strong { color: #7a4f00; }
+    .callout.policy { border-left-color: var(--red); background: var(--red-soft); }
+    .callout.policy strong { color: #a50e0e; }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      margin: 28px 0 16px;
+    }
+    .arch-node {
+      min-height: 140px;
+      padding: 16px 14px;
+      border: 1px solid var(--line);
+      border-top: 4px solid var(--blue);
+      background: var(--paper);
+      position: relative;
+    }
+    .arch-node:nth-child(2) { border-top-color: var(--green); }
+    .arch-node:nth-child(3) { border-top-color: var(--violet); }
+    .arch-node:nth-child(4) { border-top-color: var(--yellow); }
+    .arch-node:nth-child(5) { border-top-color: var(--red); }
+    .arch-node:not(:last-child)::after {
+      content: ">";
+      position: absolute;
+      right: -14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      font-size: 1.25rem;
+      z-index: 2;
+    }
+    .arch-node h3 { margin-bottom: 8px; }
+    .arch-node p { color: var(--muted); font-size: .84rem; line-height: 1.5; margin: 0; }
+    .arch-output {
+      padding: 14px 16px;
+      border: 1px dashed var(--blue);
+      background: #f8fbff;
+      color: #174ea6;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .source-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    .source-card {
+      padding: 16px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+    }
+    .source-card h3 { margin-bottom: 7px; }
+    .source-card p { color: var(--muted); font-size: .9rem; margin-bottom: 9px; }
+    .source-card .path { font-size: .8rem; color: var(--blue); word-break: break-all; }
+
+    .directory-table, .problem-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      font-size: .9rem;
+    }
+    .directory-table th, .directory-table td, .problem-table th, .problem-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    .directory-table th, .problem-table th { background: #eef2f5; font-weight: 800; }
+    .directory-table tr:last-child td, .problem-table tr:last-child td { border-bottom: 0; }
+    .directory-table td:first-child { width: 25%; white-space: nowrap; }
+    .directory-table td:nth-child(2) { width: 29%; }
+    .directory-table td:nth-child(3) { color: var(--muted); }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .panel {
+      padding: 20px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+    }
+    .panel h3 { margin-bottom: 10px; }
+    .panel p, .panel li { color: var(--muted); font-size: .92rem; }
+    .panel.blue { border-top: 3px solid var(--blue); }
+    .panel.green { border-top: 3px solid var(--green); }
+    .panel.yellow { border-top: 3px solid var(--yellow); }
+    .panel.red { border-top: 3px solid var(--red); }
+    .panel.violet { border-top: 3px solid var(--violet); }
+
+    .flow {
+      display: grid;
+      gap: 0;
+      margin: 24px 0;
+    }
+    .flow-step {
+      display: grid;
+      grid-template-columns: 86px 1fr;
+      gap: 16px;
+      min-height: 88px;
+      position: relative;
+    }
+    .flow-step:not(:last-child)::before {
+      content: "";
+      position: absolute;
+      left: 20px;
+      top: 44px;
+      bottom: -1px;
+      width: 2px;
+      background: var(--line);
+    }
+    .flow-index {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border: 2px solid var(--blue);
+      border-radius: 50%;
+      color: var(--blue);
+      background: var(--paper);
+      font-weight: 800;
+      z-index: 1;
+    }
+    .flow-content { padding-bottom: 24px; }
+    .flow-content h3 { margin-bottom: 5px; }
+    .flow-content p { color: var(--muted); margin: 0; font-size: .92rem; }
+
+    pre {
+      overflow: auto;
+      padding: 16px;
+      margin: 16px 0;
+      border: 1px solid #263746;
+      border-radius: var(--radius);
+      background: #1f2933;
+      color: #e7edf2;
+      font-size: .83rem;
+      line-height: 1.6;
+    }
+    .token-blue { color: #8ab4f8; }
+    .token-green { color: #81c995; }
+    .token-yellow { color: #fdd663; }
+    .token-red { color: #f28b82; }
+
+    .maturity {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .maturity-item { padding: 18px; border: 1px solid var(--line); background: var(--paper); }
+    .maturity-label { display: inline-block; margin-bottom: 10px; padding: 3px 7px; border-radius: 3px; font-size: .74rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+    .maturity-item:nth-child(1) .maturity-label { color: var(--green); background: var(--green-soft); }
+    .maturity-item:nth-child(2) .maturity-label { color: #855c00; background: var(--yellow-soft); }
+    .maturity-item:nth-child(3) .maturity-label { color: #a50e0e; background: var(--red-soft); }
+    .maturity-item p { color: var(--muted); font-size: .9rem; margin: 0; }
+
+    .principles { counter-reset: principle; display: grid; gap: 12px; }
+    .principle {
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 14px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+    }
+    .principle::before {
+      counter-increment: principle;
+      content: counter(principle);
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      color: white;
+      background: var(--blue);
+      border-radius: 50%;
+      font-weight: 800;
+    }
+    .principle h3 { margin-bottom: 5px; }
+    .principle p { color: var(--muted); font-size: .92rem; margin: 0; }
+
+    .footer {
+      padding: 32px 0 70px;
+      color: var(--muted);
+      font-size: .84rem;
+    }
+    .footer strong { color: var(--ink); }
+    .hidden-by-search { display: none !important; }
+    .no-results { display: none; padding: 24px; color: var(--muted); text-align: center; border: 1px dashed var(--line); background: var(--paper); }
+    .no-results.visible { display: block; }
+
+    @media (max-width: 1050px) {
+      .layout { grid-template-columns: 190px minmax(0, 1fr); gap: 24px; }
+      .architecture { grid-template-columns: repeat(3, 1fr); }
+      .arch-node:nth-child(3)::after { display: none; }
+      .arch-node:nth-child(4)::after { display: block; }
+    }
+    @media (max-width: 760px) {
+      .topbar-inner, .layout { width: min(100% - 28px, var(--max)); }
+      .topbar-tools { flex: 1; justify-content: flex-end; }
+      .search { width: min(220px, 46vw); }
+      .print-btn { padding: 0 8px; font-size: .78rem; }
+      .layout { display: block; }
+      aside { position: static; height: auto; padding: 16px 0 0; }
+      .toc { display: flex; gap: 5px; overflow-x: auto; padding-bottom: 4px; }
+      .toc-title { margin-top: 4px; }
+      .toc a { white-space: nowrap; border-left: 0; border-bottom: 2px solid transparent; padding: 6px 8px; }
+      .toc a:hover, .toc a.active { border-left: 0; border-bottom-color: var(--blue); }
+      .toc .toc-sub { display: none; }
+      .hero { padding: 48px 0 34px; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .architecture, .source-grid, .two-col, .maturity { grid-template-columns: 1fr; }
+      .arch-node:not(:last-child)::after { content: "↓"; right: auto; left: 50%; top: auto; bottom: -21px; transform: translateX(-50%); }
+      .arch-node:nth-child(3)::after { display: block; }
+      .directory-table, .problem-table { display: block; overflow-x: auto; white-space: normal; }
+      .directory-table { min-width: 720px; }
+      .problem-table { min-width: 680px; }
+      section { padding: 42px 0; }
+    }
+    @media print {
+      body { background: white; }
+      .topbar, aside, .print-btn, .search { display: none; }
+      .layout { display: block; width: 100%; }
+      main { width: 100%; }
+      .hero { padding-top: 20px; }
+      section { break-inside: avoid; }
+      a { color: inherit; text-decoration: underline; }
+      .panel, .stat, .source-card { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#top" aria-label="返回顶部">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>Chromium Coding Agents</span>
+      </a>
+      <div class="topbar-tools">
+        <input id="search" class="search" type="search" placeholder="搜索报告内容..." aria-label="搜索报告内容">
+        <button class="print-btn" type="button" onclick="window.print()">打印 / PDF</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="top" class="layout">
+    <aside>
+      <div class="toc-title">目录</div>
+      <nav class="toc" aria-label="报告目录">
+        <a href="#summary">结论</a>
+        <a href="#architecture">整体架构</a>
+        <a href="#directory">源码目录</a>
+        <a href="#prompts" class="toc-sub">Prompts 与知识库</a>
+        <a href="#skills" class="toc-sub">Skills</a>
+        <a href="#mcp" class="toc-sub">Extensions / MCP</a>
+        <a href="#workflow">多 Agent 工作流</a>
+        <a href="#governance">评测与治理</a>
+        <a href="#problems">解决的问题</a>
+        <a href="#lessons">企业可借鉴点</a>
+        <a href="#limits">成熟度边界</a>
+        <a href="#strengths">Chromium 的优劣</a>
+        <a href="#sources">官方来源</a>
+      </nav>
+    </aside>
+
+    <main>
+      <section class="hero searchable">
+        <div class="eyebrow">Engineering Systems Report</div>
+        <h1>Chromium 如何把 Coding Agent 纳入企业研发体系</h1>
+        <p class="hero-lede">这不是一个“给工程师发一个聊天机器人”的项目，而是把 Chromium 的工程知识、工具、构建测试流程、代码审查、发布和责任制度，重新组织成 Agent 可以发现、执行、验证和审计的研发基础设施。</p>
+        <p class="source-note">分析对象：Chromium 源码树当前的 <code>//agents</code>、<code>//.agents</code>、<code>//.gemini</code> 以及公开的 <code>chromium/agents</code> 共享仓库。<a href="https://chromium.googlesource.com/chromium/src/+/main/agents/" target="_blank" rel="noreferrer">打开 Chromium agents 目录</a></p>
+        <div class="stats" aria-label="核心结构摘要">
+          <div class="stat"><span class="stat-value">7+</span><span class="stat-label">Agent 基础设施分区</span></div>
+          <div class="stat"><span class="stat-value">3 层</span><span class="stat-label">公开 / 共享 / 内部能力</span></div>
+          <div class="stat"><span class="stat-value">4 阶段</span><span class="stat-label">TDD 与审查主流程</span></div>
+          <div class="stat"><span class="stat-value">2 个</span><span class="stat-label">责任主体：Agent + 人类</span></div>
+        </div>
+      </section>
+
+      <section id="summary" class="searchable">
+        <div class="section-heading">
+          <div class="section-kicker">01 / Executive Summary</div>
+          <h2>先给结论：Chromium 建设的是一套 Agent 工程操作系统</h2>
+          <p>它的核心产物不是某个模型，而是围绕模型建立的知识层、能力层、工具层、流程层和治理层。</p>
+        </div>
+        <div class="callout"><strong>准确判断：</strong>Chromium 的 Coding Agents 方向确实是面向 Google/Chrome 大型研发组织的提效建设，但公开仓库承载了通用底座，Google 内部通过私有仓库和内部文档提供增强能力。它不是 Chromium 浏览器运行时里的用户功能。</div>
+        <div class="two-col">
+          <article class="panel blue">
+            <h3>它不是单纯的 Prompt 仓库</h3>
+            <p><code>agents/prompts</code> 只是其中一层。Chromium 同时维护 Skills、MCP 扩展、项目上下文、评测、工作流状态文件、Gerrit 发布逻辑和 AI 使用政策。</p>
+          </article>
+          <article class="panel red">
+            <h3>它也不是无人值守自动编程</h3>
+            <p>AI policy 要求作者理解并自审代码，能回答 Review 问题，且 Agent 面对真人反馈时必须由真人回复。自动化提高执行效率，责任仍在人类。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="architecture" class="searchable">
+        <div class="section-heading">
+          <div class="section-kicker">02 / System Model</div>
+          <h2>五层结构：从知识到交付</h2>
+          <p>Chromium 把 Agent 能力拆成多个职责清晰的层次，减少一个超级系统提示词同时承担所有问题。</p>
+        </div>
+        <div class="architecture">
+          <article class="arch-node"><h3>Prompts</h3><p>注入 Chromium 通用规范、平台规则、知识库路由和工作纪律。</p></article>
+          <article class="arch-node"><h3>Skills</h3><p>把构建、测试、JNI、GN、性能、文档等专项能力按需加载。</p></article>
+          <article class="arch-node"><h3>MCP / Extensions</h3><p>让 Agent 调用本地、预构建或远程的工程工具和数据服务。</p></article>
+          <article class="arch-node"><h3>Workflow</h3><p>用 TDD、代码审查、合并、验证和发布阶段组织多个 Agent。</p></article>
+          <article class="arch-node"><h3>Policy / Eval</h3><p>用评测、OWNERS、Presubmit 和 AI policy 约束质量与责任。</p></article>
+        </div>
+        <div class="arch-output">结果：Agent 能在 Chromium 的真实工程环境中“找到知识 → 使用工具 → 修改代码 → 构建测试 → 审查 → 提交 CL”</div>
+      </section>
+
+      <section id="directory" class="searchable">
+        <div class="section-heading">
+          <div class="section-kicker">03 / Source Tree</div>
+          <h2>源码里具体放了哪些东西</h2>
+          <p>下面的目录不是按模型厂商划分，而是按工程职责划分。这样 Gemini CLI、Copilot、Antigravity 等不同客户端可以共享相同的 Chromium 专业能力。</p>
+        </div>
+        <table class="directory-table">
+          <thead><tr><th>目录 / 文件</th><th>职责</th><th>解决的实际问题</th></tr></thead>
+          <tbody>
+            <tr><td><code>agents/</code></td><td>Agent 能力总入口</td><td>为跨平台、跨 Agent 客户端的配置、知识和工具提供统一归属。</td></tr>
+            <tr><td><code>agents/prompts/</code></td><td>系统提示词、模板、任务提示词、知识库、评测</td><td>让 Agent 遵守 Chromium 的构建、测试、代码风格和模块边界，而不是只凭通用模型知识工作。</td></tr>
+            <tr><td><code>agents/skills/</code></td><td>专项、按需加载的工程技能</td><td>把大型代码库的局部专业知识拆成可发现、可复用、可独立演进的能力。</td></tr>
+            <tr><td><code>agents/extensions/</code></td><td>Gemini CLI 扩展和 MCP 配置</td><td>统一接入工程工具，避免每个开发者手工配置不同版本的脚本和服务。</td></tr>
+            <tr><td><code>agents/projects/</code></td><td>Android、Code Health、Design System 等项目级技能集合</td><td>同一仓库不同团队不必共享一份臃肿且互相冲突的上下文。</td></tr>
+            <tr><td><code>agents/infra/</code></td><td>Agent 相关基础设施，例如 review RAG indexer</td><td>把检索、索引和内部工程服务变成可维护的系统，而不是一次性 Prompt。</td></tr>
+            <tr><td><code>.agents/</code></td><td>本地规则、技能链接和发现配置</td><td>把“源码中有哪些能力”和“当前工作区启用了什么”分离，避免本地状态污染 Git。</td></tr>
+            <tr><td><code>agents/internal/</code></td><td>Google/Chrome 私有 Agent 能力</td><td>内部文档、工具、CI 和凭据相关能力不进入公开 Chromium 仓库。</td></tr>
+            <tr><td><code>agents/shared/</code></td><td>多个 Chrome 仓库共享的公开能力</td><td>避免 Chromium、Chrome 或其他相关仓库重复维护相同 Skills。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="prompts" class="searchable">
+        <div class="section-heading">
+          <div class="section-kicker">04 / Prompts & Knowledge</div>
+          <h2>Prompts：把资深工程师的工作方式写下来</h2>
+          <p>Chromium 的 Prompt 层重点不是告诉模型“你是一个优秀程序员”，而是告诉它在这个具体代码库里必须如何工作。</p>
+        </div>
+        <div class="two-col">
+          <article class="panel blue">
+            <h3>组合式上下文</h3>
+            <p>开发者在本地生成不提交的 <code>GEMINI.md</code>，按角色组合通用规则和平台模板：</p>
+            <pre><span class="token-blue">@agents/prompts/common.md</span>
+<span class="token-green">@agents/prompts/templates/desktop.md</span></pre>
+            <p>Android、iOS、桌面开发者可以得到不同的上下文，而不是所有人加载一份巨大 Prompt。</p>
+          </article>
+          <article class="panel green">
+            <h3>强制性的工程纪律</h3>
+            <ul>
+              <li>编辑前搜索已有文件，避免重复创建。</li>
+              <li>读取完整源文件和至少一个调用方。</li>
+              <li>不要从函数名猜测行为。</li>
+              <li>修改后构建，构建后运行相关测试。</li>
+              <li>编译错误必须回到接口和定义处分析。</li>
+              <li>最后执行格式化和 Chromium Presubmit。</li>
+            </ul>
+          </article>
+        </div>
+        <div class="callout"><strong>核心价值：</strong>大型企业的 Agent 质量很大程度取决于它是否知道“应该去哪里查”和“查完之后按什么工程规则行动”，而不是单纯取决于模型参数规模。</div>
+        <div class="source-grid">
+          <article class="source-card"><h3><a href="https://chromium.googlesource.com/chromium/src/+/main/agents/prompts/README.md" target="_blank" rel="noreferrer">Prompts README</a></h3><p>解释 common prompt、模板、任务提示词和本地 GEMINI.md 的组合方式。</p><div class="path">//agents/prompts/README.md</div></article>
+          <article class="source-card"><h3><a href="https://chromium.googlesource.com/chromium/src/+/main/agents/prompts/knowledge_base.md" target="_blank" rel="noreferrer">Knowledge Base</a></h3><p>按 Pref、UMA、UKM、Mojo、Blink、GN、JNI 等主题路由到权威文档。</p><div class="path">//agents/prompts/knowledge_base.md</div></article>
+        </div>
+      </section>
+
+      <section id="skills" class="searchable">
+        <div class="section-heading">
+          <div class="section-kicker">05 / Agent Skills</div>
+          <h2>Skills：把“知道怎么做”变成可调用能力</h2>
+          <p>每个 Skill 通常由一个 <code>SKILL.md</code> 作为入口，可选配脚本、参考资料、数据和模板，并明确激活条件与验证方式。</p>
+        </div>
+        <div class="two-col">
+          <article class="panel blue"><h3>代码理解与知识检索</h3><p>例如 <code>chromium-docs</code>，负责建立本地文档索引、按主题查找设计文档和开发指南。它规定了什么时候激活、什么时候不要激活，以及索引构建和结果解释方式。</p></article>
+          <article class="panel green"><h3>构建、测试和调试</h3><p>包括 GN 依赖调试、Build Target 定位、JNI 类型转换、Coverage builder 检查、运行指定文件测试、修复损坏测试等，直接对应 Chromium 的高频工程摩擦。</p></article>
+          <article class="panel yellow"><h3>性能、代码健康和专项领域</h3><p>包括 tracing、Histogram、网络流量、Memory Leak、Chrome 窗口重构、WebUI、fuzzing 和代码覆盖率等能力。许多能力带有 experimental 标记，说明仍在验证。</p></article>
+          <article class="panel violet"><h3>工程流程和交付</h3><p>包括 Gerrit CLI、Git CL helper、CL description、UTR、Release Manager 等，让 Agent 的产物可以进入 Chromium 的真实评审和提交流程。</p></article>
+        </div>
+        <div class="callout"><strong>按需而不是全量：</strong>Chromium 通过 <code>agents/skills/setup.py</code> 把技能链接到 gitignored 的 <code>.agents/skills/</code>。技能定义在源码中，启用状态在本地环境中，Agent 客户端负责发现。</div>
+        <pre><span class="token-yellow">agents/skills/setup.py link chromium-docs histograms</span>
+<span class="token-yellow">agents/skills/setup.py uninstall chromium-docs</span></pre>
+        <p>技能搜索路径还包括 <code>agents/internal/skills</code>、<code>agents/shared/skills</code>、公开 <code>agents/skills</code>、<code>internal/agents/skills</code> 和 depot_tools 的技能，体现出公共、共享、内部和工具链能力的组合模型。</p>
+      </section>
+
+      <section id="mcp" class="searchable">
+        <div class="section-heading">
+          <div class="section-kicker">06 / Extensions & MCP</div>
+          <h2>Extensions / MCP：让 Agent 能调用真实工程工具</h2>
+          <p>Chromium 没有把 Agent 限制为“读文件和执行任意 Shell”，而是开始把工具接入做成可版本化、可安装、可审查的扩展系统。</p>
+        </div>
+        <div class="two-col">
+          <article class="panel blue"><h3>三种 Server 形态</h3><ol><li>源码树中的本地 MCP Server。</li><li>作为 CIPD 包提供的预构建本地 MCP Server。</li><li>由团队维护的远程 MCP Server。</li></ol></article>
+          <article class="panel red"><h3>扩展安装器解决的配置问题</h3><ul><li>列出可用和已安装版本。</li><li>区分链接安装和复制安装。</li><li>支持用户级和工作区级启用。</li><li>从旧项目级配置迁移。</li><li>要求新增服务有 OWNERS 和明确维护者。</li></ul></article>
+        </div>
+        <div class="callout warning"><strong>企业含义：</strong>MCP 不是“接一个脚本就完事”。一旦工具可以读取内部数据、执行变更或访问凭据，它就应该拥有版本、所有者、权限、安装范围和审计记录。</div>
+        <p><a href="https://chromium.googlesource.com/chromium/src/+/main/agents/extensions/README.md" target="_blank" rel="noreferrer">查看 Chromium Extensions / MCP 说明</a></p>
+      </section>
+
+      <section id="workflow" class="searchable">
+        <div class="section-heading">
+          <div class="section-kicker">07 / Multi-Agent Workflow</div>
+          <h2>多 Agent：Chromium 正在把研发阶段协议化</h2>
+          <p>这里的重点不是“同时启动几个模型”，而是把任务拆成有输入、有输出、有状态和有验证门槛的阶段。</p>
+        </div>
+        <div class="flow">
+          <div class="flow-step"><div class="flow-index">01</div><div class="flow-content"><h3>环境与任务初始化</h3><p>读取 <code>project.workflow.json</code>，确认仓库类型、VCS、构建目录、临时目录和目标文件，清理上一次遗留状态。</p></div></div>
+          <div class="flow-step"><div class="flow-index">02</div><div class="flow-content"><h3>API 脚手架与测试边界</h3><p>先明确接口、类、GN 目标或 Mojo 管道，再建立测试文件和失败测试，避免 Agent 一上来生成没有边界的大段实现。</p></div></div>
+          <div class="flow-step"><div class="flow-index">03</div><div class="flow-content"><h3>并行实现与合并</h3><p>多个实现 Agent 基于同一个 Base Scaffold 工作，Synthesis Agent 通过三方合并整合结果，并以编译成功作为门槛。</p></div></div>
+          <div class="flow-step"><div class="flow-index">04</div><div class="flow-content"><h3>测试验证与修复循环</h3><p>Test Expert 替换测试桩、运行测试并写回验证状态；失败时回到实现阶段，循环次数受限，超过上限则升级人工。</p></div></div>
+          <div class="flow-step"><div class="flow-index">05</div><div class="flow-content"><h3>并行代码审查</h3><p>Core、Security、Performance 等扫描器并行检查，Consolidation Agent 汇总为约束，判断 ACCEPT、REJECT 或 ESCALATION。</p></div></div>
+          <div class="flow-step"><div class="flow-index">06</div><div class="flow-content"><h3>格式化、Presubmit 与 Gerrit CL</h3><p>Release Manager 负责最后的格式化、构建、测试、Presubmit、CL 拆分、上传和工作区清理，而不是停在本地 patch。</p></div></div>
+        </div>
+        <div class="two-col">
+          <article class="panel blue"><h3>状态文件让工作流可恢复</h3><p><code>project.workflow.json</code>、<code>tdd_state.workflow.json</code>、<code>review_state.workflow.json</code> 和 <code>constraints.workflow.json</code> 把阶段结果结构化，避免长对话中遗忘状态，也让失败能够回到指定阶段。</p></article>
+          <article class="panel yellow"><h3>这是设计方向，不是成熟度证明</h3><p>多 Agent 技能已经写出了相当完整的协议，但目录中仍有 roadmap、TODO 和 experimental 能力。应该把它看成 Chromium 正在验证的高级工作流，而不是默认所有团队都已经采用。</p></article>
+        </div>
+      </section>
+
+      <section id="governance" class="searchable">
+        <div class="section-heading">
+          <div class="section-kicker">08 / Evaluation & Governance</div>
+          <h2>评测与治理：Agent 本身也按 Chromium 工程规范管理</h2>
+          <p>Chromium 的成熟之处不只是功能多，而是它开始把 Prompt、Skill、MCP 和 Agent 工作流当成需要维护的工程资产。</p>
+        </div>
+        <div class="two-col">
+          <article class="panel green"><h3>评测机制</h3><ul><li><code>agents/prompts/eval/</code> 保存具体任务评测。</li><li>使用 Promptfoo 检查 Prompt 和 Workflow 改动。</li><li>评测目标包括找文件、改接口、补测试、选构建目标和遵守规范。</li><li><code>PRESUBMIT.py</code> 保证生成文件和 Prompt 模板保持一致。</li></ul></article>
+          <article class="panel red"><h3>AI 使用政策</h3><ul><li>作者必须理解并自审 AI 生成的代码。</li><li>必须能回答 Reviewer 的问题。</li><li>不理解的代码不能提交。</li><li>AI 收到真人反馈后必须由真人回复。</li><li>违规可能影响 committer 权限。</li></ul></article>
+        </div>
+        <div class="callout policy"><strong>治理底线：</strong>Agent 可以承担搜索、执行、生成、检查和整理，但不能替人类承担代码理解、提交责任、Review 回复和安全决策。</div>
+        <p>目录本身还有 <code>OWNERS</code> 和 Presubmit。新增 MCP 配置必须属于被维护的服务并包含 OWNERS，这让 Agent 基础设施也进入普通 Chromium 的代码所有权体系。</p>
+      </section>
+
+      <section id="problems" class="searchable">
+        <div class="section-heading">
+          <div class="section-kicker">09 / Engineering Problems</div>
+          <h2>Chromium 具体想解决什么问题</h2>
+          <p>从源码实现可以看出，它主要针对的是大型企业研发中的组织摩擦和工程摩擦。</p>
+        </div>
+        <table class="problem-table">
+          <thead><tr><th>问题</th><th>Chromium 的机制</th><th>实际收益</th></tr></thead>
+          <tbody>
+            <tr><td>新人和普通模型不了解 Chromium</td><td>通用 Prompt、Knowledge Base、文档搜索 Skill</td><td>降低理解代码库和找到权威资料的成本。</td></tr>
+            <tr><td>工程知识分散在个人经验中</td><td>将经验写成 Skill、模板和任务提示词</td><td>把隐性知识转成可审查、可复用的组织资产。</td></tr>
+            <tr><td>不同工程师配置不一致</td><td>源码目录、共享仓库和安装器</td><td>统一 Agent 能力来源、版本和启用方式。</td></tr>
+            <tr><td>上下文越加越长</td><td>按需 Skills、项目级继承和本地链接</td><td>减少无关规则对 Agent 判断的干扰。</td></tr>
+            <tr><td>Agent 不会正确构建和测试</td><td>Chromium 专用 Prompt、Build/Test Skill</td><td>让 Agent 进入真实构建、测试和 Presubmit 环境。</td></tr>
+            <tr><td>一个 Agent 自己审查自己</td><td>Core / Security / Performance 并行审查</td><td>增加独立检查视角，减少明显遗漏。</td></tr>
+            <tr><td>多 Agent 互相覆盖或无法恢复</td><td>Base Scaffold、状态 JSON、三方合并、循环上限</td><td>让复杂任务有边界、有快照、有失败恢复点。</td></tr>
+            <tr><td>Prompt 改动无法判断好坏</td><td>Promptfoo Eval 和 Presubmit</td><td>让 Agent 能力具备回归测试，而不是只靠主观感受。</td></tr>
+            <tr><td>内部工具不能公开</td><td><code>agents/internal</code> 与 <code>agents/shared</code> overlay</td><td>公开底座和私有能力分离，保持公共接口一致。</td></tr>
+            <tr><td>AI 代码责任不清</td><td>AI policy、OWNERS、人类回复规则</td><td>自动化不等于责任转移，提交责任继续落在人类身上。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="lessons" class="searchable">
+        <div class="section-heading">
+          <div class="section-kicker">10 / Enterprise Lessons</div>
+          <h2>对企业最值得借鉴的设计</h2>
+          <p>Chromium 最有价值的不是某个具体 Skill，而是它对 Agent 能力进行组织化管理的方式。</p>
+        </div>
+        <div class="principles">
+          <article class="principle"><div><h3>把 Agent 能力放进源码和版本控制</h3><p>Prompt、Skill、MCP 配置、评测和工作流都可以走 Git、Review、OWNERS 和 Presubmit。这样 Agent 不再是少数专家机器上的私人配置。</p></div></article>
+          <article class="principle"><div><h3>知识、工具、流程和政策分层</h3><p>Prompt 负责上下文，Skill 负责任务能力，MCP 负责工具，Workflow 负责阶段，Policy 负责责任，Eval 负责验证。每层都能独立演进。</p></div></article>
+          <article class="principle"><div><h3>能力很多，但默认上下文要小</h3><p>采用按需启用而不是全量注入。默认 Skill 少，专项能力通过本地链接、项目注册或触发条件加载。</p></div></article>
+          <article class="principle"><div><h3>公共底座和内部 Overlay 分离</h3><p>公开层维护通用规范和接口，内部层承载私有系统、数据、CI、认证和组织流程，避免公开仓库与企业内部系统强耦合。</p></div></article>
+          <article class="principle"><div><h3>把 Prompt 和 Skill 当成需要测试的软件</h3><p>每个高价值任务都应该有行为评测：是否找对文件、选对命令、补对测试、遵守权限边界，并在版本更新时做回归。</p></div></article>
+          <article class="principle"><div><h3>自动化越强，责任制度越要明确</h3><p>规定谁拥有 Skill、谁批准 MCP、谁审查生成代码、谁回复 Review、谁能终止 Agent。Chromium 的 AI policy 正是在补齐这一层。</p></div></article>
+        </div>
+      </section>
+
+      <section id="limits" class="searchable">
+        <div class="section-heading">
+          <div class="section-kicker">11 / Maturity Boundary</div>
+          <h2>不要过度解读：哪些已经成熟，哪些仍在实验</h2>
+          <p>源码里有完整目录和协议，不代表每一项能力都已经全员使用或达到生产稳定性。</p>
+        </div>
+        <div class="maturity">
+          <article class="maturity-item"><span class="maturity-label">相对成熟</span><p>统一 Agent 目录、Prompt 组合、Chromium 文档检索、Skill 目录规范、MCP 安装管理、OWNERS、Presubmit、AI policy，以及公开/内部能力分层。</p></article>
+          <article class="maturity-item"><span class="maturity-label">正在发展</span><p>Promptfoo 评测、RAG indexer、跨仓库共享 Skill、复杂项目 Skill、多 Agent TDD、代码审查和 Release Manager。</p></article>
+          <article class="maturity-item"><span class="maturity-label">实验性质</span><p>带有 experimental 前缀的 Coverage、CI-only validator、Fuzzing 和部分多 Agent 工作流。应理解为验证中的方向，而非组织默认标准。</p></article>
+        </div>
+        <div class="callout warning"><strong>判断标准：</strong>评估企业 Agent 平台时，不能只看“有多少 Skill”或“能否启动多个 Agent”，而要看有没有源码归属、版本管理、行为评测、权限控制、失败恢复和人类责任闭环。</div>
+      </section>
+
+      <section id="strengths" class="searchable">
+        <div class="section-heading">
+          <div class="section-kicker">12 / Strengths & Limits</div>
+          <h2>Chromium 的优势与局限：第一梯队，但不是所有维度都第一</h2>
+          <p>“最好”必须先说明评价对象。Chromium 最强的是大型研发组织如何把 Agent 纳入源码、流程和责任体系，而不是个人编码体验、企业后台或云端任务执行的每一个维度。</p>
+        </div>
+        <div class="callout"><strong>核心判断：</strong>如果评价“公开可研究的企业级 Coding Agent 工程样板”，Chromium 属于第一梯队，甚至是最值得学习的案例之一；如果评价“开箱即用的企业产品、跨仓库代码情报或异步云端执行”，GitHub Copilot、Sourcegraph 或 Codex Cloud 在各自维度更强。</div>
+        <div class="two-col">
+          <article class="panel green">
+            <h3>Chromium 的优势</h3>
+            <ul>
+              <li><strong>源码树原生：</strong>Prompt、Skill、MCP、Eval、OWNERS 和 Presubmit 都能跟代码一起版本化和 Review。</li>
+              <li><strong>工程闭环完整：</strong>从知识检索、实现、TDD、构建、测试、Code Review 到 Gerrit CL 交付。</li>
+              <li><strong>组织知识可复用：</strong>把资深工程师的构建、JNI、Blink、GN、性能和测试经验沉淀为 Skill。</li>
+              <li><strong>层次边界清晰：</strong>Prompt、Skill、工具、Workflow、Policy 和 Eval 各自承担不同职责。</li>
+              <li><strong>公共和内部可分层：</strong>通过 <code>agents/shared</code> 和 <code>agents/internal</code> 支持共享能力与私有能力 Overlay。</li>
+              <li><strong>公开可验证：</strong>外部可以直接阅读源码结构、工作流协议和 AI Policy，而不是只能听产品宣讲。</li>
+            </ul>
+          </article>
+          <article class="panel red">
+            <h3>Chromium 的局限</h3>
+            <ul>
+              <li><strong>缺少公开 ROI 数据：</strong>源码证明它设计了这些机制，但不能证明已经全员采用或效果全球最佳。</li>
+              <li><strong>多 Agent 仍有实验成分：</strong>不少 Workflow、Coverage 和 Fuzzing 能力带有 experimental、TODO 或 roadmap。</li>
+              <li><strong>不是开箱即用产品：</strong>需要理解 Chromium、Gemini CLI、Gerrit、构建目录和本地环境，部署成本高。</li>
+              <li><strong>个人交互不是重点：</strong>Claude Code、Codex、Cursor 等产品可能提供更顺滑的单人编码体验。</li>
+              <li><strong>企业控制面不突出：</strong>公开部分主要是源码配置和流程协议，不是完整的管理员后台、计费、审计和组织策略产品。</li>
+              <li><strong>上下文偏单仓库：</strong>它的知识库深度服务 Chromium，但不等于已经解决所有企业的多仓库代码情报问题。</li>
+            </ul>
+          </article>
+        </div>
+        <table class="problem-table">
+          <thead><tr><th>评价维度</th><th>Chromium 的位置</th><th>其他方案的相对优势</th><th>结论</th></tr></thead>
+          <tbody>
+            <tr><td>组织级研发体系</td><td>Prompt、Skill、MCP、Workflow、Eval、Policy 和 Gerrit 串成一条公开可读的工程链路。</td><td>很少有其他公开项目把这些层次全部放在真实超大型代码库里。</td><td><strong>Chromium 最有参考价值。</strong></td></tr>
+            <tr><td>企业产品化与管理</td><td>公开内容以源码和脚本为主，管理后台和集中控制面不是重点。</td><td>GitHub Copilot 拥有 GitHub、PR、Actions、组织策略和 Agent 审计的产品集成。</td><td><strong>Copilot 更适合快速企业部署。</strong></td></tr>
+            <tr><td>个人编码体验</td><td>重点是遵循 Chromium 工程流程，不是优化通用终端交互。</td><td>Claude Code、Codex、Cursor 等更侧重个人开发者的交互和任务完成体验。</td><td><strong>Chromium 不应与终端产品直接比 UX。</strong></td></tr>
+            <tr><td>异步云端执行</td><td>定义了状态文件、阶段和 Release Manager，但公开体系主要围绕本地 checkout 与 Gerrit。</td><td>Codex Cloud、GitHub Copilot Coding Agent 支持隔离环境、后台长任务和并行委派。</td><td><strong>云端执行不是 Chromium 的强项。</strong></td></tr>
+            <tr><td>跨仓库代码上下文</td><td>通过本地文档索引和 Chromium 专用 Knowledge Base 深入理解单一巨型代码库。</td><td>Sourcegraph 强调跨仓库搜索、代码图、符号解析、历史和企业权限继承。</td><td><strong>Sourcegraph 更适合多仓库企业。</strong></td></tr>
+            <tr><td>工具调用治理</td><td>要求 MCP 有维护者和 OWNERS，并提供安装、启用和工作区管理。</td><td>Claude Code Hooks、GitHub Enterprise AI Controls 等更强调客户端级拦截、权限和集中管控。</td><td><strong>Chromium 的治理思想强，产品化控制面仍可加强。</strong></td></tr>
+            <tr><td>公开可学习性</td><td>源码、目录、Skill、Workflow 和 AI Policy 都可直接阅读。</td><td>很多企业 Agent 的真实内部落地数据、提示词和流程并不公开。</td><td><strong>Chromium 是最适合拆解学习的公开样板之一。</strong></td></tr>
+          </tbody>
+        </table>
+        <div class="two-col">
+          <article class="panel blue">
+            <h3>适合把 Chromium 当作什么</h3>
+            <p>把它当作“大型软件企业如何组织 Agent 能力”的架构参考：学习它如何分层、如何版本化、如何评测、如何把知识和流程接入真实交付系统。</p>
+          </article>
+          <article class="panel yellow">
+            <h3>不适合把 Chromium 当作什么</h3>
+            <p>不要把它当作一款可以直接购买、安装后就完成企业 AI 转型的产品，也不要因为目录里出现了多 Agent 协议，就推断所有能力已经大规模稳定运行。</p>
+          </article>
+        </div>
+        <div class="callout policy"><strong>最终评价：</strong>Chromium 不是“所有 Agent 维度都最好”，而是目前公开资料中最完整的“研发组织级 Agent 化”案例之一。它在方法论、源码内生化和工程闭环上领先；在产品化、跨仓库情报、云端调度和公开 ROI 证据上并不全面领先。</div>
+        <div class="source-grid">
+          <article class="source-card"><h3><a href="https://docs.github.com/copilot/how-tos/copilot-on-github/use-copilot-agents/copilot-code-review" target="_blank" rel="noreferrer">GitHub Copilot Code Review</a></h3><p>适合对比 GitHub 的 PR、Code Review 和企业平台集成。</p><div class="path">docs.github.com / Copilot agents</div></article>
+          <article class="source-card"><h3><a href="https://docs.anthropic.com/en/docs/claude-code/hooks" target="_blank" rel="noreferrer">Claude Code Hooks</a></h3><p>适合对比工具调用生命周期、PreToolUse 拦截和企业策略控制。</p><div class="path">docs.anthropic.com / Claude Code</div></article>
+          <article class="source-card"><h3><a href="https://developers.openai.com/codex/cloud" target="_blank" rel="noreferrer">Codex Cloud</a></h3><p>适合对比隔离云环境、后台长任务和并行委派。</p><div class="path">developers.openai.com / Codex</div></article>
+          <article class="source-card"><h3><a href="https://sourcegraph.com/blog/a-new-era-for-sourcegraph-the-intelligence-layer-for-ai-coding-agents-and-developers" target="_blank" rel="noreferrer">Sourcegraph 7.0</a></h3><p>适合对比跨仓库代码情报、MCP 和企业级上下文基础设施。</p><div class="path">sourcegraph.com / Agent intelligence layer</div></article>
+        </div>
+      </section>
+
+      <section id="sources" class="searchable">
+        <div class="section-heading">
+          <div class="section-kicker">13 / Primary Sources</div>
+          <h2>Chromium 官方源码入口</h2>
+          <p>以下链接直接指向 Chromium Gitiles 或公开共享仓库，适合继续逐文件阅读。</p>
+        </div>
+        <div class="source-grid">
+          <article class="source-card"><h3><a href="https://chromium.googlesource.com/chromium/src/+/main/agents/" target="_blank" rel="noreferrer">agents 总目录</a></h3><p>查看当前公开 Agent 基础设施目录。</p><div class="path">chromium/src/+/main/agents/</div></article>
+          <article class="source-card"><h3><a href="https://chromium.googlesource.com/chromium/src/+/main/agents/prompts/README.md" target="_blank" rel="noreferrer">Prompts README</a></h3><p>查看提示词、模板和本地 GEMINI.md 组合方式。</p><div class="path">agents/prompts/README.md</div></article>
+          <article class="source-card"><h3><a href="https://chromium.googlesource.com/chromium/src/+/main/agents/skills/README.md" target="_blank" rel="noreferrer">Skills README</a></h3><p>查看 Skill 发现、链接、启用和项目注册方式。</p><div class="path">agents/skills/README.md</div></article>
+          <article class="source-card"><h3><a href="https://chromium.googlesource.com/chromium/src/+/main/agents/extensions/README.md" target="_blank" rel="noreferrer">Extensions / MCP README</a></h3><p>查看本地、预构建和远程 MCP 的管理方式。</p><div class="path">agents/extensions/README.md</div></article>
+          <article class="source-card"><h3><a href="https://chromium.googlesource.com/chromium/src/+/main/agents/skills/multi-agent-engineering-workflow/SKILL.md" target="_blank" rel="noreferrer">Engineering Workflow</a></h3><p>查看多 Agent 工程工作流、状态文件和阶段转换。</p><div class="path">agents/skills/multi-agent-engineering-workflow/SKILL.md</div></article>
+          <article class="source-card"><h3><a href="https://chromium.googlesource.com/chromium/src/+/main/agents/ai_policy.md" target="_blank" rel="noreferrer">AI Policy</a></h3><p>查看 Chromium 对 AI 生成代码、作者责任和真人回复的要求。</p><div class="path">agents/ai_policy.md</div></article>
+          <article class="source-card"><h3><a href="https://chromium.googlesource.com/chromium/agents/+/main/" target="_blank" rel="noreferrer">chromium/agents 共享仓库</a></h3><p>查看多个 Chrome 仓库共享的公开 Skills 和工具配置。</p><div class="path">chromium/agents/+/main/</div></article>
+          <article class="source-card"><h3><a href="https://github.com/chromium/chromium/commit/65fbad2b30082604301c1f8ca4bd19e1349be61a" target="_blank" rel="noreferrer">初始引入 CL</a></h3><p>查看 2025 年首次将 AI coding agents 结构纳入 Chromium 的提交说明。</p><div class="path">Add initial structure for AI coding agents</div></article>
+        </div>
+      </section>
+
+      <div class="footer">
+        <p><strong>报告说明：</strong>本文基于 Chromium 当前公开源码树和公开共享仓库整理，重点解释源码中已经出现的结构、机制和设计意图。Google 内部文档和 <code>agents/internal</code> 的具体内容不在公开范围内，因此未对其内部实现做推测。</p>
+        <p>页面为单文件 HTML，可直接保存、打印或导出 PDF。搜索框只过滤当前报告内容，不访问外部服务。</p>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      const input = document.getElementById('search');
+      const sections = Array.from(document.querySelectorAll('main > section.searchable'));
+      const noResults = document.createElement('div');
+      noResults.className = 'no-results';
+      noResults.textContent = '没有找到匹配的报告内容。';
+      document.querySelector('main').insertBefore(noResults, document.querySelector('.footer'));
+
+      input.addEventListener('input', function () {
+        const query = input.value.trim().toLowerCase();
+        let visible = 0;
+        sections.forEach(function (section) {
+          const matches = !query || section.textContent.toLowerCase().includes(query);
+          section.classList.toggle('hidden-by-search', !matches);
+          if (matches) visible += 1;
+        });
+        noResults.classList.toggle('visible', visible === 0);
+      });
+
+      const links = Array.from(document.querySelectorAll('.toc a'));
+      const linkMap = new Map(links.map(function (link) {
+        return [link.getAttribute('href').slice(1), link];
+      }));
+      const observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            links.forEach(function (link) { link.classList.remove('active'); });
+            const active = linkMap.get(entry.target.id);
+            if (active) active.classList.add('active');
+          }
+        });
+      }, { rootMargin: '-15% 0px -70% 0px', threshold: 0 });
+      sections.forEach(function (section) { observer.observe(section); });
+    }());
+  </script>
+</body>
+</html>
