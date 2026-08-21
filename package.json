@@ -1,6 +1,6 @@
 {
   "name": "@maxiaochao/pi-toolkit",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Personal pi coding agent toolkit: /todos extension + /cache_export interactive cache dashboard.",
   "type": "module",
   "keywords": [
@@ -12,7 +12,8 @@
     "README.md",
     "CHANGELOG.md",
     "global/AGENTS.md",
-    "scripts/install-agents.mjs"
+    "scripts/install-agents.mjs",
+    "skills"
   ],
   "repository": {
     "type": "git",
@@ -22,6 +23,9 @@
     "extensions": [
       "./extensions/todo.ts",
       "./extensions/cache-export/index.ts"
+    ],
+    "skills": [
+      "./skills"
     ]
   },
   "peerDependencies": {

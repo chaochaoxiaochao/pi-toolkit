@@ -1,4 +1,9 @@
-## 2026-08-19 - v0.1.6
+## 2026-08-21 - v0.1.7
+
+- add the html-artifact skill for interactive HTML explanations and codebase visualizations
+- register and package the skill for Pi discovery
+- prefer `.cache/html/` for generated temporary HTML artifacts
+
 
 - expand global agent guidance and reuse-before-writing rules
 

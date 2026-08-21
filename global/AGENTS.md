@@ -102,4 +102,9 @@ After each significant step:
 
 ---
 
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+## Output Format Preference
+
+For complex explanations, prefer a runnable HTML artifact over a long Markdown-only response when the content benefits from visual structure or interaction. This includes workflows, code/module relationships, state machines, event/data flows, architecture maps, timelines, comparisons, dashboards, and interactive demonstrations. Keep ordinary prose, short answers, diffs, and focused code reviews in Markdown.
+
+When using HTML, create a self-contained, responsive artifact in the project's established output location, or `.cache/html/<descriptive-name>.html` when no convention exists. Use semantic HTML, accessible controls, escaped code blocks, and small useful interactions. Return a concise Markdown summary with a clickable local file path; if a preview/server tool is available, start it and return the preview URL only after verifying the page is not blank and its assets load.
