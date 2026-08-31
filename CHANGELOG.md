@@ -1,3 +1,7 @@
+## 2026-08-31 - v0.1.8
+
+- fix cache export branch attribution and update HTML artifact guidance
+
 ## 2026-08-21 - v0.1.7
 
 - add the html-artifact skill for interactive HTML explanations and codebase visualizations

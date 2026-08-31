@@ -1,11 +1,9 @@
 ---
 name: html-artifact
-description: Create self-contained, responsive HTML artifacts for complex explanations that benefit from visual structure or interaction, including workflows, code/module relationships, state machines, event/data flows, architecture maps, timelines, comparisons, dashboards, and interactive demonstrations. Use Markdown for ordinary prose, short answers, diffs, and focused code reviews.
+description: Create self-contained, responsive HTML artifacts for complex explanations that benefit from visual structure or interaction, including workflows, code/module relationships, state machines, event/data flows, architecture maps, timelines, comparisons, dashboards, and interactive demonstrations.
 ---
 
 # HTML Artifact
-
-Use this skill when the user needs to understand or explore a complex process, codebase relationship, system design, state transition, comparison, or other content where static Markdown would be hard to scan or interact with.
 
 ## Decide the format
 

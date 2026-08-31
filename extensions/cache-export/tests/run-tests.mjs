@@ -1,5 +1,9 @@
 // Deterministic test cases for analyzeStreaks / analyzeMisses / parseEntries.
 // Run: node --experimental-strip-types tests/run-tests.mjs
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import registerCacheExport from "../index.ts";
 import { parseEntries, analyzeStreaks, analyzeMisses, lineChartForTest } from "../render.ts";
 
 let pass = 0, fail = 0;
@@ -312,6 +316,53 @@ const hitOf = (r) => r.cached / (r.fresh + r.cached + r.cacheWrite);
   const s = analyzeStreaks(d.requests, d.events);
   check("P compaction splits streaks into 3 + 3",
     s.length === 2 && s.every((x) => x.hits.length === 3), JSON.stringify(s.map((x) => [x.from, x.to])));
+}
+
+// Q. subagent results remain visible as main-session tool input -----------
+{
+  const entries = [
+    req({ cached: 0, fresh: 10000, min: 1, content: [
+      { type: "toolCall", tool: "subagent", name: "subagent" },
+      { type: "toolCall", tool: "bash", name: "bash" },
+    ] }),
+    toolResult("delegated result", "subagent"),
+    toolResult("ordinary result", "bash"),
+    req({ cached: 9000, fresh: 10000, min: 2 }),
+  ];
+  const d = parseEntries(entries);
+  check("Q subagent invocation remains in main-session tool counts",
+    d.toolCalls.some(([name]) => name === "subagent") && d.toolCalls.some(([name]) => name === "bash"),
+    JSON.stringify(d.toolCalls));
+  check("Q subagent result remains available for main fresh-input attribution",
+    d.requests[1].gapTools.length === 2 && d.requests[1].gapTools.some(({ tool }) => tool === "subagent"),
+    JSON.stringify(d.requests[1].gapTools));
+}
+
+// R. command exports only the current main-session branch ----------------
+{
+  const root = mkdtempSync(join(tmpdir(), "cache-export-test-"));
+  const reportFile = join(root, "report.html");
+  const entry = (value, id, parentId) => ({ ...value, id, parentId });
+  const first = entry(req({ cached: 9000, fresh: 1000, min: 1, model: "main-first" }), "p1", null);
+  const abandoned = entry(req({ cached: 0, fresh: 9000, min: 2, model: "abandoned-model" }), "p2", "p1");
+  const active = entry(req({ cached: 8000, fresh: 2000, min: 3, model: "active-model" }), "p3", "p1");
+
+  let command;
+  registerCacheExport({ registerCommand: (name, definition) => { if (name === "cache_export") command = definition; } });
+  await command.handler(reportFile, {
+    sessionManager: {
+      getBranch: () => [first, active],
+      getEntries: () => [first, abandoned, active],
+      getSessionFile: () => join(root, "main.jsonl"),
+      getSessionId: () => "main",
+    },
+    ui: { notify: () => {} },
+  });
+  const html = readFileSync(reportFile, "utf8");
+  check("R current branch excludes abandoned requests",
+    html.includes("2 requests") && html.includes("active-model") && !html.includes("abandoned-model"));
+  check("R main-only report has no subagent dashboard", !html.includes("Subagent cache"));
+  rmSync(root, { recursive: true, force: true });
 }
 
 // K. degenerate inputs ---------------------------------------------------

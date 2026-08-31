@@ -484,6 +484,7 @@
         <a href="#lessons">企业可借鉴点</a>
         <a href="#limits">成熟度边界</a>
         <a href="#strengths">Chromium 的优劣</a>
+        <a href="#hatchet-model">Hatchet DAG 与 Durable Task</a>
         <a href="#sources">官方来源</a>
       </nav>
     </aside>
@@ -773,9 +774,171 @@
         </div>
       </section>
 
+      <section id="hatchet-model" class="searchable">
+        <div class="section-heading">
+          <div class="section-kicker">13 / Hatchet Execution Models</div>
+          <h2>Hatchet DAG 与 Durable Task：动态性和恢复边界</h2>
+          <p>两者都能持久化任务状态，也都能在失败后恢复；真正的区别是：DAG 恢复一张提前定义的任务图，Durable Task 恢复一个运行时动态创建子任务的总控函数。</p>
+        </div>
+        <div class="callout"><strong>先记结论：</strong>“代码提前写好”不等于“执行路径固定”。DAG 的代码和图都提前定义；Durable Task 的总控代码也提前定义，但它本次运行究竟创建哪些 Child Task，要等运行时结果出来后才能确定。</div>
+        <div class="two-col">
+          <article class="panel blue">
+            <h3>静态代码</h3>
+            <p>下面的 <code>if</code> 和 <code>spawnChild</code> 调用都提前写在代码里。代码本身不会在运行时被 LLM 改写。</p>
+            <pre><span class="token-blue">const</span> result = <span class="token-green">await</span> runA();
+
+<span class="token-blue">if</span> (result.needMore) {
+  <span class="token-green">await</span> runB();
+}</pre>
+          </article>
+          <article class="panel yellow">
+            <h3>动态执行路径</h3>
+            <p>虽然代码固定，但 <code>result.needMore</code> 是运行时值，所以这次运行到底走 <code>A</code>，还是走 <code>A → B</code>，要到执行时才知道。</p>
+            <pre><span class="token-blue">运行 1</span>：A → 结束
+<span class="token-blue">运行 2</span>：A → B → 结束
+<span class="token-blue">运行 3</span>：A → B → C</pre>
+          </article>
+        </div>
+        <h3>1. DAG：节点提前存在，运行时选择执行哪些节点</h3>
+        <p>下面是概念代码，省略了具体 SDK 参数。DAG 定义时已经存在 <code>A</code>、<code>B</code>、<code>C</code> 以及它们的依赖；运行时只是根据 <code>A</code> 的输出跳过其中一个分支。</p>
+        <pre><span class="token-blue">const</span> workflow = hatchet.workflow({ name: <span class="token-yellow">"choose-path"</span> });
+
+<span class="token-blue">const</span> A = workflow.task({
+  name: <span class="token-yellow">"inspect-input"</span>,
+  fn: inspectInput,
+});
+
+<span class="token-blue">const</span> B = workflow.task({
+  name: <span class="token-yellow">"search-more"</span>,
+  parents: [A],
+  <span class="token-green">// 只有 A 的结果表示需要更多信息时才执行</span>
+  skipIf: <span class="token-yellow">"A.output.needMore == false"</span>,
+  fn: searchMore,
+});
+
+<span class="token-blue">const</span> C = workflow.task({
+  name: <span class="token-yellow">"generate-plan"</span>,
+  parents: [A],
+  <span class="token-green">// 需要更多信息时先跳过 C</span>
+  skipIf: <span class="token-yellow">"A.output.needMore == true"</span>,
+  fn: generatePlan,
+});</pre>
+        <div class="callout"><strong>DAG 的关键：</strong><code>B</code> 和 <code>C</code> 在 Workflow 定义时就已经存在。运行时可以执行、跳过或取消它们，但不会凭空创建一个定义中不存在的新节点。</div>
+        <h3>2. Durable Task：Parent 代码运行时创建 Child Task</h3>
+        <p>Durable Task 只有一个 Parent 编排函数，Parent 根据之前的 Child 结果决定下一步。下面同样是概念代码，重点是编排关系，不是某个 SDK 的精确方法名。</p>
+        <pre><span class="token-blue">async function</span> parent(input, ctx) {
+  <span class="token-blue">const</span> a = <span class="token-green">await</span> ctx.spawnChild(<span class="token-yellow">"inspect-input"</span>, input);
+
+  <span class="token-blue">if</span> (a.needMore) {
+    <span class="token-blue">const</span> b = <span class="token-green">await</span> ctx.spawnChild(
+      <span class="token-yellow">"search-more"</span>,
+      { input, reason: a.reason },
+    );
+
+    <span class="token-blue">if</span> (b.failed) {
+      <span class="token-blue">return</span> ctx.spawnChild(
+        <span class="token-yellow">"diagnose-search-failure"</span>,
+        { input, error: b.error },
+      );
+    }
+
+    <span class="token-blue">return</span> ctx.spawnChild(
+      <span class="token-yellow">"generate-plan"</span>,
+      { input, context: b },
+    );
+  }
+
+  <span class="token-blue">return</span> ctx.spawnChild(
+    <span class="token-yellow">"generate-plan"</span>,
+    { input, context: a },
+  );
+}</pre>
+        <p>这里的 <code>parent</code> 代码提前写好了，但 <code>search-more</code>、<code>diagnose-search-failure</code> 和第二种 <code>generate-plan</code> 是否被创建，取决于本次运行中前面 Child 的结果。</p>
+        <h3>3. 动态 fan-out：运行时才知道要创建多少个 Child</h3>
+        <p>这是静态 DAG 最难直接表达的场景。分析结果可能包含任意数量的文件，Parent 需要运行时为每个文件创建一个子任务。</p>
+        <pre><span class="token-blue">async function</span> reviewRepository(input, ctx) {
+  <span class="token-blue">const</span> analysis = <span class="token-green">await</span> ctx.spawnChild(
+    <span class="token-yellow">"analyze-codebase"</span>,
+    input,
+  );
+
+  <span class="token-green">// files.length 只有运行到这里才知道</span>
+  <span class="token-blue">const</span> reviews = <span class="token-green">await</span> ctx.spawnMany(
+    analysis.files.map(file =&gt; ({
+      name: <span class="token-yellow">"review-file"</span>,
+      input: { file },
+    })),
+  );
+
+  <span class="token-blue">return</span> summarizeReviews(reviews);
+}</pre>
+        <p>如果分析结果有 3 个文件，就创建 3 个 <code>review-file</code>；如果有 100 个文件，就创建 100 个。具体 Child Run 数量在 Workflow 定义时不存在，是运行时生成的。</p>
+        <h3>4. LLM 在哪里参与决定</h3>
+        <p>Durable Task 不要求使用 LLM；如果需要由 LLM 判断下一步，应把 LLM 调用放成一个可持久化的 Child Task，再让 Parent 使用已经记录的结果分支。</p>
+        <pre><span class="token-blue">async function</span> agentParent(input, ctx) {
+  <span class="token-blue">const</span> analysis = <span class="token-green">await</span> ctx.spawnChild(
+    <span class="token-yellow">"analyze-codebase"</span>,
+    input,
+  );
+
+  <span class="token-blue">const</span> decision = <span class="token-green">await</span> ctx.spawnChild(
+    <span class="token-yellow">"llm-decide-next-step"</span>,
+    { analysis },
+  );
+
+  <span class="token-blue">if</span> (decision.action === <span class="token-yellow">"search-more"</span>) {
+    <span class="token-blue">return</span> ctx.spawnChild(<span class="token-yellow">"search-more"</span>, { analysis });
+  }
+
+  <span class="token-blue">return</span> ctx.spawnChild(<span class="token-yellow">"generate-plan"</span>, { analysis });
+}</pre>
+        <div class="callout policy"><strong>重要：</strong>不是 Parent 函数直接随意调用 LLM 并把不可重放的结果用于控制流，而是把 LLM 决策本身作为 Child Task。这样 Engine 可以保存 <code>llm-decide-next-step</code> 的结果，恢复时重放原结果，而不是重新调用 LLM 得到另一个答案。</div>
+        <h3>5. 两者的恢复区别</h3>
+        <div class="two-col">
+          <article class="panel blue">
+            <h3>DAG 恢复</h3>
+            <pre>A: SUCCEEDED
+B: SUCCEEDED
+C: RUNNING
+D: PENDING
+
+恢复：
+重新调度 C
+A、B 不重跑
+D 等待 C</pre>
+            <p>Engine 读取固定 DAG 的节点状态、结果和依赖关系，找到尚未完成的节点继续执行。恢复单位主要是 DAG 节点。</p>
+          </article>
+          <article class="panel violet">
+            <h3>Durable Task 恢复</h3>
+            <pre>Parent started
+Child A completed
+Decision = search-more
+Child B completed
+Child C created
+
+恢复：
+重放 Parent
+A、B 返回历史结果
+继续等待或处理 C</pre>
+            <p>Engine 重放 Parent 的 Durable Event Log，跳过已经完成的 Child Run，恢复动态编排函数的进度。恢复单位是 Durable 操作和 Child Run 历史。</p>
+          </article>
+        </div>
+        <div class="callout warning"><strong>共同限制：</strong>DAG 和 Durable Task 都不是进程内存快照，也不会自动恢复到普通函数内部的任意一行。DAG 通常重试整个失败节点；Durable Task 只能在 Durable Child、Sleep、Event 等检查点之间重放。</div>
+        <table class="problem-table">
+          <thead><tr><th>问题</th><th>DAG</th><th>Durable Task</th></tr></thead>
+          <tbody>
+            <tr><td>流程是否提前画好</td><td>是，节点和依赖提前定义。</td><td>只提前定义 Parent；Child 可以运行时创建。</td></tr>
+            <tr><td>运行时分支</td><td>在已有节点中执行、跳过或取消。</td><td>可以决定是否创建新的 Child、创建多少个 Child 或继续循环。</td></tr>
+            <tr><td>谁推进流程</td><td>Engine 根据 DAG 依赖推进。</td><td>Parent 代码决定下一步，Engine 持久化并调度 Child。</td></tr>
+            <tr><td>恢复依据</td><td>节点状态、节点结果和固定依赖图。</td><td>Durable Event Log、Child Run 结果和 Parent 的可重放控制流。</td></tr>
+            <tr><td>适合的 Agent 场景</td><td>分析 → 计划 → 修改 → 测试 → Review 这种固定流水线。</td><td>Agent Loop、动态搜索、运行时 fan-out、反复修复和人工等待。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
       <section id="sources" class="searchable">
         <div class="section-heading">
-          <div class="section-kicker">13 / Primary Sources</div>
+          <div class="section-kicker">14 / Primary Sources</div>
           <h2>Chromium 官方源码入口</h2>
           <p>以下链接直接指向 Chromium Gitiles 或公开共享仓库，适合继续逐文件阅读。</p>
         </div>

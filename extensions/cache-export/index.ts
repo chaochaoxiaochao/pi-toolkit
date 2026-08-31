@@ -63,7 +63,10 @@ export default function (pi) {
   pi.registerCommand("cache_export", {
     description: "Export a tau-style interactive cache dashboard (hit-rate charts, per-request table, events)",
     handler: async (args, ctx) => {
-      const entries = ctx.sessionManager.getEntries();
+      const sessionManager = ctx.sessionManager;
+      const entries = typeof sessionManager.getBranch === "function"
+        ? sessionManager.getBranch()
+        : sessionManager.getEntries();
       if (!entries || entries.length === 0) {
         ctx.ui.notify("No session entries to analyze.", "error");
         return;
