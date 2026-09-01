@@ -1,3 +1,7 @@
+## 2026-09-01 - v0.1.0
+
+- initial release
+
 # Changelog
 
 ## 0.1.0
