@@ -68,6 +68,36 @@ pi install npm:@maxiaochao/pi-toolkit
 
 手动等价流程同样必须先更新版本和 CHANGELOG，再推送精确 tag；不要在本地执行 `npm publish`。
 
+### 独立 tiny subagent 包发布
+
+`packages/tiny-subagent` 是独立 npm 包 `@maxiaochao/pi-tiny-subagent`，不属于根包 `@maxiaochao/pi-toolkit` 的 `pi.extensions`，两个包分别安装和升级：
+
+```bash
+pi install npm:@maxiaochao/pi-toolkit
+pi install npm:@maxiaochao/pi-tiny-subagent
+```
+
+两套包使用独立版本号和 tag：
+
+| 包 | 版本来源 | 发布 tag | 发布 workflow |
+|---|---|---|---|
+| `@maxiaochao/pi-toolkit` | 根目录 `package.json` | `vX.Y.Z` | `.github/workflows/publish.yml` |
+| `@maxiaochao/pi-tiny-subagent` | `packages/tiny-subagent/package.json` | `tiny-subagent-vX.Y.Z` | `.github/workflows/publish-tiny-subagent.yml` |
+
+tiny 包首次发版（使用当前 `0.1.0` 版本）：
+```bash
+./scripts/release-tiny-subagent.sh initial "initial release"
+```
+
+后续发版：
+```bash
+./scripts/release-tiny-subagent.sh <patch|minor|major> "<changelog note>"
+```
+
+该脚本只运行 tiny 包测试和扩展加载检查，只修改 tiny 包版本及 CHANGELOG，并且只暂存 `packages/tiny-subagent`。它创建 `tiny-subagent-vX.Y.Z` tag 并推送；tag push 后由专用 GitHub Actions 校验版本、运行测试并执行 npm publish。不要用根目录 `scripts/release.sh` 发布 tiny 包，也不要在本地执行 `npm publish`。
+
+根包的 `vX.Y.Z` 发布流程不会触发 tiny 包 workflow；tiny 包的 `tiny-subagent-vX.Y.Z` 也不会触发根包 workflow。两个包可以共用仓库和 `NPM_TOKEN`，但 npm 版本号、发布 tag 和 CI 发布步骤彼此独立。
+
 ### 首次启用自动发布（一次性）
 
 1. npm 网页生成 token：`https://www.npmjs.com/settings/<你>/tokens` → Generate New Token → **Granular Access Token** → 勾 **Bypass 2FA** → 权限 Packages Read and write。

@@ -1,0 +1,30 @@
+name: publish tiny subagent
+
+on:
+  push:
+    tags:
+      - "tiny-subagent-v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org/
+          scope: ""
+      - name: Verify tag matches package version
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./packages/tiny-subagent/package.json').version")
+          test "$GITHUB_REF_NAME" = "tiny-subagent-v$PACKAGE_VERSION"
+      - name: Run tiny subagent tests
+        run: npm test --prefix packages/tiny-subagent
+      - name: Publish tiny subagent to npm
+        working-directory: packages/tiny-subagent
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
