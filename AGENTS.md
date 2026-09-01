@@ -15,27 +15,18 @@ pi-toolkit/
 │       ├── render.ts       # 聚合 + miss/streak 规则 + HTML 渲染（改逻辑在这里）
 │       ├── tau-assets.ts   # tau 原版 CSS/JS 资产（勿手改，重生成，见下）
 │       └── tests/          # 确定性测试（阈值边界、规则路径、退化输入）
-└── scripts/release.sh      # 一键发布（测试→版本→tag→推→publish）
+├── packages/tiny-subagent/  # 独立 npm 包：tiny_subagents Pi 扩展
+├── scripts/release.sh      # 根包一键发布（测试→版本→tag→推→publish）
+├── scripts/release-tiny-subagent.sh # tiny 包独立发布
+└── .github/workflows/      # 两个包各自的 npm 发布 workflow
 ```
 
 ## 开发规则
 
-- **改扩展逻辑**：改完必须跑 `npm test`（25 项确定性测试），再做 `npm run load-test`（`pi -e` 验证两个扩展能加载）。
+- **改扩展逻辑**：根扩展改完必须跑 `npm test`（根包确定性测试），再做 `npm run load-test`；tiny 包改完必须跑 `npm test --prefix packages/tiny-subagent`，再加载 `packages/tiny-subagent/extensions/tiny-subagent.ts`。
 - **不改 `tau-assets.ts`**：该文件从 `huggingface/tau` 的 `src/tau_coding/session_usage.py` 提取（USAGE_STYLES / USAGE_SCRIPT），保证与上游逐字节一致。需要更新时用提取脚本重生成，不要手改。
 - **别用 `.mjs` 放扩展代码**：pi 的 `/reload` 走 jiti（moduleCache:false），只对 `.ts/.js` 生效；`.mjs` 走 Node 原生 ESM 缓存，reload 刷不掉，会导致“改了不生效”。
 - 扩展依赖 pi 内置包时写进 `peerDependencies`（`@earendil-works/pi-*`、`typebox`），不要实装。
-
-## 安装部署（用户视角）
-
-```bash
-# 1) 全局扩展包（todo + cache_export，所有项目生效）
-pi install npm:@maxiaochao/pi-toolkit
-
-# 2) 全局 AGENTS（个人跨项目指令）
-（自动：包 postinstall 会同步 global/AGENTS.md -> ~/.pi/agent/AGENTS.md）
-# 改规则流程：改 global/AGENTS.md -> 发新版 -> pi update npm:@maxiaochao/pi-toolkit
-# （手动同步：bash scripts/install.sh）
-```
 
 **两层 AGENTS 的区别**
 
