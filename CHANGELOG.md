@@ -1,4 +1,9 @@
-## 2026-08-31 - v0.1.8
+## 2026-09-02 - v0.1.9
+
+- add the `/btw` side-chat extension
+- bundle the `nightowl` theme
+- select `nightowl` during npm postinstall only when no theme is configured
+
 
 - fix cache export branch attribution and update HTML artifact guidance
 
