@@ -1,0 +1,15 @@
+Web Browser Skill
+
+This directory is derived from the web-browser skill in:
+https://github.com/mitsuhiko/agent-stuff
+
+The upstream repository is licensed under Apache License 2.0. A copy of that
+license is included in LICENSE.
+
+Changes in pi-toolkit include configurable CDP host/port support, device
+emulation, screenshot improvements, and Chrome launch support for Linux and
+Windows Chrome under WSL.
+
+The upstream skill credits Mario Zechner for the original browser automation
+approach:
+https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/

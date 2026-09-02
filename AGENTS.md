@@ -6,15 +6,20 @@
 
 ```
 pi-toolkit/
-├── package.json            # pi manifest：pi.extensions 声明两个扩展入口
+├── package.json            # pi manifest：声明扩展、skills、themes 与运行依赖
 ├── global/AGENTS.md        # ★ 全局个人指令的权威源（见下方“全局 AGENTS 安装”）
 ├── extensions/
 │   ├── todo.ts             # /todos 扩展（来源于 ~/.pi/agent/extensions/todo.ts）
+│   ├── btw.ts              # /btw 独立侧聊会话
 │   └── cache-export/       # /cache_export 交互式缓存仪表盘
 │       ├── index.ts        # 入口：注册命令、输出路径、WSL 打开
 │       ├── render.ts       # 聚合 + miss/streak 规则 + HTML 渲染（改逻辑在这里）
 │       ├── tau-assets.ts   # tau 原版 CSS/JS 资产（勿手改，重生成，见下）
 │       └── tests/          # 确定性测试（阈值边界、规则路径、退化输入）
+├── skills/
+│   ├── html-artifact/     # 复杂说明的自包含 HTML artifact skill
+│   └── web-browser/       # Chrome/Chromium CDP 自动化（含 WSL Windows Chrome 支持）
+├── themes/nightowl.json   # 随包发布的 Night Owl 主题
 ├── packages/tiny-subagent/  # 独立 npm 包：tiny_subagents Pi 扩展
 ├── scripts/release.sh      # 根包一键发布（测试→版本→tag→推→publish）
 ├── scripts/release-tiny-subagent.sh # tiny 包独立发布
@@ -24,6 +29,9 @@ pi-toolkit/
 ## 开发规则
 
 - **改扩展逻辑**：根扩展改完必须跑 `npm test`（根包确定性测试），再做 `npm run load-test`；tiny 包改完必须跑 `npm test --prefix packages/tiny-subagent`，再加载 `packages/tiny-subagent/extensions/tiny-subagent.ts`。
+- **文档同步**：新增或变更用户可见功能时，必须同步检查 `README.md`、根 `AGENTS.md`、`CHANGELOG.md` 和 `package.json` manifest；提交前用 `rg` 搜索旧的功能清单、目录说明和版本信息，确认没有过时描述。
+- **改 skill**：先按目标 skill 的 `SKILL.md` 验证脚本；`web-browser` 至少要检查全部 `scripts/*.js` 语法、实际启动隔离浏览器、完成一次导航/求值，并用 `npm pack --dry-run` 确认 skill 文件进入 tarball。WSL 下应验证 Windows Chrome 自动发现和 PowerShell 启动路径。
+- **skill 运行依赖**：第三方依赖统一声明在根 `package.json` 的 `dependencies`，不要提交 skill 内的 `node_modules`；Pi 从 npm/git 安装包时会执行 `npm install`。Pi 内置包仍按下条规则放 `peerDependencies`。
 - **不改 `tau-assets.ts`**：该文件从 `huggingface/tau` 的 `src/tau_coding/session_usage.py` 提取（USAGE_STYLES / USAGE_SCRIPT），保证与上游逐字节一致。需要更新时用提取脚本重生成，不要手改。
 - **别用 `.mjs` 放扩展代码**：pi 的 `/reload` 走 jiti（moduleCache:false），只对 `.ts/.js` 生效；`.mjs` 走 Node 原生 ESM 缓存，reload 刷不掉，会导致“改了不生效”。
 - 扩展依赖 pi 内置包时写进 `peerDependencies`（`@earendil-works/pi-*`、`typebox`），不要实装。

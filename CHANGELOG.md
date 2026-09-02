@@ -1,3 +1,9 @@
+## 2026-09-02 - v0.2.0
+
+- bundle the Apache-2.0 `web-browser` skill for Chrome/Chromium CDP automation
+- auto-detect Linux/macOS browsers and Windows Chrome when running under WSL
+- include the skill's `ws` runtime dependency and document its release checks
+
 ## 2026-09-02 - v0.1.9
 
 - add the `/btw` side-chat extension

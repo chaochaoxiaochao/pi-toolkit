@@ -1,6 +1,6 @@
 # pi-toolkit
 
-Personal Pi toolkit with the `/todos`, `/btw`, and `/cache_export` extensions plus the bundled Night Owl theme.
+Personal Pi toolkit with the `/todos`, `/btw`, and `/cache_export` extensions, bundled agent skills including Chrome/Chromium automation, and the Night Owl theme.
 
 ## Install
 
@@ -10,7 +10,7 @@ Install the root package to enable the toolkit extensions globally:
 pi install npm:@maxiaochao/pi-toolkit
 ```
 
-The package also provides the `/btw` side-chat extension and the `nightowl` theme. On npm installation, the postinstall hook selects `nightowl` only when no theme has been configured yet; an existing Pi theme setting is preserved.
+The package also provides the `/btw` side-chat extension, the `web-browser` skill for Chrome/Chromium CDP automation, and the `nightowl` theme. On npm installation, the postinstall hook selects `nightowl` only when no theme has been configured yet; an existing Pi theme setting is preserved.
 
 The package postinstall hook synchronizes the bundled global instructions to:
 
@@ -41,6 +41,15 @@ bash scripts/install.sh
 The `/btw` side chat is a separate agent session. It can inspect the main conversation and repository, and its thread stays out of the main context until you close it and choose to inject a summary. Use `/btw` to open it or `/btw <question>` to ask directly.
 
 The bundled `nightowl` theme is available to Pi through the package manifest and is selected automatically on npm installation only when no theme is already configured.
+
+The bundled `web-browser` skill provides reusable scripts for starting Chrome/Chromium with remote debugging, navigating tabs, evaluating JavaScript, emulating devices, taking screenshots, dismissing cookie dialogs, and inspecting browser logs. It auto-detects common Chrome/Chromium installations on macOS and Linux, including Windows Chrome when Pi runs under WSL; set `BROWSER_BIN` when the binary is elsewhere.
+
+The browser skill can be loaded explicitly with `/skill:web-browser`. Its scripts are available relative to the skill directory, for example:
+
+```bash
+node skills/web-browser/scripts/start.js --headless
+node skills/web-browser/scripts/nav.js https://example.com
+```
 
 ## Tiny Subagent
 
