@@ -1,3 +1,8 @@
+## 2026-09-02 - v0.2.1
+
+- update global agent instructions for harness-native file editing
+- remove the HTML artifact output preference from the global instructions
+
 ## 2026-09-02 - v0.2.0
 
 - bundle the Apache-2.0 `web-browser` skill for Chrome/Chromium CDP automation
