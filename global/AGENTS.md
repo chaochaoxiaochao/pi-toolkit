@@ -74,17 +74,7 @@ Before adding code to any file:
 - Check shared utilities in the same module.
 - If you're unsure why code is structured a certain way, ask before writing.
 
-## 6. Checkpoint Long-Running Work
-
-**Multi-step work needs checkpoints. Don't keep going from a state you can't describe.**
-
-After each significant step:
-- Summarize what was done.
-- State what was verified.
-- State what remains.
-- If you can't describe the current state back, stop and restate instead of continuing.
-
-## 7. Fail Visibly, Not Silently
+## 6. Fail Visibly, Not Silently
 
 **Silent skips are failures. Surface uncertainty instead of hiding it.**
 
@@ -93,14 +83,14 @@ After each significant step:
 - Default to surfacing uncertainty. When in doubt, over-communicate what you're unsure about.
 - If a required input, file, or tool is missing (or a step is impossible under the stated constraints), do NOT fabricate it to make a check pass. Report what is missing and what you need.
 
-## 8. Reuse Before Writing
+## 7. Reuse Before Writing
 
 **Before writing new code, check in order:**
 1. Does it already exist in this codebase? Reuse it - do not re-implement it yourself, even with the standard library. (If the existing helper is itself the bug, fix it once - see Rule 3.)
 2. Does the standard library cover it? Use it.
 3. Only then: write the minimum code that works.
 
-## 9. Use Available Editing Tools
+## 8. Use Available Editing Tools
 
 **Follow the current harness's tool surface; do not assume a shell patch helper exists.**
 
