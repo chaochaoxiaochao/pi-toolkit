@@ -23,6 +23,7 @@ import {
 	type OverlayHandle,
 	type TUI,
 } from "@earendil-works/pi-tui";
+import { clampBtwScrollTop, getBtwPageScrollSize } from "./btw-scroll.ts";
 
 const BTW_ENTRY_TYPE = "btw-thread-entry";
 const BTW_RESET_TYPE = "btw-thread-reset";
@@ -59,6 +60,7 @@ type OverlayRuntime = {
 	close?: () => void;
 	finish?: () => void;
 	setDraft?: (value: string) => void;
+	scrollToEnd?: () => void;
 	closed?: boolean;
 };
 
@@ -201,6 +203,10 @@ class BtwOverlay extends Container implements Focusable {
 	private readonly getStatus: () => string;
 	private readonly onSubmitCallback: (value: string) => void;
 	private readonly onDismissCallback: () => void;
+	private transcriptScrollTop = 0;
+	private transcriptFollowingEnd = true;
+	private transcriptContentHeight = 0;
+	private transcriptViewportHeight = 0;
 	private _focused = false;
 
 	get focused(): boolean {
@@ -245,7 +251,63 @@ class BtwOverlay extends Container implements Focusable {
 			return;
 		}
 
+		if (this.keybindings.matches(data, "tui.select.up")) {
+			this.scrollTranscriptBy(-1);
+			return;
+		}
+
+		if (this.keybindings.matches(data, "tui.select.down")) {
+			this.scrollTranscriptBy(1);
+			return;
+		}
+
+		const pageSize = getBtwPageScrollSize(this.transcriptViewportHeight);
+		if (this.keybindings.matches(data, "tui.select.pageUp")) {
+			this.scrollTranscriptBy(-pageSize);
+			return;
+		}
+
+		if (this.keybindings.matches(data, "tui.select.pageDown")) {
+			this.scrollTranscriptBy(pageSize);
+			return;
+		}
+
 		this.input.handleInput(data);
+	}
+
+	private scrollTranscriptBy(lines: number): void {
+		const maxScrollTop = Math.max(0, this.transcriptContentHeight - this.transcriptViewportHeight);
+		const currentScrollTop = this.transcriptFollowingEnd
+			? maxScrollTop
+			: clampBtwScrollTop(this.transcriptScrollTop, this.transcriptContentHeight, this.transcriptViewportHeight);
+		const nextScrollTop = clampBtwScrollTop(
+			currentScrollTop + Math.trunc(lines),
+			this.transcriptContentHeight,
+			this.transcriptViewportHeight,
+		);
+		const nextFollowingEnd = nextScrollTop === maxScrollTop;
+		if (nextScrollTop === currentScrollTop && nextFollowingEnd === this.transcriptFollowingEnd) {
+			return;
+		}
+
+		this.transcriptScrollTop = nextScrollTop;
+		this.transcriptFollowingEnd = nextFollowingEnd;
+		this.tui.requestRender();
+	}
+
+	scrollTranscriptToEnd(): void {
+		const nextScrollTop = clampBtwScrollTop(
+			this.transcriptContentHeight,
+			this.transcriptContentHeight,
+			this.transcriptViewportHeight,
+		);
+		if (this.transcriptFollowingEnd && this.transcriptScrollTop === nextScrollTop) {
+			return;
+		}
+
+		this.transcriptScrollTop = nextScrollTop;
+		this.transcriptFollowingEnd = true;
+		this.tui.requestRender();
 	}
 
 	setDraft(value: string): void {
@@ -279,7 +341,19 @@ class BtwOverlay extends Container implements Focusable {
 
 		// Markdown renders to innerWidth already — no manual wrapping needed
 		const transcript = this.getTranscript(innerWidth, this.theme);
-		const visibleTranscript = transcript.slice(-transcriptHeight);
+		this.transcriptContentHeight = transcript.length;
+		this.transcriptViewportHeight = transcriptHeight;
+		const maxScrollTop = Math.max(0, this.transcriptContentHeight - this.transcriptViewportHeight);
+		if (this.transcriptFollowingEnd) {
+			this.transcriptScrollTop = maxScrollTop;
+		} else {
+			this.transcriptScrollTop = clampBtwScrollTop(
+				this.transcriptScrollTop,
+				this.transcriptContentHeight,
+				this.transcriptViewportHeight,
+			);
+		}
+		const visibleTranscript = transcript.slice(this.transcriptScrollTop, this.transcriptScrollTop + transcriptHeight);
 		const transcriptPadding = Math.max(0, transcriptHeight - visibleTranscript.length);
 
 		const status = this.getStatus();
@@ -308,7 +382,7 @@ class BtwOverlay extends Container implements Focusable {
 		lines.push(
 			`${this.theme.fg("borderMuted", "│")}${inputLine}${this.theme.fg("borderMuted", "│")}`,
 		);
-		lines.push(this.frameLine(this.theme.fg("dim", "Enter submit · Esc close"), innerWidth));
+		lines.push(this.frameLine(this.theme.fg("dim", "↑/↓ scroll · PgUp/PgDn page · Enter submit · Esc close"), innerWidth));
 		lines.push(this.borderLine(innerWidth, "bottom"));
 
 		return lines;
@@ -396,7 +470,7 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		const lines: string[] = [];
-		for (const item of thread.slice(-6)) {
+		for (const item of thread) {
 			// User message
 			const userText = item.question.trim().split("\n")[0];
 			lines.push(theme.fg("accent", theme.bold("You: ")) + truncateToWidth(userText, width - 5, "…"));
@@ -509,6 +583,7 @@ export default function (pi: ExtensionAPI) {
 		setOverlayDraft("");
 		setOverlayStatus("Ready");
 		await disposeSideSession();
+		overlayRuntime?.scrollToEnd?.();
 		if (persist) {
 			const details: BtwResetDetails = { timestamp: Date.now() };
 			pi.appendEntry(BTW_RESET_TYPE, details);
@@ -546,6 +621,7 @@ export default function (pi: ExtensionAPI) {
 			thread.push(details);
 		}
 
+		overlayRuntime?.scrollToEnd?.();
 		syncOverlay();
 	}
 
@@ -691,6 +767,7 @@ export default function (pi: ExtensionAPI) {
 					overlay.focused = true;
 					overlay.setDraft(overlayDraft);
 					runtime.setDraft = (value) => overlay.setDraft(value);
+					runtime.scrollToEnd = () => overlay.scrollTranscriptToEnd();
 					runtime.refresh = () => {
 						overlay.focused = runtime.handle?.isFocused() ?? false;
 						tui.requestRender();
@@ -836,6 +913,7 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 
+		overlayRuntime?.scrollToEnd?.();
 		const side = await ensureSideSession(ctx);
 		if (!side) {
 			notify(ctx, "Unable to create BTW side session.", "error");

@@ -38,7 +38,7 @@ To synchronize the file directly from a checkout instead:
 bash scripts/install.sh
 ```
 
-The `/btw` side chat is a separate agent session. It can inspect the main conversation and repository, and its thread stays out of the main context until you close it and choose to inject a summary. Use `/btw` to open it or `/btw <question>` to ask directly.
+The `/btw` side chat is a separate agent session. It can inspect the main conversation and repository, and its thread stays out of the main context until you close it and choose to inject a summary. Use `/btw` to open it or `/btw <question>` to ask directly. While the BTW overlay has focus, use `Up` / `Down` to scroll its transcript one line at a time and `PageUp` / `PageDown` to move by one transcript page.
 
 The bundled `nightowl` theme is available to Pi through the package manifest and is selected automatically on npm installation only when no theme is already configured.
 

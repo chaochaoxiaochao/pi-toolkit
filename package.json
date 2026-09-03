@@ -1,6 +1,6 @@
 {
   "name": "@maxiaochao/pi-toolkit",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Personal pi coding agent toolkit: /todos, /btw, /cache_export extensions, browser automation, and bundled theme/skills.",
   "type": "module",
   "keywords": [
@@ -43,7 +43,7 @@
     "ws": "^8.19.0"
   },
   "scripts": {
-    "test": "cd extensions/cache-export && node --experimental-strip-types tests/run-tests.mjs",
+    "test": "cd extensions/cache-export && node --experimental-strip-types tests/run-tests.mjs && node --experimental-strip-types ../tests/btw-history.mjs",
     "load-test": "pi -ne -e ./extensions/todo.ts && pi -ne -e ./extensions/cache-export/index.ts && pi -ne -e ./extensions/btw.ts",
     "eval:agents": "node evaluations/agents-md/run.mjs",
     "eval:agents:test": "node evaluations/agents-md/tests/run-tests.mjs",

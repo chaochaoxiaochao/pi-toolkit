@@ -11,6 +11,8 @@ pi-toolkit/
 ├── extensions/
 │   ├── todo.ts             # /todos 扩展（来源于 ~/.pi/agent/extensions/todo.ts）
 │   ├── btw.ts              # /btw 独立侧聊会话
+│   ├── btw-scroll.ts       # BTW transcript 滚动边界与分页步长纯逻辑
+│   ├── tests/              # BTW 等根扩展的轻量确定性测试
 │   └── cache-export/       # /cache_export 交互式缓存仪表盘
 │       ├── index.ts        # 入口：注册命令、输出路径、WSL 打开
 │       ├── render.ts       # 聚合 + miss/streak 规则 + HTML 渲染（改逻辑在这里）

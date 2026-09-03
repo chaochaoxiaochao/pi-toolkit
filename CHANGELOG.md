@@ -1,3 +1,7 @@
+## 2026-09-03 - v0.2.2
+
+- let the focused `/btw` overlay scroll its full transcript with Up/Down and PageUp/PageDown
+
 ## 2026-09-02 - v0.2.1
 
 - update global agent instructions for harness-native file editing
