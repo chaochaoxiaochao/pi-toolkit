@@ -1,0 +1,33 @@
+name: publish codex edit
+
+on:
+  push:
+    tags:
+      - "codex-edit-v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org/
+          scope: ""
+      - name: Verify tag matches package version
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./packages/codex-edit/package.json').version")
+          test "$GITHUB_REF_NAME" = "codex-edit-v$PACKAGE_VERSION"
+      - name: Run package tests
+        run: npm test --prefix packages/codex-edit
+      - name: Verify package contents
+        working-directory: packages/codex-edit
+        run: npm pack --dry-run
+      - name: Publish codex edit to npm
+        working-directory: packages/codex-edit
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

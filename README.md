@@ -68,6 +68,22 @@ pi update npm:@maxiaochao/pi-tiny-subagent
 
 See [packages/tiny-subagent/README.md](packages/tiny-subagent/README.md) for personas, model selection, child isolation, live transcript rendering, and diagnostics.
 
+## Codex Edit
+
+The Codex edit package is a separate npm package. Install it when you want GPT/Codex models to use the freeform `apply_patch` protocol while other models keep Pi's native `edit` tool:
+
+```bash
+pi install npm:@maxiaochao/pi-codex-edit
+```
+
+It includes the extension implementation plus the benchmark summary and interactive architecture explainer. Its versions, release workflow, and tag are independent from the root package and tiny subagent:
+
+```bash
+pi update npm:@maxiaochao/pi-codex-edit
+```
+
+See [packages/codex-edit/README.md](packages/codex-edit/README.md) for the routing rules and [packages/codex-edit/summary.md](packages/codex-edit/summary.md) for the measured tradeoffs.
+
 ## Development
 
 Repository development and release rules are documented in [AGENTS.md](AGENTS.md).
