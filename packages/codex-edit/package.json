@@ -1,6 +1,6 @@
 {
   "name": "@maxiaochao/pi-codex-edit",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Pi extension that exposes Codex-style apply_patch for GPT/Codex models with model-aware edit fallback.",
   "type": "module",
   "keywords": [

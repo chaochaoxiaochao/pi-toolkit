@@ -1,3 +1,7 @@
+## 2026-09-04 - v0.1.3
+
+- correct Luna timing analysis to count only completed correct runs
+
 ## 2026-09-04 - v0.1.2
 
 - default to validated Sol routing and document Luna High benchmark variance

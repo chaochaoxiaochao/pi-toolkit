@@ -233,7 +233,7 @@ footer { max-width: 1180px; margin: 0 auto; padding: 0 26px 54px; color: var(--m
     { "provider": "pudu-openai-proxy", "model": "gpt-5.6-luna" }
   ]
 }</pre></div>
-      <p>Luna High 的 20-case 结果显示正确率小幅改善，但完整组出现代理长尾超时；4-case 交叉复测中 apply_patch 有 3 例更快。因此 Luna 可以显式加入 allowlist，但当前不作为默认。</p>
+      <p>Luna High 的完整测试中，按“正常结束且最终文件树正确”统计：edit 为 15/20、中位 24.0s；apply_patch 为 11/20、中位 49.9s。两者都正确完成的 10 个配对样本中，apply_patch 中位慢 26.9s。4-case 交叉复测虽有 3 例更快，但不足以抵消完整组的长尾，因此 Luna 当前不默认启用。</p>
     </div>
     <div class="tab-panel" id="config-route" role="tabpanel" aria-labelledby="tab-route">
       <div class="code-wrap"><button class="copy" data-copy="route-rule">复制</button><pre id="route-rule">model = ctx.model
@@ -278,7 +278,7 @@ else:
     </table>
     <div class="panel" style="margin-top:18px">
       <div class="status"><i></i>最终判断：候选实现保留，默认自动启用暂不打开</div>
-      <p>因为公平场景下最终正确率相同，调用数和 turns 相同，token 基本持平，耗时只改善 4.5%。更准确的表达是：apply_patch 对 GPT-5.6 的“工具协议适配”有明确收益，但尚未证明它能显著提升整个任务的效率。</p>
+      <p>这里的耗时只统计正常结束且最终文件树完全正确的 run；达到 180s 的 runner 上限的样本单独归为未完成，不混入正确 run 的耗时。完整组的未完成率仍单独报告。</p>
     </div>
   </section>
 
