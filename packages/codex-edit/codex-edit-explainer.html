@@ -233,7 +233,7 @@ footer { max-width: 1180px; margin: 0 auto; padding: 0 26px 54px; color: var(--m
     { "provider": "pudu-openai-proxy", "model": "gpt-5.6-luna" }
   ]
 }</pre></div>
-      <p>Luna High 的完整测试中，按“正常结束且最终文件树正确”统计：edit 为 15/20、中位 24.0s；apply_patch 为 11/20、中位 49.9s。两者都正确完成的 10 个配对样本中，apply_patch 中位慢 26.9s。4-case 交叉复测虽有 3 例更快，但不足以抵消完整组的长尾，因此 Luna 当前不默认启用。</p>
+      <p>Luna High 的有效重测中，两组都 20/20 正常结束，最终正确率都是 18/20；首次编辑成功率为 edit 90%、apply_patch 100%。按 17 个两组都正确的配对样本，apply_patch 中位总耗时多 2.3s；按全部 20 个配对样本，中位多 1.2s，9 例更快、11 例更慢。因此 Luna 有协议适配收益，但没有稳定的总耗时优势，当前不默认启用。</p>
     </div>
     <div class="tab-panel" id="config-route" role="tabpanel" aria-labelledby="tab-route">
       <div class="code-wrap"><button class="copy" data-copy="route-rule">复制</button><pre id="route-rule">model = ctx.model
@@ -278,7 +278,7 @@ else:
     </table>
     <div class="panel" style="margin-top:18px">
       <div class="status"><i></i>最终判断：候选实现保留，默认自动启用暂不打开</div>
-      <p>这里的耗时只统计正常结束且最终文件树完全正确的 run；达到 180s 的 runner 上限的样本单独归为未完成，不混入正确 run 的耗时。完整组的未完成率仍单独报告。</p>
+      <p>本页的耗时比较优先使用同一 fixture 的配对差值，避免两组成功样本构成不同造成中位数偏差。runner 的 180s 进程上限是删失边界，不是 API timeout；本次有效 Luna 重测没有触发该上限。</p>
     </div>
   </section>
 

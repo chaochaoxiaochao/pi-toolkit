@@ -1,3 +1,7 @@
+## 2026-09-04 - v0.1.4
+
+- update Luna High rerun statistics and paired timing methodology
+
 ## 2026-09-04 - v0.1.3
 
 - correct Luna timing analysis to count only completed correct runs
