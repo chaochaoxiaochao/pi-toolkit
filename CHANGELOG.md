@@ -51,7 +51,10 @@
 
 - tbd
 
-# Changelog
+## Unreleased
+
+- add the independent `@maxiaochao/pi-codex-edit` package with model-aware Codex-style `apply_patch`
+- include the benchmark summary and interactive HTML architecture explainer
 
 ## 2026-08-18 - v0.1.0
 
