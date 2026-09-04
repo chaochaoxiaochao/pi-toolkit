@@ -1,3 +1,7 @@
+## 2026-09-04 - v0.1.2
+
+- default to validated Sol routing and document Luna High benchmark variance
+
 ## 2026-09-04 - v0.1.1
 
 - fix package config discovery so GPT/Codex model routing activates apply_patch

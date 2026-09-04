@@ -210,19 +210,17 @@ footer { max-width: 1180px; margin: 0 auto; padding: 0 26px 54px; color: var(--m
   </section>
 
   <section class="section" id="config">
-    <div class="section-head"><div><div class="eyebrow">Configuration</div><h2>当前配置与推荐配置</h2></div><p class="section-note">候选扩展现在关闭；下面是它启用时的模型选择规则。</p></div>
+    <div class="section-head"><div><div class="eyebrow">Configuration</div><h2>当前配置与可选扩展</h2></div><p class="section-note">默认只为已稳定验证的 Sol High 启用；Luna 的性能结果存在长尾波动，需要显式 opt-in。</p></div>
     <div class="tabs" role="tablist" aria-label="配置视图">
       <button class="tab" role="tab" aria-selected="true" aria-controls="config-current" id="tab-current">当前实际配置</button>
-      <button class="tab" role="tab" aria-selected="false" aria-controls="config-recommended" id="tab-recommended">推荐启用配置</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="config-recommended" id="tab-recommended">Luna 显式启用</button>
       <button class="tab" role="tab" aria-selected="false" aria-controls="config-route" id="tab-route">路由规则</button>
     </div>
     <div class="tab-panel active" id="config-current" role="tabpanel" aria-labelledby="tab-current">
       <div class="code-wrap"><button class="copy" data-copy="current-config">复制</button><pre id="current-config">{
-  "enabled": false,
+  "enabled": true,
   "models": [
-    { "provider": "pudu-openai-proxy", "model": "gpt-5.6-*" },
-    { "provider": "openai-codex", "model": "gpt-5*" },
-    { "provider": "openai", "model": "gpt-5*" }
+    { "provider": "pudu-openai-proxy", "model": "gpt-5.6-sol" }
   ]
 }</pre></div>
       <div class="callout">models.json 中的 provider API key 不在页面展示。建议使用环境变量或 Pi auth 存储，并轮换已经出现在配置文件中的 key。</div>
@@ -231,12 +229,11 @@ footer { max-width: 1180px; margin: 0 auto; padding: 0 26px 54px; color: var(--m
       <div class="code-wrap"><button class="copy" data-copy="recommended-config">复制</button><pre id="recommended-config">{
   "enabled": true,
   "models": [
-    { "provider": "pudu-openai-proxy", "model": "gpt-5.6-*" },
-    { "provider": "openai-codex", "model": "gpt-5*" },
-    { "provider": "openai", "model": "gpt-5*" }
+    { "provider": "pudu-openai-proxy", "model": "gpt-5.6-sol" },
+    { "provider": "pudu-openai-proxy", "model": "gpt-5.6-luna" }
   ]
 }</pre></div>
-      <p>启用后，扩展只对 allowlist 中、且 <code>api</code> 为 Responses、同时 <code>compat.supportsOpenAIGrammarTools === true</code> 的模型启用 <code>apply_patch</code>。其他模型仍使用 Pi 原生 <code>edit</code>。</p>
+      <p>Luna High 的 20-case 结果显示正确率小幅改善，但完整组出现代理长尾超时；4-case 交叉复测中 apply_patch 有 3 例更快。因此 Luna 可以显式加入 allowlist，但当前不作为默认。</p>
     </div>
     <div class="tab-panel" id="config-route" role="tabpanel" aria-labelledby="tab-route">
       <div class="code-wrap"><button class="copy" data-copy="route-rule">复制</button><pre id="route-rule">model = ctx.model

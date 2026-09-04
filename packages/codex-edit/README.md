@@ -13,6 +13,8 @@ The package registers `apply_patch` and selects the editing tool from the resolv
 - GPT/Codex model with OpenAI grammar support: `apply_patch`
 - Other models: Pi's native `edit`
 
+The default allowlist currently enables `pudu-openai-proxy/gpt-5.6-sol` only. Luna and Terra can be added after separate validation by editing the package `config.json`.
+
 The package does not add a permanent AGENTS rule telling models not to use `apply_patch`. Only the selected editor tool is active, so the model receives one editing protocol.
 
 ## What `apply_patch` does
@@ -30,7 +32,7 @@ Before writing, it parses the complete patch, resolves paths, rejects workspace 
 
 ## Configuration
 
-The package defaults to the GPT/Codex model allowlist in `config.json`. The route additionally requires:
+The package defaults to the GPT/Codex model allowlist in `config.json`. The currently validated default is `pudu-openai-proxy/gpt-5.6-sol`; Luna and Terra are not enabled by default. The route additionally requires:
 
 ```text
 model.api = openai-responses or openai-codex-responses

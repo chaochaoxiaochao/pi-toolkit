@@ -10,5 +10,6 @@ test("package config is next to the extension parent directory", async () => {
   assert.match(source, /new URL\("\.\.\/config\.json", import\.meta\.url\)/);
   const config = JSON.parse(await readFile(join(packageDir, "config.json"), "utf8"));
   assert.equal(config.enabled, true);
-  assert.ok(config.models.some((model) => model.model === "gpt-5.6-*"));
+  assert.ok(config.models.some((model) => model.provider === "pudu-openai-proxy" && model.model === "gpt-5.6-sol"));
+  assert.equal(config.models.length, 1);
 });
