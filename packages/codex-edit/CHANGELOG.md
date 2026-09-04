@@ -1,3 +1,7 @@
+## 2026-09-04 - v0.1.1
+
+- fix package config discovery so GPT/Codex model routing activates apply_patch
+
 ## 2026-09-04 - v0.1.0
 
 - initial release of the Codex-style apply_patch Pi extension and docs

@@ -16,7 +16,7 @@ import {
 } from "../src/parser.ts";
 
 const editorToolNames = new Set(["edit", "apply_patch"]);
-const settingsUrl = new URL("./config.json", import.meta.url);
+const settingsUrl = new URL("../config.json", import.meta.url);
 
 async function loadSettings() {
   try {
