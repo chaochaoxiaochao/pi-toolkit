@@ -61,7 +61,7 @@ function defaultOutputPath(ctx) {
 
 export default function (pi) {
   pi.registerCommand("cache_export", {
-    description: "Export a tau-style interactive cache dashboard (hit-rate charts, per-request table, events)",
+    description: "Export an interactive cache dashboard (latest Context segment by default, all-history switch, per-request charts)",
     handler: async (args, ctx) => {
       const sessionManager = ctx.sessionManager;
       const entries = typeof sessionManager.getBranch === "function"

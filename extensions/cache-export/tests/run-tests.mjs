@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import registerCacheExport from "../index.ts";
-import { parseEntries, analyzeStreaks, analyzeMisses, lineChartForTest } from "../render.ts";
+import { parseEntries, analyzeStreaks, analyzeMisses, buildContextSegments, lineChartForTest, renderDashboard } from "../render.ts";
 
 let pass = 0, fail = 0;
 function check(name, cond, detail = "") {
@@ -316,6 +316,28 @@ const hitOf = (r) => r.cached / (r.fresh + r.cached + r.cacheWrite);
   const s = analyzeStreaks(d.requests, d.events);
   check("P compaction splits streaks into 3 + 3",
     s.length === 2 && s.every((x) => x.hits.length === 3), JSON.stringify(s.map((x) => [x.from, x.to])));
+}
+
+// P2. Context segments are compaction-only; models reset cache windows -----
+{
+  const entries = [
+    req({ cached: 90000, fresh: 10000, min: 1, model: "a" }),
+    { type: "model_change", timestamp: "2026-01-01T00:01:30Z", provider: "p", modelId: "b" },
+    req({ cached: 0, fresh: 100000, min: 2, model: "b" }),
+    { type: "compaction", timestamp: "2026-01-01T00:02:30Z" },
+    req({ cached: 0, fresh: 20000, min: 3, model: "b" }),
+  ];
+  const d = parseEntries(entries);
+  const segments = buildContextSegments(d.requests, d.events);
+  check("P2 model switch does not create a Context segment",
+    segments.length === 2 && segments[0].requests.length === 2 && segments[1].requests.length === 1,
+    JSON.stringify(segments.map((segment) => segment.requests.map((request) => request.number))));
+  const chart = lineChartForTest("segmented", [["cached", [10, 20, 30]]], { breakBefore: new Set([2]) });
+  check("P2 compaction chart boundary breaks the polyline", (chart.match(/<polyline /g) || []).length === 2, chart);
+  const dashboard = renderDashboard(d);
+  check("P2 dashboard defaults to latest segment and keeps an all-history view",
+    dashboard.includes('value="all"') && dashboard.includes('value="segment-2" selected') && dashboard.includes('data-context-view="all" hidden'),
+    dashboard.slice(0, 500));
 }
 
 // Q. subagent results remain visible as main-session tool input -----------

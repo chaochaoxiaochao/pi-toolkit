@@ -1,3 +1,7 @@
+## 2026-09-08 - v0.2.3
+
+- add cache export Context segment views
+
 ## 2026-09-03 - v0.2.2
 
 - let the focused `/btw` overlay scroll its full transcript with Up/Down and PageUp/PageDown
@@ -53,6 +57,7 @@
 
 ## Unreleased
 
+- let `/cache_export` switch between all history and individual compaction-defined Context segments, defaulting to the latest segment; cache-hit cumulative lines reset at compaction or model boundaries
 - add the independent `@maxiaochao/pi-codex-edit` package with model-aware Codex-style `apply_patch`
 - include the benchmark summary and interactive HTML architecture explainer
 

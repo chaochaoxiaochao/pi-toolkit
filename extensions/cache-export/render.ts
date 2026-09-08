@@ -71,10 +71,12 @@ export function parseEntries(entries) {
     }
 
     // pi stores tool calls inside assistant content blocks
+    const calledTools = [];
     for (const blk of m.content || []) {
       if (blk && typeof blk === "object" && blk.type === "toolCall") {
         const name = blk.tool || blk.name || "?";
         toolCounts[name] = (toolCounts[name] || 0) + 1;
+        calledTools.push(name);
       }
     }
 
@@ -129,6 +131,7 @@ export function parseEntries(entries) {
       stopReason: m.stopReason || "",
       estimatedCost: cost,
       gapTools,
+      calledTools,
       prevOutput: requests.length ? requests[requests.length - 1].output : 0,
     });
     gapTools = [];
@@ -184,11 +187,12 @@ const fmtPct1 = (x) => (x * 100).toFixed(1) + "%";
 // ---------------------------------------------------------------------------
 
 function lineChart(title, series, opts = {}) {
-  const { yMax = null, percent = false, timestamps = null, events = [] } = opts;
+  const { yMax = null, percent = false, timestamps = null, events = [], breakBefore = [], requestNumbers = null } = opts;
   const width = 900, height = 330, left = 68, right = 20, top = 42, bottom = 52;
   const plotWidth = width - left - right, plotHeight = height - top - bottom;
   const count = Math.max(0, ...series.map(([, v]) => v.length));
-  const observedMax = Math.max(0, ...series.map(([, v]) => Math.max(0, ...v)));
+  const observedMax = Math.max(0, ...series.flatMap(([, values]) => values.filter(Number.isFinite)));
+  const breaks = new Set(breakBefore);
   let maximum = yMax || Math.max(observedMax, 1);
   if (!percent) {
     const magnitude = 10 ** Math.max(0, String(Math.trunc(maximum)).length - 1);
@@ -217,7 +221,7 @@ function lineChart(title, series, opts = {}) {
   for (let index = 0; index < count; index++) {
     if (count <= 20 || index % Math.max(1, Math.trunc(count / 12)) === 0 || index === count - 1) {
       const [x] = point(index, 0);
-      parts.push(`<text class="tick" x="${x.toFixed(1)}" y="${height - 22}" text-anchor="middle">${index + 1}</text>`);
+      parts.push(`<text class="tick" x="${x.toFixed(1)}" y="${height - 22}" text-anchor="middle">${requestNumbers?.[index] ?? index + 1}</text>`);
     }
   }
   parts.push(
@@ -240,11 +244,23 @@ function lineChart(title, series, opts = {}) {
     });
   series.forEach(([name, values], seriesIndex) => {
     const [dark, light] = seriesColor(name);
-    const points = values.map((value, i) => point(i, value).map((c) => c.toFixed(1)).join(",")).join(" ");
-    const labels = values.map((v) => (percent ? `${(v * 100).toFixed(1)}%` : fmtInt(Math.trunc(v)))).join("|");
+    const runs = [];
+    let run = [];
+    values.forEach((value, i) => {
+      if (breaks.has(i) || !Number.isFinite(value)) {
+        if (run.length) runs.push(run);
+        run = [];
+      }
+      if (Number.isFinite(value)) run.push(point(i, value).map((c) => c.toFixed(1)).join(","));
+    });
+    if (run.length) runs.push(run);
+    const polylines = runs.map((points) =>
+      `<polyline class="series-line" data-dark="${dark}" data-light="${light}" points="${points.join(" ")}" fill="none" stroke="${dark}" stroke-width="3"/>`,
+    ).join("");
+    const labels = values.map((v) => !Number.isFinite(v) ? "N/A" : (percent ? `${(v * 100).toFixed(1)}%` : fmtInt(Math.trunc(v)))).join("|");
     parts.push(
       `<g class="series" data-series-id="${seriesIndex}" data-name="${esc(name, true)}" data-labels="${esc(labels, true)}">` +
-        `<polyline class="series-line" data-dark="${dark}" data-light="${light}" points="${points}" fill="none" stroke="${dark}" stroke-width="3"/>` +
+        polylines +
         `<circle class="hover-point" data-dark="${dark}" data-light="${light}" r="5" fill="${dark}" visibility="hidden"/></g>`,
     );
   });
@@ -488,60 +504,121 @@ function renderMissPanel(miss) {
 // render_usage_dashboard port
 // ---------------------------------------------------------------------------
 
-export function renderDashboard(data) {
-  const { requests, events, toolCalls, compactions } = data;
-  if (!requests.length) {
-    return `<p class="empty">No assistant responses with token usage were found in this session.</p>`;
+export function buildContextSegments(requests, events) {
+  const starts = new Set(events
+    .filter((event) => event.kind === "compaction" && event.requestNumber >= 1 && event.requestNumber <= requests.length)
+    .map((event) => event.requestNumber));
+  const segments = [];
+  let start = 0;
+  for (let index = 1; index < requests.length; index++) {
+    if (!starts.has(requests[index].number)) continue;
+    segments.push({ number: segments.length + 1, requests: requests.slice(start, index) });
+    start = index;
   }
+  segments.push({ number: segments.length + 1, requests: requests.slice(start) });
+  return segments;
+}
 
+function countToolCalls(requests) {
+  const counts = new Map();
+  for (const request of requests) {
+    for (const name of request.calledTools || []) counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+function eventsForRequests(events, requests) {
+  if (!requests.length) return [];
+  const from = requests[0].number;
+  const to = requests[requests.length - 1].number;
+  return events.filter((event) => event.requestNumber >= from && event.requestNumber <= to);
+}
+
+function chartEvents(events, requests) {
+  if (!requests.length) return [];
+  const first = requests[0].number;
+  return events.map((event) => ({ ...event, requestNumber: event.requestNumber - first + 1 }));
+}
+
+function renderDashboardView(requests, events, toolCalls, compactions, scopeLabel) {
   const timestamps = requests.map((r) => r.timestamp);
+  const requestNumbers = requests.map((r) => r.number);
   const cached = requests.map((r) => r.cached);
   const cacheWrites = requests.map((r) => r.cacheWrite);
   const fresh = requests.map((r) => r.fresh);
   const outputs = requests.map((r) => r.output);
   const reasoning = requests.map((r) => r.reasoning);
   const rates = requests.map((r) => (r.fresh + r.cached + r.cacheWrite > 0 ? r.cached / (r.fresh + r.cached + r.cacheWrite) : 0));
+  const contextBreakBefore = new Set();
+  const cacheBreakBefore = new Set();
+  const resetBefore = new Set(events
+    .filter((event) => event.kind === "compaction" || event.kind === "model")
+    .map((event) => event.requestNumber));
   const cumulativeRates = [];
   let runCached = 0, runPrompt = 0;
-  for (const r of requests) {
+  let previousKey = null;
+  let cacheWindows = 1;
+  let currentWindowStart = 0;
+  for (let index = 0; index < requests.length; index++) {
+    const r = requests[index];
+    const key = `${r.provider}/${r.model}`;
+    const contextReset = index > 0 && events.some((event) => event.kind === "compaction" && event.requestNumber === r.number);
+    const cacheReset = index > 0 && (resetBefore.has(r.number) || (previousKey !== null && key !== previousKey));
+    if (contextReset) contextBreakBefore.add(index);
+    if (cacheReset) {
+      cacheBreakBefore.add(index);
+      cacheWindows += 1;
+      currentWindowStart = index;
+      runCached = 0;
+      runPrompt = 0;
+    }
     runCached += r.cached;
     runPrompt += r.fresh + r.cached + r.cacheWrite;
     cumulativeRates.push(runPrompt > 0 ? runCached / runPrompt : 0);
+    previousKey = key;
   }
 
   const tot = (f) => requests.reduce((s, r) => s + f(r), 0);
   const totalFresh = tot((r) => r.fresh), totalCached = tot((r) => r.cached),
     totalWrite = tot((r) => r.cacheWrite), totalPrompt = totalFresh + totalCached + totalWrite,
     totalOutput = tot((r) => r.output);
-
   const cacheHitRate = totalPrompt > 0 && (totalCached > 0 || totalWrite > 0) ? totalCached / totalPrompt : null;
+  const windowRequests = requests.slice(currentWindowStart);
+  const windowPrompt = windowRequests.reduce((sum, r) => sum + r.fresh + r.cached + r.cacheWrite, 0);
+  const windowCached = windowRequests.reduce((sum, r) => sum + r.cached, 0);
+  const windowHitRate = windowPrompt > 0 && (windowCached > 0 || windowRequests.some((r) => r.cacheWrite > 0))
+    ? windowCached / windowPrompt
+    : null;
 
   const cards = [
+    ["Scope", scopeLabel],
     ["Model requests", fmtInt(requests.length)],
-    ["Cache hit rate", cacheHitRate !== null ? fmtPct1(cacheHitRate) : "N/A"],
+    ["View cache hit rate", cacheHitRate !== null ? fmtPct1(cacheHitRate) : "N/A"],
+    ["Latest cache window", `#${cacheWindows} · ${windowHitRate !== null ? fmtPct1(windowHitRate) : "N/A"}`],
     ["Cached input", fmtInt(totalCached)],
     ["Reported cache writes", fmtInt(totalWrite)],
     ["Fresh input", fmtInt(totalFresh)],
     ["Total prompt input", fmtInt(totalPrompt)],
     ["Output tokens", fmtInt(totalOutput)],
-    ["Compactions", String(compactions)],
+    ["Compactions in view", String(compactions)],
   ];
   const cardsHtml = cards
     .map(([l, v]) => `<div class="usage-card"><span>${esc(l)}</span><strong>${esc(v)}</strong></div>`)
     .join("");
 
+  const eventMarkers = chartEvents(events, requests);
   const charts = [
     figure(lineChart("Prompt input by request",
       [["cached", cached], ["cache writes", cacheWrites], ["fresh", fresh]],
-      { timestamps, events })),
+      { timestamps, requestNumbers, events: eventMarkers, breakBefore: contextBreakBefore })),
   ];
   if (cacheHitRate !== null) {
     charts.push(figure(lineChart("Cache hit rate",
       [["request", rates], ["cumulative", cumulativeRates]],
-      { yMax: 1.0, percent: true, timestamps })));
+      { yMax: 1.0, percent: true, timestamps, requestNumbers, events: eventMarkers, breakBefore: cacheBreakBefore })));
   }
   charts.push(figure(lineChart("Output and reasoning tokens",
-    [["output", outputs], ["reasoning", reasoning]], { timestamps })));
+    [["output", outputs], ["reasoning", reasoning]], { timestamps, requestNumbers, events: eventMarkers, breakBefore: contextBreakBefore })));
 
   const showHit = cacheHitRate !== null;
   const rows = requests
@@ -561,9 +638,8 @@ export function renderDashboard(data) {
 
   return (
     `<div class="usage-cards">${cardsHtml}</div>` +
-    `<p class="usage-note">Hover a request for exact values, ` +
-    `select a legend item to hide a series, and use PNG to save a chart. Event markers show ` +
-    `compactions, model or thinking changes. Some providers report cache reads but not cache writes.</p>` +
+    `<p class="usage-note">Prompt and output lines break at a Context segment boundary (compaction). Cache-window cumulative hit rate also resets at a model change. ` +
+    `TTL and service interruptions are shown only when recorded or inferred by the miss analysis; they do not create a Context segment.</p>` +
     `<div class="usage-charts">${charts.join("")}</div>` +
     renderMissPanel(analyzeMisses(requests, events)) +
     renderStreakPanel(analyzeStreaks(requests, events)) +
@@ -575,6 +651,46 @@ export function renderDashboard(data) {
     `<div class="usage-panel"><h2>Tool calls</h2>${toolRows}</div>` +
     `</div><div class="usage-tooltip" role="status" aria-live="polite"></div>`
   );
+}
+
+export function renderDashboard(data) {
+  const { requests, events, toolCalls, compactions } = data;
+  if (!requests.length) {
+    return `<p class="empty">No assistant responses with token usage were found in this session.</p>`;
+  }
+
+  const segments = buildContextSegments(requests, events);
+  const latest = segments[segments.length - 1];
+  const allView = renderDashboardView(requests, events, toolCalls, compactions, `All ${segments.length} context segment${segments.length === 1 ? "" : "s"}`);
+  const segmentViews = segments.map((segment) => {
+    const segmentEvents = eventsForRequests(events, segment.requests);
+    const startsWithCompaction = segmentEvents.some((event) => event.kind === "compaction" && event.requestNumber === segment.requests[0].number);
+    const label = `Context segment ${segment.number}${segment.number === latest.number ? " (latest)" : ""}`;
+    return {
+      id: `segment-${segment.number}`,
+      label,
+      html: renderDashboardView(
+        segment.requests,
+        segmentEvents,
+        countToolCalls(segment.requests),
+        startsWithCompaction ? 1 : 0,
+        label,
+      ),
+    };
+  });
+  const options = [
+    `<option value="all">All context segments</option>`,
+    ...segmentViews.map((view) => `<option value="${view.id}"${view.id === `segment-${latest.number}` ? " selected" : ""}>${esc(view.label)}</option>`),
+  ].join("");
+  const views = [
+    `<section class="usage-context-view" data-context-view="all" hidden>${allView}</section>`,
+    ...segmentViews.map((view) => `<section class="usage-context-view" data-context-view="${view.id}"${view.id === `segment-${latest.number}` ? "" : " hidden"}>${view.html}</section>`),
+  ].join("");
+
+  return `<div class="usage-view-controls"><label for="context-segment-select">View</label>` +
+    `<select id="context-segment-select" data-context-segment-select>${options}</select>` +
+    `<span>Default: latest Context segment. All-history values remain available; cache metrics reset where compaction rewrites the prefix or the model changes.</span></div>` +
+    views;
 }
 
 // ---------------------------------------------------------------------------
@@ -602,6 +718,10 @@ main { max-width: 1080px; margin: 0 auto; padding: 40px 24px 80px; }
 h1 { color: var(--bright); font-size: 1.6rem; font-weight: 500; margin: 6px 0 4px; }
 .sub { color: var(--muted); font-size: .78rem; margin: 0 0 30px; }
 .usage-shell { margin-top: 18px; }
+.usage-view-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 9px 12px; margin-bottom: 18px; color: var(--muted); font-size: .78rem; }
+.usage-view-controls label { color: var(--bright); }
+.usage-view-controls select { background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 4px; color: var(--text); font: inherit; padding: 5px 8px; }
+.usage-context-view[hidden] { display: none; }
 /* keep hover points visible on dark page chrome for both chart palettes */
 .hover-point { stroke: #ffffff; stroke-width: 2; }
 ${USAGE_STYLES}
@@ -611,6 +731,15 @@ ${USAGE_STYLES}
 <h1>${esc(title)}</h1>
 <p class="sub">tau-style dashboard rendered by pi-cache-dashboard · ${n} requests · times in ${esc(tzLabel())}${opts.sessionId ? " · session " + esc(opts.sessionId) : ""}</p>
 <section class="usage-shell" id="panel-usage">${renderDashboard(data)}</section>
-<script>${USAGE_SCRIPT}</script>
+<script>${USAGE_SCRIPT}
+for (const select of document.querySelectorAll("[data-context-segment-select]")) {
+  const shell = select.closest(".usage-shell");
+  const show = () => shell.querySelectorAll("[data-context-view]").forEach((view) => {
+    view.hidden = view.dataset.contextView !== select.value;
+  });
+  select.addEventListener("change", show);
+  show();
+}
+</script>
 </main></body></html>`;
 }
