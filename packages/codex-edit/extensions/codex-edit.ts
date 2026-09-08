@@ -14,6 +14,7 @@ import {
   parsePatch,
   resolveWorkspacePath,
 } from "../src/parser.ts";
+import { modelIsAllowed } from "../src/model-routing.ts";
 
 const editorToolNames = new Set(["edit", "apply_patch"]);
 const settingsUrl = new URL("../config.json", import.meta.url);
@@ -24,20 +25,6 @@ async function loadSettings() {
   } catch {
     return { enabled: true, models: [] };
   }
-}
-
-function globMatches(value, pattern) {
-  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*");
-  return new RegExp(`^${escaped}$`).test(value);
-}
-
-function modelIsAllowed(model, settings) {
-  if (!settings.enabled || !model) return false;
-  if (model.api !== "openai-responses" && model.api !== "openai-codex-responses") return false;
-  if (model.compat?.supportsOpenAIGrammarTools !== true) return false;
-  return (settings.models || []).some((entry) =>
-    globMatches(model.provider, entry.provider) && globMatches(model.id, entry.model),
-  );
 }
 
 function syncEditorTools(pi, ctx, model, settings) {
