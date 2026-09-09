@@ -1,3 +1,7 @@
+## 2026-09-09 - v0.2.4
+
+- fix cache export: hover tooltips now work across segment breaks; context segments also break on model changes; add headless-browser e2e tests
+
 ## 2026-09-08 - v0.2.3
 
 - add cache export Context segment views

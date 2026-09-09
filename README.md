@@ -40,7 +40,7 @@ bash scripts/install.sh
 
 The `/btw` side chat is a separate agent session. It can inspect the main conversation and repository, and its thread stays out of the main context until you close it and choose to inject a summary. Use `/btw` to open it or `/btw <question>` to ask directly. While the BTW overlay has focus, use `Up` / `Down` to scroll its transcript one line at a time and `PageUp` / `PageDown` to move by one transcript page.
 
-Use `/cache_export [path]` to write an interactive per-request cache dashboard. It defaults to the latest compaction-defined Context segment for current-state diagnosis, and the View selector can show any earlier segment or all session history. Compaction breaks context charts; cache-hit accumulation also resets at model changes, while TTL and other inferred interruptions remain diagnostic events rather than segment boundaries.
+Use `/cache_export [path]` to write an interactive per-request cache dashboard. It defaults to the latest Context segment for current-state diagnosis, and the View selector can show any earlier segment or all session history. Compaction and model changes both break context charts into segments; cache-hit accumulation also resets at model changes, while TTL and other inferred interruptions remain diagnostic events rather than segment boundaries.
 
 The bundled `nightowl` theme is available to Pi through the package manifest and is selected automatically on npm installation only when no theme is already configured.
 

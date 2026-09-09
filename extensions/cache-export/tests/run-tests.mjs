@@ -318,7 +318,7 @@ const hitOf = (r) => r.cached / (r.fresh + r.cached + r.cacheWrite);
     s.length === 2 && s.every((x) => x.hits.length === 3), JSON.stringify(s.map((x) => [x.from, x.to])));
 }
 
-// P2. Context segments are compaction-only; models reset cache windows -----
+// P2. Context segments break at compaction AND model switches -------------
 {
   const entries = [
     req({ cached: 90000, fresh: 10000, min: 1, model: "a" }),
@@ -329,14 +329,20 @@ const hitOf = (r) => r.cached / (r.fresh + r.cached + r.cacheWrite);
   ];
   const d = parseEntries(entries);
   const segments = buildContextSegments(d.requests, d.events);
-  check("P2 model switch does not create a Context segment",
-    segments.length === 2 && segments[0].requests.length === 2 && segments[1].requests.length === 1,
+  check("P2 model switch and compaction each create a Context segment",
+    segments.length === 3 && segments.every((segment) => segment.requests.length === 1),
     JSON.stringify(segments.map((segment) => segment.requests.map((request) => request.number))));
-  const chart = lineChartForTest("segmented", [["cached", [10, 20, 30]]], { breakBefore: new Set([2]) });
-  check("P2 compaction chart boundary breaks the polyline", (chart.match(/<polyline /g) || []).length === 2, chart);
+  const chart = lineChartForTest("segmented", [["cached", [10, 20, 30, 40]]], { breakBefore: new Set([2]) });
+  const polys = [...chart.matchAll(/<polyline ([^>]*)points="([^"]*)"/g)].map((m) => [m[1], m[2]]);
+  check("P2 chart boundary splits the visible polyline and keeps a hidden full one first (tooltip fix)",
+    polys.length === 3 &&
+      polys[0][0].includes('visibility="hidden"') && polys[0][1].split(" ").length === 4 &&
+      !polys[1][0].includes("visibility") && polys[1][1].split(" ").length === 2 &&
+      !polys[2][0].includes("visibility") && polys[2][1].split(" ").length === 2,
+    chart.slice(0, 900));
   const dashboard = renderDashboard(d);
   check("P2 dashboard defaults to latest segment and keeps an all-history view",
-    dashboard.includes('value="all"') && dashboard.includes('value="segment-2" selected') && dashboard.includes('data-context-view="all" hidden'),
+    dashboard.includes('value="all"') && dashboard.includes('value="segment-3" selected') && dashboard.includes('data-context-view="all" hidden'),
     dashboard.slice(0, 500));
 }
 

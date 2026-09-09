@@ -254,13 +254,21 @@ function lineChart(title, series, opts = {}) {
       if (Number.isFinite(value)) run.push(point(i, value).map((c) => c.toFixed(1)).join(","));
     });
     if (run.length) runs.push(run);
-    const polylines = runs.map((points) =>
+    const broken = runs.map((points) =>
       `<polyline class="series-line" data-dark="${dark}" data-light="${light}" points="${points.join(" ")}" fill="none" stroke="${dark}" stroke-width="3"/>`,
     ).join("");
+    // tau's tooltip script reads `series.querySelector(".series-line").points.getItem(i)`,
+    // which returns only the FIRST polyline; with break splits that one is short and
+    // getItem(i) throws IndexSizeError past the first run, killing the tooltip. Keep a
+    // hidden full-coverage `.series-line` first in the group so the tooltip works at
+    // every index while the visible broken polylines still draw the gaps.
+    const full = `<polyline class="series-line" data-dark="${dark}" data-light="${light}" visibility="hidden" fill="none" stroke="${dark}" stroke-width="3" ` +
+      `points="${values.map((v, i) => point(i, Number.isFinite(v) ? v : 0).map((c) => c.toFixed(1)).join(",")).join(" ")}"/>`;
     const labels = values.map((v) => !Number.isFinite(v) ? "N/A" : (percent ? `${(v * 100).toFixed(1)}%` : fmtInt(Math.trunc(v)))).join("|");
     parts.push(
       `<g class="series" data-series-id="${seriesIndex}" data-name="${esc(name, true)}" data-labels="${esc(labels, true)}">` +
-        polylines +
+        full +
+        broken +
         `<circle class="hover-point" data-dark="${dark}" data-light="${light}" r="5" fill="${dark}" visibility="hidden"/></g>`,
     );
   });
@@ -506,7 +514,7 @@ function renderMissPanel(miss) {
 
 export function buildContextSegments(requests, events) {
   const starts = new Set(events
-    .filter((event) => event.kind === "compaction" && event.requestNumber >= 1 && event.requestNumber <= requests.length)
+    .filter((event) => (event.kind === "compaction" || event.kind === "model") && event.requestNumber >= 1 && event.requestNumber <= requests.length)
     .map((event) => event.requestNumber));
   const segments = [];
   let start = 0;
@@ -562,7 +570,7 @@ function renderDashboardView(requests, events, toolCalls, compactions, scopeLabe
   for (let index = 0; index < requests.length; index++) {
     const r = requests[index];
     const key = `${r.provider}/${r.model}`;
-    const contextReset = index > 0 && events.some((event) => event.kind === "compaction" && event.requestNumber === r.number);
+    const contextReset = index > 0 && events.some((event) => (event.kind === "compaction" || event.kind === "model") && event.requestNumber === r.number);
     const cacheReset = index > 0 && (resetBefore.has(r.number) || (previousKey !== null && key !== previousKey));
     if (contextReset) contextBreakBefore.add(index);
     if (cacheReset) {
@@ -638,7 +646,7 @@ function renderDashboardView(requests, events, toolCalls, compactions, scopeLabe
 
   return (
     `<div class="usage-cards">${cardsHtml}</div>` +
-    `<p class="usage-note">Prompt and output lines break at a Context segment boundary (compaction). Cache-window cumulative hit rate also resets at a model change. ` +
+    `<p class="usage-note">Prompt and output lines break at a Context segment boundary (compaction or model change). Cache-window cumulative hit rate also resets at a model change. ` +
     `TTL and service interruptions are shown only when recorded or inferred by the miss analysis; they do not create a Context segment.</p>` +
     `<div class="usage-charts">${charts.join("")}</div>` +
     renderMissPanel(analyzeMisses(requests, events)) +
@@ -665,7 +673,9 @@ export function renderDashboard(data) {
   const segmentViews = segments.map((segment) => {
     const segmentEvents = eventsForRequests(events, segment.requests);
     const startsWithCompaction = segmentEvents.some((event) => event.kind === "compaction" && event.requestNumber === segment.requests[0].number);
-    const label = `Context segment ${segment.number}${segment.number === latest.number ? " (latest)" : ""}`;
+    const first = segment.requests[0];
+    const model = first ? `${first.provider}/${first.model}` : "";
+    const label = `Context segment ${segment.number}${model ? ` · ${model}` : ""}${segment.number === latest.number ? " (latest)" : ""}`;
     return {
       id: `segment-${segment.number}`,
       label,
