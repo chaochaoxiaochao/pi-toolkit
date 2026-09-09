@@ -205,8 +205,12 @@ function lineChart(title, series, opts = {}) {
   ];
 
   const tsAttr = timestamps ? ` data-timestamps="${esc(timestamps.join("|"), true)}"` : "";
+  // Global per-request numbers (same length as the series) so a small page
+  // script can rewrite tau's relative "Request N" tooltip line to the global
+  // number inside segment views (tau hardcodes index + 1).
+  const reqAttr = requestNumbers ? ` data-requestnumbers="${esc(requestNumbers.join("|"), true)}"` : "";
   const parts = [
-    `<svg class="usage-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(title, true)}" data-left="${left}" data-right="${right}" data-count="${count}"${tsAttr}>`,
+    `<svg class="usage-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(title, true)}" data-left="${left}" data-right="${right}" data-count="${count}"${tsAttr}${reqAttr}>`,
     `<text class="chart-title" x="${left}" y="24">${esc(title)}</text>`,
   ];
   for (let tick = 0; tick < 6; tick++) {
@@ -233,7 +237,10 @@ function lineChart(title, series, opts = {}) {
     .forEach((event, eventIndex) => {
       const [x] = point(Math.max(0, Math.min(count - 1, event.requestNumber - 1)), 0);
       const markerY = top + 7 + (eventIndex % 3) * 9;
-      const description = `${event.label} before request ${event.requestNumber} at ${event.timestamp}`;
+      // data-request stays RELATIVE (tau's tooltip matches index + 1); the human
+      // description shows the GLOBAL request number (chartEvents keeps it).
+      const shown = event.globalRequestNumber ?? event.requestNumber;
+      const description = `${event.label} before request ${shown} at ${event.timestamp}`;
       parts.push(
         `<g class="usage-event usage-event-${esc(event.kind, true)}" data-request="${event.requestNumber}" ` +
           `data-event-info="${esc(description, true)}" role="img" aria-label="${esc(description, true)}">` +
@@ -542,10 +549,14 @@ function eventsForRequests(events, requests) {
   return events.filter((event) => event.requestNumber >= from && event.requestNumber <= to);
 }
 
-function chartEvents(events, requests) {
+export function chartEvents(events, requests) {
   if (!requests.length) return [];
   const first = requests[0].number;
-  return events.map((event) => ({ ...event, requestNumber: event.requestNumber - first + 1 }));
+  return events.map((event) => ({
+    ...event,
+    requestNumber: event.requestNumber - first + 1, // relative, for tau's data-request matching
+    globalRequestNumber: event.requestNumber,        // absolute, for readable labels
+  }));
 }
 
 function renderDashboardView(requests, events, toolCalls, compactions, scopeLabel) {
@@ -756,6 +767,23 @@ for (const select of document.querySelectorAll("[data-context-segment-select]"))
   select.addEventListener("change", show);
   show();
 }
+// tau's tooltip hardcodes "Request " + (index + 1), which is relative inside a
+// segment view while the x-axis shows global request numbers. Rewrite the
+// tooltip's leading request number to the chart's global number on hover.
+// Registered after tau's own pointermove listener, so it runs after tau writes.
+document.querySelectorAll(".usage-chart").forEach((chart) => {
+  const nums = (chart.dataset.requestnumbers || "").split("|").map(Number);
+  chart.addEventListener("pointermove", () => {
+    const tooltip = document.querySelector(".usage-tooltip");
+    if (!tooltip) return;
+    const m = tooltip.textContent.match(/^Request (\\d+)/);
+    if (!m) return;
+    const global = nums[Number(m[1]) - 1];
+    if (global && global !== Number(m[1])) {
+      tooltip.textContent = tooltip.textContent.replace(/^Request \\d+/, "Request " + global);
+    }
+  });
+});
 </script>
 </main></body></html>`;
 }

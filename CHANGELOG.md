@@ -1,3 +1,7 @@
+## 2026-09-09 - v0.2.6
+
+- fix cache export: segment-view tooltip and event markers now show global request numbers (aligned with the x-axis) instead of relative 1-based; e2e asserts real tooltip values
+
 ## 2026-09-09 - v0.2.5
 
 - fix cache export: segment views lost the hover tooltip (it rendered inside the hidden all-history section); move to one page-level tooltip; e2e now asserts real rendering

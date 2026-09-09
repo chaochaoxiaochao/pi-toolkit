@@ -269,7 +269,8 @@ async function run() {
     check("e2e no IndexSizeError / uncaught errors in All view",
       !allCharts.errs.some((e) => /IndexSizeError|Uncaught/i.test(e)), JSON.stringify(allCharts.errs));
 
-    // 3. latest segment view (no internal breaks): full-width tooltips
+    // 3. latest segment view (no internal breaks): full-width tooltips aligned
+    //    to GLOBAL request numbers (fixture segment-4 = requests 40..45)
     await evalJs(`window.__probe.setView("segment-4")`);
     const seg4 = await evalJs(`
       (() => {
@@ -281,8 +282,27 @@ async function run() {
     check("e2e segment-4 tooltip works at start and end",
       seg4.near.visible && seg4.far.visible && seg4.farReq !== seg4.nearReq,
       JSON.stringify(seg4));
+    check("e2e segment-4 tooltip aligns to GLOBAL request numbers (40..45, not 1..6)",
+      seg4.nearReq === 40 && seg4.farReq === 45,
+      JSON.stringify(seg4));
     check("e2e segment view has no uncaught errors",
       !seg4.errs.some((e) => /IndexSizeError|Uncaught/i.test(e)), JSON.stringify(seg4.errs));
+
+    // 4. event markers in a segment view keep relative data-request for tau
+    //    matching but describe the GLOBAL request number
+    await evalJs(`window.__probe.setView("segment-2")`);
+    const ev = await evalJs(`
+      (() => {
+        const chart = [...document.querySelectorAll("svg.usage-chart")]
+          .find((s) => s.getAttribute("aria-label") === "Prompt input by request" &&
+            s.closest(".usage-context-view") && !s.closest(".usage-context-view").hidden);
+        const g = chart.querySelector(".usage-event");
+        return g ? { dataRequest: g.getAttribute("data-request"), info: g.getAttribute("data-event-info") } : null;
+      })()
+    `);
+    check("e2e segment event marker: data-request relative, description global",
+      ev && ev.dataRequest === "1" && ev.info.includes("before request 25"),
+      JSON.stringify(ev));
 
     cdp.close();
     if (usesWindowsChrome && windowsPid) {

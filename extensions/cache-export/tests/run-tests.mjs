@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import registerCacheExport from "../index.ts";
-import { parseEntries, analyzeStreaks, analyzeMisses, buildContextSegments, lineChartForTest, renderDashboard } from "../render.ts";
+import { parseEntries, analyzeStreaks, analyzeMisses, buildContextSegments, lineChartForTest, renderDashboard, chartEvents } from "../render.ts";
 
 let pass = 0, fail = 0;
 function check(name, cond, detail = "") {
@@ -344,6 +344,23 @@ const hitOf = (r) => r.cached / (r.fresh + r.cached + r.cacheWrite);
   check("P2 dashboard defaults to latest segment and keeps an all-history view",
     dashboard.includes('value="all"') && dashboard.includes('value="segment-3" selected') && dashboard.includes('data-context-view="all" hidden'),
     dashboard.slice(0, 500));
+}
+
+// P3. segment-view request numbers align to global (tooltip override + event labels)
+{
+  const chart = lineChartForTest("seg", [["cached", [1, 2, 3]]], { requestNumbers: [40, 41, 42] });
+  check("P3 chart carries global data-requestnumbers", chart.includes('data-requestnumbers="40|41|42"'), chart.slice(0, 220));
+  const ev = chartEvents([{ kind: "model", requestNumber: 310, label: "Model changed to b", timestamp: "12:00:00" }], [{ number: 310 }, { number: 311 }, { number: 312 }]);
+  check("P3 chartEvents keeps relative requestNumber (tau matching) and global label number",
+    ev[0].requestNumber === 1 && ev[0].globalRequestNumber === 310,
+    JSON.stringify(ev[0]));
+  const labeled = lineChartForTest("seg", [["cached", [1, 2, 3]]], {
+    requestNumbers: [310, 311, 312],
+    events: [{ kind: "model", requestNumber: 1, label: "Model changed to b", timestamp: "12:00:00", globalRequestNumber: 310 }],
+  });
+  check("P3 event description shows global request while data-request stays relative",
+    labeled.includes("before request 310 at 12:00:00") && labeled.includes('data-request="1"'),
+    labeled.slice(0, 700));
 }
 
 // Q. subagent results remain visible as main-session tool input -----------
