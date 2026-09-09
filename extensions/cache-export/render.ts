@@ -657,7 +657,7 @@ function renderDashboardView(requests, events, toolCalls, compactions, scopeLabe
     `<th>Fresh</th><th>Cached</th><th>Written</th><th>Prompt</th><th>Hit rate</th><th>Output</th>` +
     `<th>Stop</th></tr></thead><tbody>${rows}</tbody></table></div></div>` +
     `<div class="usage-panel"><h2>Tool calls</h2>${toolRows}</div>` +
-    `</div><div class="usage-tooltip" role="status" aria-live="polite"></div>`
+    `</div>`
   );
 }
 
@@ -697,10 +697,16 @@ export function renderDashboard(data) {
     ...segmentViews.map((view) => `<section class="usage-context-view" data-context-view="${view.id}"${view.id === `segment-${latest.number}` ? "" : " hidden"}>${view.html}</section>`),
   ].join("");
 
+  // ONE shared tooltip for the whole page. tau's script grabs the first
+  // `.usage-tooltip` in the document; with one per view that element lived in
+  // the (hidden) all-history section, so segment views set text on an element
+  // whose ancestor was display:none -> nothing painted. A single tooltip
+  // outside the view sections renders under every view.
   return `<div class="usage-view-controls"><label for="context-segment-select">View</label>` +
     `<select id="context-segment-select" data-context-segment-select>${options}</select>` +
     `<span>Default: latest Context segment. All-history values remain available; cache metrics reset where compaction rewrites the prefix or the model changes.</span></div>` +
-    views;
+    views +
+    `<div class="usage-tooltip" role="status" aria-live="polite"></div>`;
 }
 
 // ---------------------------------------------------------------------------

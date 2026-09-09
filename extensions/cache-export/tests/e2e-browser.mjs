@@ -158,7 +158,10 @@ const HOVER_SCRIPT = `
         clientX: r.left + 30 + r.width * frac, clientY: r.top + r.height / 2, bubbles: true,
       }));
       const t = document.querySelector(".usage-tooltip");
-      return { visible: getComputedStyle(t).display !== "none", text: t.textContent || "" };
+      // Actually-rendered check: getClientRects() returns 0 when the element or
+      // any ancestor is display:none, even if the element's own computed
+      // display is block (the old per-view tooltip blind spot).
+      return { visible: t.getClientRects().length > 0 && getComputedStyle(t).display !== "none", text: t.textContent || "" };
     }
     const requestOf = (r) => {
       const m = (r.text || "").match(/Request (\\d+)/);

@@ -1,3 +1,7 @@
+## 2026-09-09 - v0.2.5
+
+- fix cache export: segment views lost the hover tooltip (it rendered inside the hidden all-history section); move to one page-level tooltip; e2e now asserts real rendering
+
 ## 2026-09-09 - v0.2.4
 
 - fix cache export: hover tooltips now work across segment breaks; context segments also break on model changes; add headless-browser e2e tests
