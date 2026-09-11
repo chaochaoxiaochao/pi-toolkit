@@ -3,6 +3,7 @@
 #
 # Usage:
 #   pi-worktree start <name> [pi args...]  # enter worktree <name> and start pi
+#   pi-worktree start --base <ref> <name> [pi args...]  # branch from <ref> instead of current branch
 #   pi-worktree -l | --list                # list worktrees (main checkout marked "main checkout")
 #   pi-worktree -i <name>                  # show base commit, ahead/behind, unique commits
 #   pi-worktree -o | --out                 # cd back to the main checkout
@@ -39,14 +40,25 @@ in_linked_worktree() {
 
 wt_dir() { echo ".worktrees/$1"; }
 
-# Best available base ref: origin/main > main > HEAD
+# Best available base ref: current branch > HEAD (worktrees should branch
+# from where you actually are; a stale origin/main must not win)
 pick_base() {
-  if git show-ref --verify --quiet refs/remotes/origin/main; then
-    echo origin/main
-  elif git show-ref --verify --quiet refs/heads/main; then
-    echo main
+  local cur; cur=$(git branch --show-current 2>/dev/null || true)
+  if [[ -n "$cur" ]]; then
+    echo "$cur"
   else
     echo HEAD
+  fi
+}
+
+# Resolve base ref for a new worktree: explicit --base wins, else current branch.
+resolve_base() {
+  if [[ -n "${BASE_OVERRIDE:-}" ]]; then
+    git rev-parse --verify --quiet "${BASE_OVERRIDE}^{commit}" >/dev/null \
+      || die "base ref not found: $BASE_OVERRIDE"
+    echo "$BASE_OVERRIDE"
+  else
+    pick_base
   fi
 }
 
@@ -177,7 +189,7 @@ cd_wt() {
       [[ -n "$mb" ]] && git config "branch.$name.base" "$(git rev-parse --short "$mb")" \
         && git config "branch.$name.baseRef" main
     else
-      local base; base=$(pick_base)
+      local base; base=$(resolve_base)
       git worktree add "$dir" -b "$name" "$base"
       git config "branch.$name.base" "$(git rev-parse --short "$base")"
       git config "branch.$name.baseRef" "$base"
@@ -197,6 +209,11 @@ case "${1:-}" in
   -p|--prune|prune) shift; subcmd_prune ;;
   -h|--help|help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' ;;
   start) shift
+    BASE_OVERRIDE=""
+    if [[ "${1:-}" == "--base" ]]; then
+      shift; [[ $# -ge 2 ]] || die "usage: pi-worktree start --base <ref> <name> [pi args...]"
+      BASE_OVERRIDE="$1"; shift
+    fi
     [[ $# -ge 1 ]] || die "usage: pi-worktree start <name> [pi args...]"
     name="$1"; shift; cd_wt "$name" "$@" ;;
   "")  die "usage: pi-worktree start <name> [pi args...]  (or list / info / out / remove / prune)" ;;

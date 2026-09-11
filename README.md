@@ -57,7 +57,7 @@ pi-worktree remove feat-ui # remove the worktree (refuses unmerged branches)
 pi-worktree prune          # drop stale registrations for manually deleted dirs
 ```
 
-Typical loop: `pi-worktree start <name>` to start (Tab completes existing worktree names), commit inside Pi, `pi-worktree out` + `git merge <name>` to land the work, `pi-worktree remove <name>` to clean up. New branches are created from `origin/main` (falling back to `main`, then `HEAD`), and the base commit is recorded in `branch.<name>.base` config so `info` can always tell you where the branch came from. Bash completion covers subcommands and existing worktree names (`pi-worktree feat<Tab>`).
+Typical loop: `pi-worktree start <name>` to start (Tab completes existing worktree names), commit inside Pi, `pi-worktree out` + `git merge <name>` to land the work, `pi-worktree remove <name>` to clean up. New branches are created from the branch you're currently on (or `HEAD` when detached), and the base commit is recorded in `branch.<name>.base` config so `info` can always tell you where the branch came from. Bash completion covers subcommands and existing worktree names (`pi-worktree feat<Tab>`).
 
 The bundled `web-browser` skill provides reusable scripts for starting Chrome/Chromium with remote debugging, navigating tabs, evaluating JavaScript, emulating devices, taking screenshots, dismissing cookie dialogs, and inspecting browser logs. It auto-detects common Chrome/Chromium installations on macOS and Linux, including Windows Chrome when Pi runs under WSL; set `BROWSER_BIN` when the binary is elsewhere.
 

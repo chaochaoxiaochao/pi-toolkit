@@ -1,3 +1,7 @@
+## 2026-09-11 - v0.5.0
+
+- fix pi-worktree: new worktrees now branch from the current branch instead of a stale origin/main (worktree content no longer misses current work); add start --base <ref> to branch from an explicit ref
+
 ## 2026-09-11 - v0.4.0
 
 - bundle the chrome-cdp skill for attaching to a live Chrome with remote debugging (derived from pasky/chrome-cdp-skill, MIT); pi-worktree: add explicit start subcommand and skip dirty-workspace prompt when reusing an existing worktree
