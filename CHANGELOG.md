@@ -1,3 +1,7 @@
+## 2026-09-11 - v0.5.1
+
+- fix pi-worktree: remove now cleans up the branch automatically — merged branches are deleted without prompting, unmerged ones confirm once (one prompt covers both worktree removal and branch deletion), so recreating the same name no longer silently reuses a stale branch
+
 ## 2026-09-11 - v0.5.0
 
 - fix pi-worktree: new worktrees now branch from the current branch instead of a stale origin/main (worktree content no longer misses current work); add start --base <ref> to branch from an explicit ref

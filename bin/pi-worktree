@@ -144,12 +144,31 @@ cmd_remove() {
   [[ -d "$dir" ]] || die "worktree not found: $dir"
   # refuse to remove if the branch is not merged into main
   local branch; branch=$(git -C "$dir" branch --show-current)
+  local rm_anyway=0
   if [[ -n "$branch" ]] && ! git merge-base --is-ancestor "$branch" main 2>/dev/null; then
     warn "branch '$branch' does not appear merged into 'main' (or no main branch exists)."
     read -rp "Remove anyway? [y/N] " ans
     [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
+    rm_anyway=1
   fi
   git worktree remove "$dir" && ok "removed: $dir"
+  # The branch survives `git worktree remove`; recreating the same name would
+  # silently reuse this stale branch. Delete merged branches automatically.
+  if [[ -n "$branch" ]] && git show-ref --verify --quiet "refs/heads/$branch"; then
+    if git branch -d "$branch" 2>/dev/null; then
+      ok "deleted merged branch: $branch"
+    elif [[ "$rm_anyway" == 1 ]]; then
+      git branch -D "$branch" && ok "deleted unmerged branch: $branch (confirmed above)"
+    else
+      warn "branch '$branch' has unmerged commits."
+      read -rp "Delete anyway? [y/N] " ans
+      if [[ "$ans" =~ ^[Yy]$ ]]; then
+        git branch -D "$branch" && ok "deleted branch: $branch"
+      else
+        warn "branch '$branch' kept; 'pi-worktree start $branch' will reuse it as-is"
+      fi
+    fi
+  fi
 }
 
 cd_wt() {
