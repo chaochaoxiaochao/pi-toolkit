@@ -22,6 +22,9 @@ pi-toolkit/
 │   ├── html-artifact/     # 复杂说明的自包含 HTML artifact skill
 │   └── web-browser/       # Chrome/Chromium CDP 自动化（含 WSL Windows Chrome 支持）
 ├── themes/nightowl.json   # 随包发布的 Night Owl 主题
+├── bin/                   # 独立 shell 命令（postinstall 拷到 ~/.local/bin）
+│   ├── pi-worktree        # worktree 创建/进入/合并/清理一条龙包装
+│   └── pi-worktree-completion.bash  # bash 补全（装到 ~/.local/share/bash-completion）
 ├── packages/tiny-subagent/  # 独立 npm 包：tiny_subagents Pi 扩展
 ├── packages/codex-edit/     # 独立 npm 包：GPT/Codex apply_patch Pi 扩展 + docs
 ├── scripts/release.sh      # 根包一键发布（测试→版本→tag→推→publish）

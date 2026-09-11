@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+# pi-worktree: create/reuse a git worktree, then launch pi inside it.
+#
+# Usage:
+#   pi-worktree [name] [pi args...]     # enter worktree <name> and start pi
+#   pi-worktree -l | --list             # list worktrees (main checkout marked "main checkout")
+#   pi-worktree -i <name>               # show base commit, ahead/behind, unique commits
+#   pi-worktree -o | --out              # cd back to the main checkout
+#   pi-worktree -r <name>               # remove worktree <name> (must be clean & merged)
+#   pi-worktree -p | --prune            # drop stale worktree registrations
+set -euo pipefail
+
+# Colors: only when stdout is a TTY and NO_COLOR is unset (no-color.org)
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  C_BOLD=$'\e[1m' C_DIM=$'\e[2m' C_RED=$'\e[31m' C_GREEN=$'\e[32m' C_YELLOW=$'\e[33m' C_CYAN=$'\e[36m' C_RESET=$'\e[0m'
+else
+  C_BOLD='' C_DIM='' C_RED='' C_GREEN='' C_YELLOW='' C_CYAN='' C_RESET=''
+fi
+
+ok()      { printf '%spi-worktree:%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
+warn()    { printf '%s⚠️  %s%s\n' "$C_YELLOW" "$C_RESET" "$*"; }
+die()     { printf '%spi-worktree: %s%s\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
+
+require_repo() {
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "not inside a git repository"
+}
+
+main_checkout() {
+  git rev-parse --path-format=absolute --git-common-dir | sed 's|/.git$||'
+}
+
+in_linked_worktree() {
+  local git_dir common_dir
+  git_dir=$(git rev-parse --git-dir 2>/dev/null) || return 1
+  common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || return 1
+  [[ "$(cd "$git_dir" && pwd -P)" != "$(cd "$common_dir" && pwd -P)" ]] \
+    && [[ -z "$(git rev-parse --show-superproject-working-tree 2>/dev/null)" ]]
+}
+
+wt_dir() { echo ".worktrees/$1"; }
+
+# Best available base ref: origin/main > main > HEAD
+pick_base() {
+  if git show-ref --verify --quiet refs/remotes/origin/main; then
+    echo origin/main
+  elif git show-ref --verify --quiet refs/heads/main; then
+    echo main
+  else
+    echo HEAD
+  fi
+}
+
+ensure_gitignore() {
+  if ! git check-ignore -q .worktrees 2>/dev/null; then
+    printf '.worktrees/\n' >> .gitignore
+    ok "added .worktrees/ to .gitignore"
+  fi
+}
+
+cmd_list() {
+  require_repo
+  local main_dir; main_dir=$(main_checkout)
+  # Annotate the primary checkout and stale (prunable) entries.
+  git worktree list --porcelain | awk -v main="$main_dir" \
+    -v D="${C_DIM}" -v Y="${C_YELLOW}" -v C="${C_CYAN}" -v R="${C_RESET}" '
+    /^worktree / { path=substr($0,10); next }
+    /^HEAD /     { sha=substr($0,6); next }
+    /^branch /   { b=substr($0,8); sub("refs/heads/","",b); next }
+    /^detached/  { b="(detached)"; next }
+    /^bare/      { b="(bare)"; next }
+    /^prunable/  { stale=1; next }
+    /^$/ {
+      if (b=="") b="?"
+      mark=(path==main) ? "  " D "(main checkout)" R : ""
+      branch=(path==main) ? b : C b R
+      hint=(stale) ? "  " Y "← stale: dir gone, run: pi-worktree prune" R : ""
+      printf "%s  %s%s%s  %s%s%s\n", path, D, substr(sha,1,7), R, branch, mark, hint
+      path=""; sha=""; b=""; stale=0
+    }
+  '
+}
+
+subcmd_prune() {
+  require_repo
+  git worktree prune -v
+  ok "pruned stale worktree registrations"
+}
+
+cmd_out() {
+  cd "$(main_checkout)" && exec "${SHELL:-/bin/bash}"
+}
+
+cmd_info() {
+  require_repo
+  [[ $# -eq 1 ]] || die "usage: pi-worktree -i <name>"
+  local dir; dir="$(wt_dir "$1")"
+  [[ -d "$dir" ]] || die "worktree not found: $dir"
+  local branch; branch=$(git -C "$dir" branch --show-current)
+  echo "worktree: $dir"
+  if git -C "$dir" diff --quiet 2>/dev/null && git -C "$dir" diff --cached --quiet 2>/dev/null \
+     && [[ -z "$(git -C "$dir" ls-files --others --exclude-standard)" ]]; then
+    echo "status:   clean"
+  else
+    echo "status:   DIRTY"
+    git -C "$dir" status --short | head -10
+  fi
+  echo "branch:   $branch @ $(git -C "$dir" rev-parse --short HEAD)"
+  local base baseRef ahead behind
+  base=$(git config --get "branch.$branch.base" 2>/dev/null || true)
+  baseRef=$(git config --get "branch.$branch.baseRef" 2>/dev/null || true)
+  if [[ -n "$base" ]]; then
+    echo "based on: $baseRef @ $base"
+    ahead=$(git rev-list --count "$base..$branch" 2>/dev/null || echo "?")
+    echo "ahead:    $ahead commits since base"
+  else
+    echo "based on: (not recorded; run: git merge-base main $branch)"
+  fi
+  if git show-ref --verify --quiet refs/heads/main && [[ "$branch" != main ]]; then
+    behind=$(git rev-list --count "$branch..main" 2>/dev/null || echo "?")
+    echo "behind:   $behind commits vs main"$([[ "${behind:-0}" -gt 0 ]] && echo "  ← consider rebase")
+  fi
+  if [[ -n "$base" ]]; then
+    echo "unique commits:"
+    git log --oneline "$base..$branch" | head -5 || true
+  fi
+}
+
+cmd_remove() {
+  require_repo
+  [[ $# -eq 1 ]] || die "usage: pi-worktree -r <name>"
+  local dir; dir="$(wt_dir "$1")"
+  [[ -d "$dir" ]] || die "worktree not found: $dir"
+  # refuse to remove if the branch is not merged into main
+  local branch; branch=$(git -C "$dir" branch --show-current)
+  if [[ -n "$branch" ]] && ! git merge-base --is-ancestor "$branch" main 2>/dev/null; then
+    warn "branch '$branch' does not appear merged into 'main' (or no main branch exists)."
+    read -rp "Remove anyway? [y/N] " ans
+    [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
+  fi
+  git worktree remove "$dir" && ok "removed: $dir"
+}
+
+cd_wt() {
+  local name="$1"; shift
+  require_repo
+
+  # Already isolated? Just launch pi here (superpowers Step 0).
+  if in_linked_worktree; then
+    ok "already in an isolated worktree ($(pwd)), launching pi here"
+    exec pi "$@"
+  fi
+
+  # Dirty workspace: uncommitted changes do NOT follow into the worktree.
+  if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+    warn "Uncommitted changes stay in THIS directory; they will NOT appear in the worktree:"
+    git status --short | head -20
+    read -rp "Continue? [y/N] " ans
+    [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
+  fi
+
+  local dir; dir="$(wt_dir "$name")"
+  ensure_gitignore
+
+  if [[ -d "$dir" ]]; then
+    # Reuse: must be a registered worktree for this repo
+    git -C "$dir" rev-parse --git-dir >/dev/null 2>&1 || die "$dir exists but is not a git worktree"
+    ok "reusing existing worktree $dir"
+  else
+    mkdir -p .worktrees
+    # Reuse branch if it exists, else create it
+    if git show-ref --verify --quiet "refs/heads/$name"; then
+      git worktree add "$dir" "$name"
+      ok "checked out existing branch '$name'"
+      # record a best-effort base for -i display
+      local mb; mb=$(git merge-base main "$name" 2>/dev/null || true)
+      [[ -n "$mb" ]] && git config "branch.$name.base" "$(git rev-parse --short "$mb")" \
+        && git config "branch.$name.baseRef" main
+    else
+      local base; base=$(pick_base)
+      git worktree add "$dir" -b "$name" "$base"
+      git config "branch.$name.base" "$(git rev-parse --short "$base")"
+      git config "branch.$name.baseRef" "$base"
+      ok "created branch '$name' from $base @ $(git rev-parse --short "$base")"
+    fi
+  fi
+
+  cd "$dir"
+  exec pi "$@"
+}
+
+case "${1:-}" in
+  -l|--list|list|ls) shift; cmd_list "$@" ;;
+  -i|--info|info) shift; cmd_info "$@" ;;
+  -o|--out|out) shift; cmd_out "$@" ;;
+  -r|--remove|rm|remove) shift; cmd_remove "$@" ;;
+  -p|--prune|prune) shift; subcmd_prune ;;
+  -h|--help|help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' ;;
+  "")  die "usage: pi-worktree <name> [pi args...]  (or list / info / out / remove / prune)" ;;
+  *)   name="$1"; shift; cd_wt "$name" "$@" ;;
+esac

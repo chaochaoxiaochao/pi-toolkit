@@ -1,6 +1,6 @@
 # pi-toolkit
 
-Personal Pi toolkit with the `/todos`, `/btw`, and `/cache_export` extensions, bundled agent skills including Chrome/Chromium automation, and the Night Owl theme.
+Personal Pi toolkit with the `/todos`, `/btw`, and `/cache_export` extensions, bundled agent skills including Chrome/Chromium automation, the Night Owl theme, and the `pi-worktree` CLI.
 
 ## Install
 
@@ -43,6 +43,21 @@ The `/btw` side chat is a separate agent session. It can inspect the main conver
 Use `/cache_export [path]` to write an interactive per-request cache dashboard. It defaults to the latest Context segment for current-state diagnosis, and the View selector can show any earlier segment or all session history. Compaction and model changes both break context charts into segments; cache-hit accumulation also resets at model changes, while TTL and other inferred interruptions remain diagnostic events rather than segment boundaries.
 
 The bundled `nightowl` theme is available to Pi through the package manifest and is selected automatically on npm installation only when no theme is already configured.
+
+## pi-worktree CLI
+
+The package also ships a standalone shell command, `pi-worktree`, that wraps Git worktree creation and Pi launch into one step. On installation (Unix-like systems) the postinstall hook copies it to `~/.local/bin/pi-worktree` and installs bash completion to `~/.local/share/bash-completion/completions/pi-worktree` (no `.bashrc` edits needed).
+
+```bash
+pi-worktree feat-ui        # create/reuse .worktrees/feat-ui, branch feat-ui, launch pi inside
+pi-worktree list           # list worktrees (main checkout marked "main checkout")
+pi-worktree info feat-ui   # base commit, ahead/behind main, unique commits
+pi-worktree out            # open a shell in the main checkout (for merging)
+pi-worktree remove feat-ui # remove the worktree (refuses unmerged branches)
+pi-worktree prune          # drop stale registrations for manually deleted dirs
+```
+
+Typical loop: `pi-worktree <name>` to start, commit inside Pi, `pi-worktree out` + `git merge <name>` to land the work, `pi-worktree remove <name>` to clean up. New branches are created from `origin/main` (falling back to `main`, then `HEAD`), and the base commit is recorded in `branch.<name>.base` config so `info` can always tell you where the branch came from. Bash completion covers subcommands and existing worktree names (`pi-worktree feat<Tab>`).
 
 The bundled `web-browser` skill provides reusable scripts for starting Chrome/Chromium with remote debugging, navigating tabs, evaluating JavaScript, emulating devices, taking screenshots, dismissing cookie dialogs, and inspecting browser logs. It auto-detects common Chrome/Chromium installations on macOS and Linux, including Windows Chrome when Pi runs under WSL; set `BROWSER_BIN` when the binary is elsewhere.
 

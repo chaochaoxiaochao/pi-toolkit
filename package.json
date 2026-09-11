@@ -1,6 +1,6 @@
 {
   "name": "@maxiaochao/pi-toolkit",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "description": "Personal pi coding agent toolkit: /todos, /btw, /cache_export extensions, browser automation, and bundled theme/skills.",
   "type": "module",
   "keywords": [
@@ -10,6 +10,7 @@
   "files": [
     "extensions",
     "themes",
+    "bin",
     "README.md",
     "CHANGELOG.md",
     "global/AGENTS.md",
@@ -32,6 +33,9 @@
     "themes": [
       "./themes"
     ]
+  },
+  "bin": {
+    "pi-worktree": "bin/pi-worktree"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

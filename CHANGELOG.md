@@ -1,3 +1,7 @@
+## 2026-09-11 - v0.3.0
+
+- add pi-worktree CLI: one-command worktree + Pi launch with list/info/out/remove/prune and bash completion (postinstall to ~/.local/bin)
+
 ## 2026-09-09 - v0.2.6
 
 - fix cache export: segment-view tooltip and event markers now show global request numbers (aligned with the x-axis) instead of relative 1-based; e2e asserts real tooltip values
