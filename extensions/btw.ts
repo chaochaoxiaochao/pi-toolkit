@@ -9,6 +9,7 @@ import {
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type ExtensionContext,
+	type ModelRuntime,
 	type ResourceLoader,
 } from "@earendil-works/pi-coding-agent";
 import { type AssistantMessage, type Message, type ThinkingLevel as AiThinkingLevel } from "@earendil-works/pi-ai";
@@ -633,7 +634,7 @@ export default function (pi: ExtensionAPI) {
 		const { session } = await createAgentSession({
 			sessionManager: SessionManager.inMemory(),
 			model: ctx.model,
-			modelRegistry: ctx.modelRegistry as AgentSession["modelRegistry"],
+			modelRuntime: getParentModelRuntime(ctx),
 			thinkingLevel: pi.getThinkingLevel() as SessionThinkingLevel,
 			tools: ["read", "bash", "edit", "write"],
 			resourceLoader: createBtwResourceLoader(ctx),
@@ -809,6 +810,14 @@ export default function (pi: ExtensionAPI) {
 			});
 	}
 
+	function getParentModelRuntime(ctx: ExtensionCommandContext | ExtensionContext): ModelRuntime {
+		// The ModelRegistry facade keeps its runtime in a JS property that is
+		// private at the type level. Reusing it is required: a fresh ModelRuntime
+		// would not know about extension-registered providers (e.g. volcengine-plan),
+		// causing "No API key found" even when auth.json has the credential.
+		return (ctx.modelRegistry as unknown as { runtime: ModelRuntime }).runtime;
+	}
+
 	async function summarizeThread(ctx: ExtensionContext, items: BtwDetails[]): Promise<string> {
 		const model = ctx.model;
 		if (!model) {
@@ -823,7 +832,7 @@ export default function (pi: ExtensionAPI) {
 		const { session } = await createAgentSession({
 			sessionManager: SessionManager.inMemory(),
 			model,
-			modelRegistry: ctx.modelRegistry as AgentSession["modelRegistry"],
+			modelRuntime: getParentModelRuntime(ctx),
 			thinkingLevel: "off",
 			tools: [],
 			resourceLoader: createBtwResourceLoader(ctx, [BTW_SUMMARY_PROMPT]),

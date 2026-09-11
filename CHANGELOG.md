@@ -1,3 +1,7 @@
+## 2026-09-11 - v0.5.2
+
+- fix btw: side-session and summarize passed a nonexistent `modelRegistry` option to `createAgentSession`, so a fresh ModelRuntime was created that didn't know extension-registered providers (e.g. volcengine-plan) and prompting failed with "No API key found"; now the main session's ModelRuntime is reused via `modelRuntime`
+
 ## 2026-09-11 - v0.5.1
 
 - fix pi-worktree: remove now cleans up the branch automatically — merged branches are deleted without prompting, unmerged ones confirm once (one prompt covers both worktree removal and branch deletion), so recreating the same name no longer silently reuses a stale branch
