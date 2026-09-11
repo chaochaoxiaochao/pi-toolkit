@@ -10,7 +10,7 @@ Install the root package to enable the toolkit extensions globally:
 pi install npm:@maxiaochao/pi-toolkit
 ```
 
-The package also provides the `/btw` side-chat extension, the `web-browser` skill for Chrome/Chromium CDP automation, and the `nightowl` theme. On npm installation, the postinstall hook selects `nightowl` only when no theme has been configured yet; an existing Pi theme setting is preserved.
+The package also provides the `/btw` side-chat extension, the `web-browser` and `chrome-cdp` skills for Chrome/Chromium CDP automation, and the `nightowl` theme. On npm installation, the postinstall hook selects `nightowl` only when no theme has been configured yet; an existing Pi theme setting is preserved.
 
 The package postinstall hook synchronizes the bundled global instructions to:
 
@@ -49,7 +49,7 @@ The bundled `nightowl` theme is available to Pi through the package manifest and
 The package also ships a standalone shell command, `pi-worktree`, that wraps Git worktree creation and Pi launch into one step. On installation (Unix-like systems) the postinstall hook copies it to `~/.local/bin/pi-worktree` and installs bash completion to `~/.local/share/bash-completion/completions/pi-worktree` (no `.bashrc` edits needed).
 
 ```bash
-pi-worktree feat-ui        # create/reuse .worktrees/feat-ui, branch feat-ui, launch pi inside
+pi-worktree start feat-ui  # create/reuse .worktrees/feat-ui, branch feat-ui, launch pi inside
 pi-worktree list           # list worktrees (main checkout marked "main checkout")
 pi-worktree info feat-ui   # base commit, ahead/behind main, unique commits
 pi-worktree out            # open a shell in the main checkout (for merging)
@@ -57,7 +57,7 @@ pi-worktree remove feat-ui # remove the worktree (refuses unmerged branches)
 pi-worktree prune          # drop stale registrations for manually deleted dirs
 ```
 
-Typical loop: `pi-worktree <name>` to start, commit inside Pi, `pi-worktree out` + `git merge <name>` to land the work, `pi-worktree remove <name>` to clean up. New branches are created from `origin/main` (falling back to `main`, then `HEAD`), and the base commit is recorded in `branch.<name>.base` config so `info` can always tell you where the branch came from. Bash completion covers subcommands and existing worktree names (`pi-worktree feat<Tab>`).
+Typical loop: `pi-worktree start <name>` to start (Tab completes existing worktree names), commit inside Pi, `pi-worktree out` + `git merge <name>` to land the work, `pi-worktree remove <name>` to clean up. New branches are created from `origin/main` (falling back to `main`, then `HEAD`), and the base commit is recorded in `branch.<name>.base` config so `info` can always tell you where the branch came from. Bash completion covers subcommands and existing worktree names (`pi-worktree feat<Tab>`).
 
 The bundled `web-browser` skill provides reusable scripts for starting Chrome/Chromium with remote debugging, navigating tabs, evaluating JavaScript, emulating devices, taking screenshots, dismissing cookie dialogs, and inspecting browser logs. It auto-detects common Chrome/Chromium installations on macOS and Linux, including Windows Chrome when Pi runs under WSL; set `BROWSER_BIN` when the binary is elsewhere.
 
@@ -67,6 +67,17 @@ The browser skill can be loaded explicitly with `/skill:web-browser`. Its script
 node skills/web-browser/scripts/start.js --headless
 node skills/web-browser/scripts/nav.js https://example.com
 ```
+
+The bundled `chrome-cdp` skill (derived from [pasky/chrome-cdp-skill](https://github.com/pasky/chrome-cdp-skill), MIT) complements `web-browser`: instead of launching an isolated browser, it attaches to a Chrome session that already runs with remote debugging (port pre-allocated at launch, or the `chrome://inspect/#remote-debugging` toggle). It is a zero-dependency CLI (`scripts/cdp.mjs`, Node 22+) with per-tab daemons so Chrome's "Allow debugging" modal fires once:
+
+```bash
+export CDP_PORT_FILE="/mnt/c/Users/<you>/AppData/Local/Google/Chrome/CDP-Profile/DevToolsActivePort"
+node skills/chrome-cdp/scripts/cdp.mjs list          # list open tabs → target prefix
+node skills/chrome-cdp/scripts/cdp.mjs snap <target> # accessibility tree
+node skills/chrome-cdp/scripts/cdp.mjs eval <target> 'document.title'
+```
+
+Note: Chrome does not always write the `DevToolsActivePort` file (e.g. `--remote-debugging-port` launches on Chrome 152); in that case synthesize one from `GET http://127.0.0.1:<port>/json/version` — first line the port, second line the path of `webSocketDebuggerUrl`. WSL auto-discovery of Windows Chrome profiles is not built in; set `CDP_PORT_FILE` as above.
 
 ## Tiny Subagent
 

@@ -20,7 +20,8 @@ pi-toolkit/
 │       └── tests/          # 确定性测试（阈值边界、规则路径、退化输入）
 ├── skills/
 │   ├── html-artifact/     # 复杂说明的自包含 HTML artifact skill
-│   └── web-browser/       # Chrome/Chromium CDP 自动化（含 WSL Windows Chrome 支持）
+│   ├── web-browser/       # Chrome/Chromium CDP 自动化（含 WSL Windows Chrome 支持）
+│   └── chrome-cdp/        # 附加到已开调试端口的 live Chrome（源自 pasky/chrome-cdp-skill，MIT）
 ├── themes/nightowl.json   # 随包发布的 Night Owl 主题
 ├── bin/                   # 独立 shell 命令（postinstall 拷到 ~/.local/bin）
 │   ├── pi-worktree        # worktree 创建/进入/合并/清理一条龙包装

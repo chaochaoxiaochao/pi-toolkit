@@ -2,12 +2,12 @@
 # pi-worktree: create/reuse a git worktree, then launch pi inside it.
 #
 # Usage:
-#   pi-worktree [name] [pi args...]     # enter worktree <name> and start pi
-#   pi-worktree -l | --list             # list worktrees (main checkout marked "main checkout")
-#   pi-worktree -i <name>               # show base commit, ahead/behind, unique commits
-#   pi-worktree -o | --out              # cd back to the main checkout
-#   pi-worktree -r <name>               # remove worktree <name> (must be clean & merged)
-#   pi-worktree -p | --prune            # drop stale worktree registrations
+#   pi-worktree start <name> [pi args...]  # enter worktree <name> and start pi
+#   pi-worktree -l | --list                # list worktrees (main checkout marked "main checkout")
+#   pi-worktree -i <name>                  # show base commit, ahead/behind, unique commits
+#   pi-worktree -o | --out                 # cd back to the main checkout
+#   pi-worktree -r <name>                  # remove worktree <name> (must be clean & merged)
+#   pi-worktree -p | --prune               # drop stale worktree registrations
 set -euo pipefail
 
 # Colors: only when stdout is a TTY and NO_COLOR is unset (no-color.org)
@@ -150,22 +150,23 @@ cd_wt() {
     exec pi "$@"
   fi
 
-  # Dirty workspace: uncommitted changes do NOT follow into the worktree.
-  if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
-    warn "Uncommitted changes stay in THIS directory; they will NOT appear in the worktree:"
-    git status --short | head -20
-    read -rp "Continue? [y/N] " ans
-    [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
-  fi
-
   local dir; dir="$(wt_dir "$name")"
   ensure_gitignore
 
   if [[ -d "$dir" ]]; then
-    # Reuse: must be a registered worktree for this repo
+    # Reuse: must be a registered worktree for this repo.
+    # Skip the dirty-workspace prompt — the worktree already exists, nothing new to create.
     git -C "$dir" rev-parse --git-dir >/dev/null 2>&1 || die "$dir exists but is not a git worktree"
     ok "reusing existing worktree $dir"
   else
+    # Dirty workspace: uncommitted changes do NOT follow into the new worktree.
+    if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+      warn "Uncommitted changes stay in THIS directory; they will NOT appear in the worktree:"
+      git status --short | head -20
+      read -rp "Continue? [y/N] " ans
+      [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
+    fi
+
     mkdir -p .worktrees
     # Reuse branch if it exists, else create it
     if git show-ref --verify --quiet "refs/heads/$name"; then
@@ -195,6 +196,9 @@ case "${1:-}" in
   -r|--remove|rm|remove) shift; cmd_remove "$@" ;;
   -p|--prune|prune) shift; subcmd_prune ;;
   -h|--help|help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' ;;
-  "")  die "usage: pi-worktree <name> [pi args...]  (or list / info / out / remove / prune)" ;;
-  *)   name="$1"; shift; cd_wt "$name" "$@" ;;
+  start) shift
+    [[ $# -ge 1 ]] || die "usage: pi-worktree start <name> [pi args...]"
+    name="$1"; shift; cd_wt "$name" "$@" ;;
+  "")  die "usage: pi-worktree start <name> [pi args...]  (or list / info / out / remove / prune)" ;;
+  *)   die "unknown command: $1  (usage: pi-worktree start <name> [pi args...])" ;;
 esac

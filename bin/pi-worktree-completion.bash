@@ -4,7 +4,7 @@ _pi_worktree() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   first="${COMP_WORDS[1]}"
 
-  local SUBS="list ls info out remove rm prune -l --list -i --info -o --out -r --remove -p --prune -h --help"
+  local SUBS="start list ls info out remove rm prune -l --list -i --info -o --out -r --remove -p --prune -h --help"
 
   # existing worktree names (only linked worktrees, i.e. under .worktrees/)
   local wts=""
@@ -23,9 +23,14 @@ _pi_worktree() {
   fi
 
   case "$first" in
-    -i|--info|info|-r|--remove|remove|rm)
-      # second word of info/remove: worktree names only
-      COMPREPLY=($(compgen -W "$wts" -- "$cur"))
+    -i|--info|info|-r|--remove|remove|rm|start)
+      # only the second word of info/remove completes worktree names;
+      # later words offer nothing (info/remove take no further args)
+      if (( COMP_CWORD == 2 )); then
+        COMPREPLY=($(compgen -W "$wts" -- "$cur"))
+      else
+        COMPREPLY=()
+      fi
       ;;
     *)
       # after a name: default (file) completion for pi args

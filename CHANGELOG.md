@@ -1,3 +1,7 @@
+## 2026-09-11 - v0.4.0
+
+- bundle the chrome-cdp skill for attaching to a live Chrome with remote debugging (derived from pasky/chrome-cdp-skill, MIT); pi-worktree: add explicit start subcommand and skip dirty-workspace prompt when reusing an existing worktree
+
 ## 2026-09-11 - v0.3.0
 
 - add pi-worktree CLI: one-command worktree + Pi launch with list/info/out/remove/prune and bash completion (postinstall to ~/.local/bin)
