@@ -1,3 +1,7 @@
+## 2026-09-15 - v0.5.3
+
+- fix pi-worktree remove: worktrees with initialized submodules now remove via forced retry; dirty worktrees confirm the discard explicitly before removal; worktrees whose directory is already gone now prune their stale registration and clean up the branch
+
 ## 2026-09-11 - v0.5.2
 
 - fix btw: side-session and summarize passed a nonexistent `modelRegistry` option to `createAgentSession`, so a fresh ModelRuntime was created that didn't know extension-registered providers (e.g. volcengine-plan) and prompting failed with "No API key found"; now the main session's ModelRuntime is reused via `modelRuntime`
