@@ -142,6 +142,18 @@ cmd_remove() {
   [[ $# -eq 1 ]] || die "usage: pi-worktree -r <name>"
   local dir; dir="$(wt_dir "$1")"
   [[ -d "$dir" ]] || die "worktree not found: $dir"
+  # dirty worktree: removing discards modified/untracked files, which git
+  # refuses to do without --force — so confirm the loss explicitly
+  local force=0
+  if ! git -C "$dir" diff --quiet 2>/dev/null \
+     || ! git -C "$dir" diff --cached --quiet 2>/dev/null \
+     || [[ -n "$(git -C "$dir" ls-files --others --exclude-standard)" ]]; then
+    warn "worktree contains modified/untracked files that will be discarded:"
+    git -C "$dir" status --short | head -10
+    read -rp "Discard and remove anyway? [y/N] " ans
+    [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
+    force=1
+  fi
   # refuse to remove if the branch is not merged into main
   local branch; branch=$(git -C "$dir" branch --show-current)
   local rm_anyway=0
@@ -152,7 +164,9 @@ cmd_remove() {
     rm_anyway=1
   fi
   local out
-  if out=$(git worktree remove "$dir" 2>&1); then
+  if [[ "$force" == 1 ]]; then
+    git worktree remove --force "$dir" && ok "removed: $dir (discarded changes as confirmed)"
+  elif out=$(git worktree remove "$dir" 2>&1); then
     ok "removed: $dir"
   elif [[ "$out" == *"submodules cannot be moved or removed"* ]]; then
     # git refuses to remove worktrees with initialized submodules unless
