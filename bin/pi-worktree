@@ -151,7 +151,18 @@ cmd_remove() {
     [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
     rm_anyway=1
   fi
-  git worktree remove "$dir" && ok "removed: $dir"
+  local out
+  if out=$(git worktree remove "$dir" 2>&1); then
+    ok "removed: $dir"
+  elif [[ "$out" == *"submodules cannot be moved or removed"* ]]; then
+    # git refuses to remove worktrees with initialized submodules unless
+    # --force is used (--force only overrides the submodule check here; the
+    # branch deletion below still asks before dropping unmerged commits)
+    git worktree remove --force "$dir" && ok "removed: $dir (contained submodules)"
+  else
+    printf '%s\n' "$out" >&2
+    die "failed to remove worktree: $dir"
+  fi
   # The branch survives `git worktree remove`; recreating the same name would
   # silently reuse this stale branch. Delete merged branches automatically.
   if [[ -n "$branch" ]] && git show-ref --verify --quiet "refs/heads/$branch"; then
