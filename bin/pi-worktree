@@ -141,41 +141,67 @@ cmd_remove() {
   require_repo
   [[ $# -eq 1 ]] || die "usage: pi-worktree -r <name>"
   local dir; dir="$(wt_dir "$1")"
-  [[ -d "$dir" ]] || die "worktree not found: $dir"
-  # dirty worktree: removing discards modified/untracked files, which git
-  # refuses to do without --force — so confirm the loss explicitly
-  local force=0
-  if ! git -C "$dir" diff --quiet 2>/dev/null \
-     || ! git -C "$dir" diff --cached --quiet 2>/dev/null \
-     || [[ -n "$(git -C "$dir" ls-files --others --exclude-standard)" ]]; then
-    warn "worktree contains modified/untracked files that will be discarded:"
-    git -C "$dir" status --short | head -10
-    read -rp "Discard and remove anyway? [y/N] " ans
-    [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
-    force=1
-  fi
-  # refuse to remove if the branch is not merged into main
-  local branch; branch=$(git -C "$dir" branch --show-current)
-  local rm_anyway=0
-  if [[ -n "$branch" ]] && ! git merge-base --is-ancestor "$branch" main 2>/dev/null; then
-    warn "branch '$branch' does not appear merged into 'main' (or no main branch exists)."
-    read -rp "Remove anyway? [y/N] " ans
-    [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
-    rm_anyway=1
-  fi
-  local out
-  if [[ "$force" == 1 ]]; then
-    git worktree remove --force "$dir" && ok "removed: $dir (discarded changes as confirmed)"
-  elif out=$(git worktree remove "$dir" 2>&1); then
-    ok "removed: $dir"
-  elif [[ "$out" == *"submodules cannot be moved or removed"* ]]; then
-    # git refuses to remove worktrees with initialized submodules unless
-    # --force is used (--force only overrides the submodule check here; the
-    # branch deletion below still asks before dropping unmerged commits)
-    git worktree remove --force "$dir" && ok "removed: $dir (contained submodules)"
+  local branch registered rm_anyway=0 force=0
+  if [[ ! -d "$dir" ]]; then
+    # Directory already gone but possibly still registered (prunable), or a
+    # stale branch left behind by an earlier prune: clean the registration,
+    # then fall through to the branch cleanup.
+    local registered
+    registered=$(git worktree list --porcelain | awk -v p="$(pwd -P)/$dir" '
+      $0=="worktree "p {f=1; next}
+      f && /^branch /  {print substr($0,8); exit}
+      f && /^detached/ {print "-"; exit}
+      f && /^$/        {exit}')
+    if [[ "$registered" == "-" ]]; then
+      git worktree prune
+      ok "pruned stale registration: $dir (directory already gone)"
+      return 0  # detached HEAD, nothing else to clean up
+    fi
+    if [[ -n "$registered" ]]; then
+      branch=${registered#refs/heads/}
+    elif git show-ref --verify --quiet "refs/heads/$1"; then
+      branch=$1  # registration already pruned; only the stale branch remains
+    else
+      die "worktree not found: $dir"
+    fi
+    if [[ -n "$registered" ]]; then
+      git worktree prune
+      ok "pruned stale registration: $dir (directory already gone)"
+    fi
   else
-    printf '%s\n' "$out" >&2
-    die "failed to remove worktree: $dir"
+    # dirty worktree: removing discards modified/untracked files, which git
+    # refuses to do without --force — so confirm the loss explicitly
+    if ! git -C "$dir" diff --quiet 2>/dev/null \
+       || ! git -C "$dir" diff --cached --quiet 2>/dev/null \
+       || [[ -n "$(git -C "$dir" ls-files --others --exclude-standard)" ]]; then
+      warn "worktree contains modified/untracked files that will be discarded:"
+      git -C "$dir" status --short | head -10
+      read -rp "Discard and remove anyway? [y/N] " ans
+      [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
+      force=1
+    fi
+    branch=$(git -C "$dir" branch --show-current)
+    # refuse to remove if the branch is not merged into main
+    if [[ -n "$branch" ]] && ! git merge-base --is-ancestor "$branch" main 2>/dev/null; then
+      warn "branch '$branch' does not appear merged into 'main' (or no main branch exists)."
+      read -rp "Remove anyway? [y/N] " ans
+      [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
+      rm_anyway=1
+    fi
+    local out
+    if [[ "$force" == 1 ]]; then
+      git worktree remove --force "$dir" && ok "removed: $dir (discarded changes as confirmed)"
+    elif out=$(git worktree remove "$dir" 2>&1); then
+      ok "removed: $dir"
+    elif [[ "$out" == *"submodules cannot be moved or removed"* ]]; then
+      # git refuses to remove worktrees with initialized submodules unless
+      # --force is used (--force only overrides the submodule check here; the
+      # branch deletion below still asks before dropping unmerged commits)
+      git worktree remove --force "$dir" && ok "removed: $dir (contained submodules)"
+    else
+      printf '%s\n' "$out" >&2
+      die "failed to remove worktree: $dir"
+    fi
   fi
   # The branch survives `git worktree remove`; recreating the same name would
   # silently reuse this stale branch. Delete merged branches automatically.
