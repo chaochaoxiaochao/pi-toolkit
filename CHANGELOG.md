@@ -1,3 +1,7 @@
+## 2026-09-22 - v0.6.0
+
+- bundle the show-me skill for visual explanations (derived from humanlayer/skills, MIT), invoked explicitly with /skill:show-me
+
 ## 2026-09-15 - v0.5.3
 
 - fix pi-worktree remove: worktrees with initialized submodules now remove via forced retry; dirty worktrees confirm the discard explicitly before removal; worktrees whose directory is already gone now prune their stale registration and clean up the branch
