@@ -79,6 +79,8 @@ node skills/chrome-cdp/scripts/cdp.mjs eval <target> 'document.title'
 
 Note: Chrome does not always write the `DevToolsActivePort` file (e.g. `--remote-debugging-port` launches on Chrome 152); in that case synthesize one from `GET http://127.0.0.1:<port>/json/version` — first line the port, second line the path of `webSocketDebuggerUrl`. WSL auto-discovery of Windows Chrome profiles is not built in; set `CDP_PORT_FILE` as above.
 
+The bundled `show-me` skill (derived from [humanlayer/skills](https://github.com/humanlayer/skills), MIT) explains the current topic with the smallest visual that makes the point — pseudocode, call trees, component or file trees, diffs, Mermaid, or one focused HTML artifact. It is hidden from automatic skill selection, so invoke it explicitly with `/skill:show-me`.
+
 ## Tiny Subagent
 
 The tiny subagent is a separate npm package. Install it independently when you want the `tiny_subagents` tool:
