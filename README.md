@@ -81,6 +81,8 @@ Note: Chrome does not always write the `DevToolsActivePort` file (e.g. `--remote
 
 The bundled `show-me` skill (derived from [humanlayer/skills](https://github.com/humanlayer/skills), MIT) explains the current topic with the smallest visual that makes the point — pseudocode, call trees, component or file trees, diffs, Mermaid, or one focused HTML artifact. It is hidden from automatic skill selection, so invoke it explicitly with `/skill:show-me`.
 
+The bundled `pdlog` skill decompresses and reads Pudu `.pdlog` proprietary log files, which are binary gibberish when opened directly. It ships a self-contained `ppmd` decompressor (`skills/pdlog/tools/ppmd`, Linux x86-64) and triggers automatically on `.pdlog` files, Pudu logs, ppmd decompression, or logs that open as binary gibberish.
+
 ## Tiny Subagent
 
 The tiny subagent is a separate npm package. Install it independently when you want the `tiny_subagents` tool:

@@ -1,3 +1,7 @@
+## 2026-09-22 - v0.6.1
+
+- bundle the pdlog skill for decompressing Pudu .pdlog logs (with bundled ppmd binary)
+
 ## 2026-09-22 - v0.6.0
 
 - bundle the show-me skill for visual explanations (derived from humanlayer/skills, MIT), invoked explicitly with /skill:show-me
