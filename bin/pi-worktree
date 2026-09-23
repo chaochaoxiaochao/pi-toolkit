@@ -63,7 +63,11 @@ resolve_base() {
 }
 
 ensure_gitignore() {
-  if ! git check-ignore -q .worktrees 2>/dev/null; then
+  # The trailing slash is load-bearing: `.worktrees/` is a directory-only
+  # pattern, and git check-ignore cannot match it against a path that does not
+  # exist yet — so `.worktrees` would look unignored on every first run and the
+  # rule would be appended again.
+  if ! git check-ignore -q .worktrees/ 2>/dev/null; then
     printf '.worktrees/\n' >> .gitignore
     ok "added .worktrees/ to .gitignore"
   fi
@@ -233,12 +237,12 @@ cd_wt() {
   fi
 
   local dir; dir="$(wt_dir "$name")"
-  ensure_gitignore
 
   if [[ -d "$dir" ]]; then
     # Reuse: must be a registered worktree for this repo.
     # Skip the dirty-workspace prompt — the worktree already exists, nothing new to create.
     git -C "$dir" rev-parse --git-dir >/dev/null 2>&1 || die "$dir exists but is not a git worktree"
+    ensure_gitignore
     ok "reusing existing worktree $dir"
   else
     # Dirty workspace: uncommitted changes do NOT follow into the new worktree.
@@ -249,6 +253,9 @@ cd_wt() {
       [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
     fi
 
+    # After the check above, so the tool's own .gitignore edit is not reported
+    # as (and does not prompt about) the user's uncommitted work.
+    ensure_gitignore
     mkdir -p .worktrees
     # Reuse branch if it exists, else create it
     if git show-ref --verify --quiet "refs/heads/$name"; then
