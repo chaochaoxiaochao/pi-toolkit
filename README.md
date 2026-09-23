@@ -59,6 +59,8 @@ pi-worktree prune          # drop stale registrations for manually deleted dirs
 
 Typical loop: `pi-worktree start <name>` to start (Tab completes existing worktree names), commit inside Pi, `pi-worktree out` + `git merge <name>` to land the work, `pi-worktree remove <name>` to clean up. New branches are created from the branch you're currently on (or `HEAD` when detached), and the base commit is recorded in `branch.<name>.base` config so `info` can always tell you where the branch came from. Bash completion covers subcommands and existing worktree names (`pi-worktree feat<Tab>`).
 
+The bundled `pi-worktree` skill documents the CLI for agents: the `start`/`list`/`info`/`out`/`remove`/`prune` commands, the isolation loop from creating a worktree to landing the merge, and which of those commands need an interactive terminal (so an agent uses `start <name> -p "<task>"` for a headless nested run).
+
 The bundled `web-browser` skill provides reusable scripts for starting Chrome/Chromium with remote debugging, navigating tabs, evaluating JavaScript, emulating devices, taking screenshots, dismissing cookie dialogs, and inspecting browser logs. It auto-detects common Chrome/Chromium installations on macOS and Linux, including Windows Chrome when Pi runs under WSL; set `BROWSER_BIN` when the binary is elsewhere.
 
 The browser skill can be loaded explicitly with `/skill:web-browser`. Its scripts are available relative to the skill directory, for example:

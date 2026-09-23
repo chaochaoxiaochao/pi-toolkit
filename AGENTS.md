@@ -22,6 +22,7 @@ pi-toolkit/
 │   ├── html-artifact/     # 复杂说明的自包含 HTML artifact skill
 │   ├── web-browser/       # Chrome/Chromium CDP 自动化（含 WSL Windows Chrome 支持）
 │   ├── show-me/           # 用图/伪代码/HTML 直观解释当前话题（源自 humanlayer/skills，MIT）
+│   ├── pi-worktree/       # pi-worktree CLI 的 worktree 增删改查用法（隔离任务时用）
 │   ├── chrome-cdp/        # 附加到已开调试端口的 live Chrome（源自 pasky/chrome-cdp-skill，MIT）
 │   └── pdlog/             # 解压和查看普渡 .pdlog 日志（自带 ppmd 解压二进制）
 ├── themes/nightowl.json   # 随包发布的 Night Owl 主题
