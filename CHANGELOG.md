@@ -1,3 +1,7 @@
+## 2026-09-23 - v0.7.0
+
+- bundle the pi-worktree skill documenting the CLI for agents (the isolation loop, and which commands need an interactive terminal); fix pi-worktree: the .gitignore check tested a path form that never matched the directory-only .worktrees/ pattern, so the rule was re-appended on the first run in every repo and that self-inflicted edit then triggered the uncommitted-changes prompt
+
 ## 2026-09-22 - v0.6.1
 
 - bundle the pdlog skill for decompressing Pudu .pdlog logs (with bundled ppmd binary)
