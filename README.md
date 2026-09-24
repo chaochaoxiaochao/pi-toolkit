@@ -89,6 +89,8 @@ The bundled `herdr` skill (copied verbatim from [herdrdev/herdr](https://github.
 
 The bundled `tapd` skill documents the third-party `tapd` CLI ([studyzy/tapd-ai-cli](https://github.com/studyzy/tapd-ai-cli)) for TAPD: requirements, defects, tasks, iterations, wikis, comments, attachments, timesheets, and workflow status maps, including the `--filter` advanced query syntax. It is the CLI's own command reference, so refresh the file with `tapd skill init` when the CLI changes.
 
+The bundled `calldiff` skill (copied verbatim from [tanishqkancharla/calldiff](https://github.com/tanishqkancharla/calldiff), MIT, pinned to a `main` commit because upstream has no release tags) teaches call-stack diffs across git commits: `diff` shows which callees appeared, disappeared, or moved under an entrypoint, `tree` prints one call tree, and `reach` finds call paths between two symbols, all with `--entry`/`--file` entrypoint selection, `--locs` source locations, and `--format json` for agents.
+
 ## Tiny Subagent
 
 The tiny subagent is a separate npm package. Install it independently when you want the `tiny_subagents` tool:

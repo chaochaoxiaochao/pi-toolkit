@@ -1,0 +1,19 @@
+calldiff Skill
+
+This directory is copied verbatim from the calldiff repository:
+https://github.com/tanishqkancharla/calldiff
+skills/calldiff/SKILL.md at commit 2086f6e4e9ed3c410bba7c94ca3dde77791b1956 (main)
+
+The upstream repository is licensed under the MIT License. A copy of that
+license is included in LICENSE.
+
+Upstream publishes no release tags, so this file is pinned to a main commit
+instead of a tag. The CLI can also write its own copy with `calldiff skills
+add` (to ~/.agents/skills/calldiff/SKILL.md), but that generated file is terser
+than the committed one — it leaves the --entry/--file descriptions empty and
+says 22 languages — so pi-toolkit ships the committed file.
+
+To refresh, copy skills/calldiff/SKILL.md and LICENSE from a newer upstream
+commit and update the commit above. The bundled commands were smoke-tested
+against calldiff 0.5.0 (`diff`, `tree`, `reach`, `--entry`, `--file`,
+`--maxDepth`/`--max-depth`, `--locs`, `--format json`).

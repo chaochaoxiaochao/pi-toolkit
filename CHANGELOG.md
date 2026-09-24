@@ -1,3 +1,7 @@
+## 2026-09-24 - v0.7.2
+
+- bundle the calldiff skill (copied verbatim from tanishqkancharla/calldiff, MIT, pinned to a main commit since upstream has no release tags) for call-stack diffs across git commits; the previous v0.7.1 tarball was briefly unavailable on the registry right after publish and is now served normally
+
 ## 2026-09-24 - v0.7.1
 
 - bundle the herdr skill (copied verbatim from herdrdev/herdr v0.9.1, Apache-2.0) for driving the Herdr terminal multiplexer from inside a pane; move the tapd CLI skill from .claude/skills into skills/ so it ships with the package
