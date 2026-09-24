@@ -25,7 +25,7 @@ pi-toolkit/
 │   ├── pi-worktree/       # pi-worktree CLI 的 worktree 增删改查用法（隔离任务时用）
 │   ├── chrome-cdp/        # 附加到已开调试端口的 live Chrome（源自 pasky/chrome-cdp-skill，MIT）
 │   ├── pdlog/             # 解压和查看普渡 .pdlog 日志（自带 ppmd 解压二进制）
-│   ├── herdr/             # 控制 Herdr 终端复用器（逐字节拷贝自 herdrdev/herdr v0.9.1，Apache-2.0）
+│   ├── herdr/             # 控制 Herdr 终端复用器（拷贝自 herdrdev/herdr v0.9.1，仅小写化 skill 名，Apache-2.0）
 │   ├── tapd/              # TAPD CLI 用法（需求/缺陷/任务/Wiki 等，用 `tapd skill init` 重新生成）
 │   └── calldiff/          # 跨 commit 的调用栈 diff（逐字节拷贝自 tanishqkancharla/calldiff，MIT）
 ├── themes/nightowl.json   # 随包发布的 Night Owl 主题
@@ -47,7 +47,7 @@ pi-toolkit/
 - **改 skill**：先按目标 skill 的 `SKILL.md` 验证脚本；`web-browser` 至少要检查全部 `scripts/*.js` 语法、实际启动隔离浏览器、完成一次导航/求值，并用 `npm pack --dry-run` 确认 skill 文件进入 tarball。WSL 下应验证 Windows Chrome 自动发现和 PowerShell 启动路径。
 - **skill 运行依赖**：第三方依赖统一声明在根 `package.json` 的 `dependencies`，不要提交 skill 内的 `node_modules`；Pi 从 npm/git 安装包时会执行 `npm install`。Pi 内置包仍按下条规则放 `peerDependencies`。
 - **不改 `tau-assets.ts`**：该文件从 `huggingface/tau` 的 `src/tau_coding/session_usage.py` 提取（USAGE_STYLES / USAGE_SCRIPT），保证与上游逐字节一致。需要更新时用提取脚本重生成，不要手改。
-- **不改 `skills/herdr/SKILL.md`**：与 `LICENSE` 一起从 `herdrdev/herdr` 的稳定 tag 逐字节拷贝（来源与更新方式见 `skills/herdr/NOTICE`）。需要更新时整体替换这两个文件并改 NOTICE 里的 tag，不要手改内容。
+- **`skills/herdr/SKILL.md` 只在同步上游时动**：与 `LICENSE` 一起从 `herdrdev/herdr` 的稳定 tag 拷贝（来源与更新方式见 `skills/herdr/NOTICE`）。目前**唯一**的本地改动是把 description 与 H1 里的 `Herdr` 小写成 `herdr`，其余逐字节一致；同步新 tag 时先整体替换两个文件、改 NOTICE 里的 tag，再重放这处小写化，不要加别的改动。
 - **不改 `skills/calldiff/SKILL.md`**：与 `LICENSE` 一起从 `tanishqkancharla/calldiff` 的 main commit 逐字节拷贝（上游没有 release tag，来源与更新方式见 `skills/calldiff/NOTICE`）。需要更新时整体替换这两个文件并改 NOTICE 里的 commit，不要手改内容。
 - **别用 `.mjs` 放扩展代码**：pi 的 `/reload` 走 jiti（moduleCache:false），只对 `.ts/.js` 生效；`.mjs` 走 Node 原生 ESM 缓存，reload 刷不掉，会导致“改了不生效”。
 - 扩展依赖 pi 内置包时写进 `peerDependencies`（`@earendil-works/pi-*`、`typebox`），不要实装。

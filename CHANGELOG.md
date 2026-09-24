@@ -1,3 +1,7 @@
+## 2026-09-24 - v0.8.1
+
+- lowercase the herdr skill name in its description and H1 (a deliberate local edit over the upstream v0.9.1 copy, now recorded in NOTICE, README and AGENTS.md); drop the stale `herdr --skill` pointer from the agent-team skill
+
 ## 2026-09-24 - v0.8.0
 
 - add the agent-team skill: cross-vendor adversarial review in herdr panes, with the model roster in skills/agent-team/models.json
