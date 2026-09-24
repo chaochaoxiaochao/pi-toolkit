@@ -1,0 +1,26 @@
+{
+  "defaults": {
+    "kind": "pi",
+    "thinking": "high"
+  },
+  "members": [
+    {
+      "name": "sol",
+      "model": "pudu/gpt-5.6-sol",
+      "role": "auditor",
+      "charter": "只接受能逐行引用的源码、规范、commit，输出必须带 文件:行号。负责把「机制上可能」变成「代码里确实如此」；查不到就说查不到，不要用常识补。"
+    },
+    {
+      "name": "grok",
+      "model": "pudu/grok-4.6",
+      "role": "replicator",
+      "charter": "拿原始数据和口径，不看管理者的脚本，独立重算同一个指标，只报自己的数和差异。数对不上就是一次发现，先查口径再查代码。"
+    },
+    {
+      "name": "opus",
+      "model": "pudu/claude-opus-5",
+      "role": "adversary",
+      "charter": "攻前提和方法学，不攻结论。指出指标对样本组成的敏感性、计数的一对多、缺失的阴性对照。附议没有价值，找不到问题就说明理由。"
+    }
+  ]
+}

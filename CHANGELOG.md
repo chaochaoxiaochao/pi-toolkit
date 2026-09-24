@@ -1,3 +1,7 @@
+## 2026-09-24 - v0.8.0
+
+- add the agent-team skill: cross-vendor adversarial review in herdr panes, with the model roster in skills/agent-team/models.json
+
 ## 2026-09-24 - v0.7.2
 
 - bundle the calldiff skill (copied verbatim from tanishqkancharla/calldiff, MIT, pinned to a main commit since upstream has no release tags) for call-stack diffs across git commits; the previous v0.7.1 tarball was briefly unavailable on the registry right after publish and is now served normally
