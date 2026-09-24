@@ -1,3 +1,7 @@
+## 2026-09-24 - v0.7.1
+
+- bundle the herdr skill (copied verbatim from herdrdev/herdr v0.9.1, Apache-2.0) for driving the Herdr terminal multiplexer from inside a pane; move the tapd CLI skill from .claude/skills into skills/ so it ships with the package
+
 ## 2026-09-23 - v0.7.0
 
 - bundle the pi-worktree skill documenting the CLI for agents (the isolation loop, and which commands need an interactive terminal); fix pi-worktree: the .gitignore check tested a path form that never matched the directory-only .worktrees/ pattern, so the rule was re-appended on the first run in every repo and that self-inflicted edit then triggered the uncommitted-changes prompt

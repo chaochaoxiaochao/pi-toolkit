@@ -1,0 +1,12 @@
+Herdr Skill
+
+This directory is copied verbatim from the Herdr repository:
+https://github.com/herdrdev/herdr (skills/herdr/SKILL.md, tag v0.9.1)
+
+The upstream repository is licensed under Apache License 2.0. A copy of that
+license is included in LICENSE.
+
+pi-toolkit ships the file unchanged, so the installed skill always matches the
+stable Herdr release it was taken from. Upstream updates SKILL.md only on stable
+releases; to refresh it, copy skills/herdr/SKILL.md and LICENSE from a newer
+Herdr tag and update the tag above.
