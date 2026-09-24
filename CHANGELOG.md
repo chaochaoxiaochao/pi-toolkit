@@ -1,3 +1,7 @@
+## 2026-09-24 - v0.8.2
+
+- tapd skill: document the safe attachment-download flow for the short-lived signed URLs (re-fetch the URL for every attempt, download to .part with curl --fail --location --retry 3, reject text/error bodies before resuming, accept only 206 with a matching Content-Range, then verify size and zip integrity before renaming); it is a local addition on top of the `tapd skill init` output, recorded in AGENTS.md
+
 ## 2026-09-24 - v0.8.1
 
 - lowercase the herdr skill name in its description and H1 (a deliberate local edit over the upstream v0.9.1 copy, now recorded in NOTICE, README and AGENTS.md); drop the stale `herdr --skill` pointer from the agent-team skill

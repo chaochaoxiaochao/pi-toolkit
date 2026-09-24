@@ -49,6 +49,7 @@ pi-toolkit/
 - **不改 `tau-assets.ts`**：该文件从 `huggingface/tau` 的 `src/tau_coding/session_usage.py` 提取（USAGE_STYLES / USAGE_SCRIPT），保证与上游逐字节一致。需要更新时用提取脚本重生成，不要手改。
 - **`skills/herdr/SKILL.md` 只在同步上游时动**：与 `LICENSE` 一起从 `herdrdev/herdr` 的稳定 tag 拷贝（来源与更新方式见 `skills/herdr/NOTICE`）。目前**唯一**的本地改动是把 description 与 H1 里的 `Herdr` 小写成 `herdr`，其余逐字节一致；同步新 tag 时先整体替换两个文件、改 NOTICE 里的 tag，再重放这处小写化，不要加别的改动。
 - **不改 `skills/calldiff/SKILL.md`**：与 `LICENSE` 一起从 `tanishqkancharla/calldiff` 的 main commit 逐字节拷贝（上游没有 release tag，来源与更新方式见 `skills/calldiff/NOTICE`）。需要更新时整体替换这两个文件并改 NOTICE 里的 commit，不要手改内容。
+- **`skills/tapd/SKILL.md` 由 `tapd skill init` 生成，但带一节本地补充**：`#### 安全下载附件`（临时 URL 续传与完整性校验流程）是手写的，重新生成会丢掉，重生成后必须重放这一节；其余内容保持生成原样。
 - **别用 `.mjs` 放扩展代码**：pi 的 `/reload` 走 jiti（moduleCache:false），只对 `.ts/.js` 生效；`.mjs` 走 Node 原生 ESM 缓存，reload 刷不掉，会导致“改了不生效”。
 - 扩展依赖 pi 内置包时写进 `peerDependencies`（`@earendil-works/pi-*`、`typebox`），不要实装。
 

@@ -280,6 +280,18 @@ tapd attachment download --id=<必需>  # 获取附件下载链接
 tapd attachment upload --custom-field=<必需> --entry-id=<必需> --file=<必需> --type=<如 story_custom_field>  # 上传附件
 ```
 
+#### 安全下载附件
+
+`attachment download` 返回的是带短期授权 token 的临时 URL，不是附件内容。下载大附件时必须遵循以下流程：
+
+1. 先用 `attachment list` 记录附件文件名和预期大小；每次发起下载或续传前，重新执行 `attachment download` 获取新 URL。
+2. 下载到 `<文件名>.part`，使用 `curl --fail --location --retry 3`；HTTP 失败时立即停止，禁止把响应正文直接写入最终文件。
+3. 续传前检查 `.part` 开头不是 `token expire`、JSON/HTML 错误信息等文本响应。发现污染时删除 `.part` 并重新下载，不修补或继续追加。
+4. 使用新 URL 和 `curl -C -` 续传。已有部分长度为 N 时，只接受状态 `206` 且 `Content-Range` 从 N 开始；返回 `200`、范围不符或服务器不支持 Range 时，删除 `.part` 后从头下载。
+5. 下载完成后，文件大小必须等于 `attachment list` 的预期大小。ZIP 附件还必须通过 `unzip -t`；其他格式执行相应完整性检查。全部通过后才将 `.part` 重命名为最终文件。
+
+临时 URL 过期只需重新获取链接，不能据此判断 TAPD 原附件损坏。
+
 ### baseline — 基线管理
 
 ```bash
