@@ -1,6 +1,6 @@
-## Unreleased
+## 2026-09-30 - v0.9.1
 
-- redesign the todo extension around a concise model contract and enforced lifecycle: replace obsolete plans without reusing task IDs, cancel or remove individual tasks, keep one task active with automatic advancement, hide closed work from the persistent widget, retain current-plan closed tasks in `/todos`, and cover state transitions with deterministic tests
+- redesign the todo lifecycle with plan replacement, cancellation, automatic advancement, active-only widget rendering, concise model guidance, and deterministic state tests
 
 ## 2026-09-30 - v0.9.0
 
