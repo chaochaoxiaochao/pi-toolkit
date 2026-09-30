@@ -1,7 +1,7 @@
 /**
  * Session-scoped todo extension with branch-aware persistence.
  *
- * Provides the `todo` tool, a compact active-work widget, and `/todos` history.
+ * Provides the `todo` tool, a compact active-work widget, and `/todos` current-plan view.
  */
 
 import { StringEnum } from "@earendil-works/pi-ai";
@@ -37,7 +37,7 @@ const TodoParams = Type.Object({
 		description: "Complete ordered task texts for replace",
 	})),
 	text: Type.Optional(Type.String({ description: "Task text for add" })),
-	id: Type.Optional(Type.Number({ description: "Task ID for update or remove" })),
+	id: Type.Optional(Type.Integer({ minimum: 1, description: "Task ID for update or remove" })),
 	status: Type.Optional(StringEnum(["todo", "doing", "done", "cancelled"] as const, {
 		description: "New status for update; optional initial status for add",
 	})),
@@ -230,7 +230,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("todos", {
-		description: "Show active and closed todos on the current branch",
+		description: "Show active and closed tasks in the current plan",
 		handler: async (_args, ctx) => {
 			if (ctx.mode !== "tui") {
 				ctx.ui.notify("/todos requires interactive mode", "error");

@@ -20,7 +20,7 @@ assert.deepEqual(
 	],
 	"replace installs a fresh ordered plan and starts its first task",
 );
-assert.equal(replaced.nextId, 4, "replace resets IDs to the new plan");
+assert.equal(replaced.nextId, 4, "replace advances the ID sequence past the new plan");
 
 const completed = applyTodoAction(replaced, { action: "update", id: 1, status: "done" });
 assert.deepEqual(
@@ -50,8 +50,12 @@ assert.match(duplicate.error ?? "", /already exists/, "active duplicates are rej
 assert.deepEqual(duplicate.todos, removed.todos, "a rejected mutation preserves the previous state");
 
 const replacedAgain = applyTodoAction(removed, { action: "replace", items: ["New direction"] });
-assert.deepEqual(replacedAgain.todos, [{ id: 1, text: "New direction", status: "doing" }], "replace discards the obsolete plan");
-assert.equal(replacedAgain.nextId, 2);
+assert.deepEqual(
+	replacedAgain.todos,
+	[{ id: 5, text: "New direction", status: "doing" }],
+	"replace discards the obsolete plan without reusing an old task ID",
+);
+assert.equal(replacedAgain.nextId, 6);
 
 const invalidReplace = applyTodoAction(replacedAgain, { action: "replace", items: [" "] });
 assert.ok(invalidReplace.error, "replace rejects empty task text");

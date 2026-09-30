@@ -103,8 +103,9 @@ export function applyTodoAction(state: TodoState, input: TodoActionInput): TodoA
 			if (items.some((item) => item === undefined)) return fail(state, "replace items must not be empty");
 			const texts = items as string[];
 			if (new Set(texts).size !== texts.length) return fail(state, "replace items must be unique");
-			next.todos = texts.map((text, index) => ({ id: index + 1, text, status: index === 0 ? "doing" : "todo" }));
-			next.nextId = next.todos.length + 1;
+			const firstId = next.nextId;
+			next.todos = texts.map((text, index) => ({ id: firstId + index, text, status: index === 0 ? "doing" : "todo" }));
+			next.nextId += next.todos.length;
 			return { ...next, message: `Replaced plan with ${next.todos.length} tasks` };
 		}
 
