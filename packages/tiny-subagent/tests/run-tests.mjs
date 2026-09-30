@@ -6,6 +6,7 @@ import { loadSubagentConfiguration } from "../src/config.ts";
 import { runTinySubagent } from "../src/runner.ts";
 import { executeTinySubagent } from "../src/tool.ts";
 import { activityCounts, focusActiveTask } from "../src/monitor.ts";
+import { RunDispatcher } from "../src/dispatcher.ts";
 
 let passed = 0;
 let failed = 0;
@@ -227,6 +228,26 @@ try {
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	const focusedCalls = focusedHerdr.calls.map(([name]) => name);
 	check("focused completed tab defers cleanup until focus leaves", focusedCalls.indexOf("waitForTabUnfocused") >= 0 && focusedCalls.indexOf("closeTab") > focusedCalls.indexOf("waitForTabUnfocused"));
+
+	const dispatchEvents = [];
+	const dispatcher = new RunDispatcher((snapshot) => dispatchEvents.push(snapshot));
+	let releaseFirst;
+	let releaseSecond;
+	const starts = [];
+	const first = dispatcher.submit("run-one", async () => { starts.push("run-one"); await new Promise((resolve) => { releaseFirst = resolve; }); return "one"; });
+	const second = dispatcher.submit("run-two", async () => { starts.push("run-two"); await new Promise((resolve) => { releaseSecond = resolve; }); return "two"; });
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	check("dispatcher runs only one run and exposes queued successors", starts.join(",") === "run-one" && dispatcher.snapshot().activeRunId === "run-one" && dispatcher.snapshot().queuedRunIds.join(",") === "run-two");
+	releaseFirst();
+	check("dispatcher returns first result and advances FIFO", await first === "one");
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	check("dispatcher starts next queued run automatically", starts.join(",") === "run-one,run-two" && dispatcher.snapshot().activeRunId === "run-two");
+	releaseSecond();
+	check("dispatcher settles queued run", await second === "two");
+	const backgroundId = "stable-background-id";
+	const stableHerdr = fakeHerdr();
+	const stable = await executeTinySubagent({ runId: backgroundId, tasks: [{ name: "stable", prompt: "stable", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: stableHerdr });
+	check("preallocated background run id stays stable", stable.details.runId === backgroundId && readFileSync(join(stable.details.recordDirectory, "run.json"), "utf8").includes(backgroundId));
 } finally {
 	restoreEnv();
 	rmSync(root, { recursive: true, force: true });

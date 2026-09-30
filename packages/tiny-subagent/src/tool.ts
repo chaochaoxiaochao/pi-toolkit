@@ -13,6 +13,8 @@ export interface TinySubagentToolParams {
 	model?: string;
 	tasks?: TinySubagentTaskParams[];
 	concurrency?: number;
+	background?: boolean;
+	runId?: string;
 }
 
 export interface TinySubagentToolContext {
@@ -101,6 +103,7 @@ export async function executeTinySubagent(
 		}
 		try {
 			const result = await runTinySubagentBatch(resolved, {
+				runId: params.runId,
 				label: params.label?.trim() || "batch",
 				concurrency: params.concurrency ?? discovery.settings.defaultConcurrency,
 				maxConcurrency: discovery.settings.maxConcurrency,

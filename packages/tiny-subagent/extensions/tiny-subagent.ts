@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -6,6 +7,7 @@ import { Type } from "typebox";
 import { loadSubagentConfiguration } from "../src/config.ts";
 import { CliHerdrAutomation } from "../src/herdr.ts";
 import { activeRunText, activityCounts, focusActiveTask } from "../src/monitor.ts";
+import { RunDispatcher } from "../src/dispatcher.ts";
 import { executeTinySubagent, type TinySubagentBatchDetails, type TinySubagentDetails, type TinySubagentToolParams } from "../src/tool.ts";
 
 const ACTIONS = ["list"] as const;
@@ -28,6 +30,7 @@ const TinySubagentParams = Type.Union([
 		}), { minItems: 1 }),
 		label: Type.Optional(Type.String({ minLength: 1, maxLength: 48 })),
 		concurrency: Type.Optional(Type.Integer({ minimum: 1 })),
+		background: Type.Optional(Type.Boolean()),
 	}),
 ]);
 
@@ -37,6 +40,7 @@ export default function (pi: ExtensionAPI) {
 	if (process.env.PI_SUBAGENT_CHILD === "1") return;
 	let activeBatch: TinySubagentBatchDetails | undefined;
 	const herdr = new CliHerdrAutomation();
+	const dispatcher = new RunDispatcher();
 
 	pi.registerTool({
 		name: "tiny_subagents",
@@ -47,19 +51,39 @@ export default function (pi: ExtensionAPI) {
 		parameters: TinySubagentParams,
 
 		async execute(_toolCallId, params: TinySubagentToolParams, signal, onUpdate, ctx) {
-			const result = await executeTinySubagent(params, signal, (update) => {
+			const runSignal = params.background ? undefined : signal;
+			const executeRun = async () => await executeTinySubagent(params, runSignal, (update) => {
 				const details = update.details as TinySubagentBatchDetails | undefined;
 				if (details?.activity) {
 					activeBatch = details;
 					const counts = activityCounts(details);
-					ctx.ui.setWidget("tiny-subagents", [`Subagents · ${details.label}`, `running ${counts.running} · queued ${counts.queued} · blocked ${counts.blocked} · failed ${counts.failed} · completed ${counts.completed}`]);
+					ctx.ui.setWidget("tiny-subagents", [`Subagents · ${details.label}`, `running ${counts.running} · queued ${counts.queued} · blocked ${counts.blocked} · failed ${counts.failed} · completed ${counts.completed} · queued runs ${dispatcher.snapshot().queuedRunIds.length}`]);
 				}
-				onUpdate?.(update);
+				if (!params.background) onUpdate?.(update);
 			}, ctx, { agentsDirectory: packageAgentsDir });
-			if (params.tasks) {
+			if (!params.tasks) return await executeRun();
+			const runId = randomUUID();
+			params.runId = runId;
+			const promise = dispatcher.submit(runId, async () => {
+				const result = await executeRun();
 				activeBatch = undefined;
-				ctx.ui.setWidget("tiny-subagents", undefined);
+				return result;
+			});
+			if (params.background) {
+				ctx.ui.setWidget("tiny-subagents", [`Subagent run ${runId.slice(0, 8)} queued`, `queued runs ${dispatcher.snapshot().queuedRunIds.length}`]);
+				void promise.then((result) => {
+					const details = result.details as TinySubagentBatchDetails;
+					const lines = [`Subagent run ${runId} ${details.status}: ${details.summary}`, ...details.tasks.map((task) => `- ${task.name}: ${task.summary}`)];
+					if (details.documents.length) lines.push("Documents:", ...details.documents.map((document) => `- ${document.description}: ${document.path}`));
+					pi.sendMessage({ customType: "tiny-subagents-run", content: lines.join("\n"), display: true, details: { runId, status: details.status } }, { triggerTurn: true, deliverAs: "followUp" });
+					if (!dispatcher.snapshot().activeRunId && dispatcher.snapshot().queuedRunIds.length === 0) ctx.ui.setWidget("tiny-subagents", undefined);
+				}).catch((error) => {
+					pi.sendMessage({ customType: "tiny-subagents-run", content: `Subagent run ${runId} failed: ${error instanceof Error ? error.message : String(error)}`, display: true, details: { runId, status: "failed" } }, { triggerTurn: true, deliverAs: "followUp" });
+				});
+				return { content: [{ type: "text" as const, text: `Subagent run queued: ${runId}` }], details: { runId, status: "queued", background: true } };
 			}
+			const result = await promise;
+			if (!dispatcher.snapshot().activeRunId && dispatcher.snapshot().queuedRunIds.length === 0) ctx.ui.setWidget("tiny-subagents", undefined);
 			return result;
 		},
 

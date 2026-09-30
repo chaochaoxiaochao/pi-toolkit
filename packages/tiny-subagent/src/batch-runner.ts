@@ -20,6 +20,7 @@ export interface BatchTask {
 }
 
 export interface BatchOptions {
+	runId?: string;
 	label: string;
 	concurrency: number;
 	maxConcurrency: number;
@@ -70,7 +71,7 @@ function protocolPrompt(systemPrompt: string): string {
 export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOptions): Promise<BatchResult> {
 	if (!tasks.length) throw new Error("At least one task is required.");
 	if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_WORKSPACE_ID) throw new Error("Tiny subagents must run from a Pi session inside Herdr.");
-	const runId = randomUUID();
+	const runId = options.runId ?? randomUUID();
 	const requestedConcurrency = Math.max(1, Math.floor(options.concurrency));
 	const hasWriter = tasks.some((task) => task.access === "write");
 	const effectiveConcurrency = hasWriter ? 1 : Math.min(requestedConcurrency, options.maxConcurrency, tasks.length);
@@ -97,6 +98,8 @@ export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOpt
 		await writeJson(runFile, runRecord);
 		let nextIndex = 0;
 		let settled = 0;
+		const startResolvers: Array<() => void> = [];
+		const started = tasks.map((_, index) => new Promise<void>((resolve) => { startResolvers[index] = resolve; }));
 		const runOne = async (index: number, paneId: string): Promise<void> => {
 			const task = tasks[index];
 			const taskId = randomUUID();
@@ -121,7 +124,10 @@ export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOpt
 			for (const skill of task.skills) args.push("--skill", skill);
 			let report: TinySubagentReport;
 			try {
-				await herdr.runTask({ paneId, args, prompt: task.prompt, env: { PI_SUBAGENT_CHILD: "1", PI_TINY_SUBAGENT_TASK_DIR: taskDirectory }, marker: `PI_SUBAGENT_DONE_${taskId.replace(/-/g, "")}`, signal: options.signal });
+				if (index > 0) await started[index - 1];
+				const running = herdr.runTask({ paneId, args, prompt: task.prompt, env: { PI_SUBAGENT_CHILD: "1", PI_TINY_SUBAGENT_TASK_DIR: taskDirectory }, marker: `PI_SUBAGENT_DONE_${taskId.replace(/-/g, "")}`, signal: options.signal });
+				startResolvers[index]();
+				await running;
 				if (!existsSync(reportFile)) throw new Error("Child Pi settled but did not submit a subagent_report.");
 				const value = JSON.parse(await readFile(reportFile, "utf8")) as unknown;
 				if (!validReport(value)) throw new Error("Child Pi submitted an invalid subagent_report.");
