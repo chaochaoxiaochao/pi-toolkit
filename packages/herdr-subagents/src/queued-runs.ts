@@ -2,16 +2,16 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { HerdrSubagentsToolParams } from "./tool.ts";
-import { isProcessAlive } from "./ownership.ts";
+import { isProcessAlive, ownerRecord, type OwnerIdentity } from "./ownership.ts";
 import { writeJsonAtomic } from "./state.ts";
 
 export interface QueuedRunRecord { runId: string; cwd: string; ownerSessionId?: string; ownerProcessId?: number; params: HerdrSubagentsToolParams; queuedAt: string; }
 function queueDirectory(cwd: string): string { return join(cwd, ".pi", "herdr-subagents", "queue"); }
 
-export async function persistQueuedRun(cwd: string, runId: string, params: HerdrSubagentsToolParams, ownerSessionId?: string, ownerProcessId?: number): Promise<void> {
+export async function persistQueuedRun(cwd: string, runId: string, params: HerdrSubagentsToolParams, owner?: OwnerIdentity): Promise<void> {
 	const directory = queueDirectory(cwd);
 	await mkdir(directory, { recursive: true, mode: 0o700 });
-	await writeJsonAtomic(join(directory, `${runId}.json`), { runId, cwd, ownerSessionId, ownerProcessId, params: { ...params, background: true }, queuedAt: new Date().toISOString() });
+	await writeJsonAtomic(join(directory, `${runId}.json`), { runId, cwd, ...ownerRecord(owner), params: { ...params, background: true }, queuedAt: new Date().toISOString() });
 }
 
 export async function removeQueuedRun(cwd: string, runId: string): Promise<void> {
@@ -28,12 +28,15 @@ export async function loadQueuedRuns(cwd: string): Promise<QueuedRunRecord[]> {
 	return records.sort((left, right) => left.queuedAt.localeCompare(right.queuedAt));
 }
 
-export async function cancelQueuedRuns(cwd: string, runIds: string[], reason = "Parent Pi session closed.", ownerSessionId?: string, onlyOrphaned = false): Promise<void> {
+export interface CancelQueuedRunsOptions { reason?: string; owner?: OwnerIdentity; onlyOrphaned?: boolean; }
+
+export async function cancelQueuedRuns(cwd: string, runIds: string[], options: CancelQueuedRunsOptions = {}): Promise<void> {
+	const reason = options.reason ?? "Parent Pi session closed.";
 	const selected = new Set(runIds);
 	for (const queued of await loadQueuedRuns(cwd)) {
 		if (!selected.has(queued.runId)) continue;
-		if (ownerSessionId && queued.ownerSessionId !== ownerSessionId) continue;
-		if (onlyOrphaned && isProcessAlive(queued.ownerProcessId)) continue;
+		if (options.owner?.sessionId && queued.ownerSessionId !== options.owner.sessionId) continue;
+		if (options.onlyOrphaned && isProcessAlive(queued.ownerProcessId)) continue;
 		const runsDirectory = join(cwd, ".pi", "herdr-subagents", "runs");
 		const alreadyPersisted = existsSync(runsDirectory) && readdirSync(runsDirectory).some((entry) => {
 			try { return JSON.parse(readFileSync(join(runsDirectory, entry, "run.json"), "utf8")).id === queued.runId; }

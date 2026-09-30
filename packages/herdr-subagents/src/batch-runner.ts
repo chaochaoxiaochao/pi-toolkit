@@ -2,12 +2,15 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { CliHerdrAutomation, retryBeforePrompt, type HerdrAutomation } from "./herdr.ts";
+import { CliHerdrAutomation, type HerdrAutomation } from "./herdr.ts";
 import type { PersonaAccess } from "./config.ts";
 import type { HerdrSubagentsDocument, HerdrSubagentsReport } from "./runner.ts";
 import { ensureRuntimeIgnored } from "./history.ts";
 import { liveAgentName, promptLiveAgent } from "./live-agent.ts";
 import { writeJsonAtomic } from "./state.ts";
+import type { OwnerIdentity } from "./ownership.ts";
+import { ownerRecord } from "./ownership.ts";
+import { RunPaneAllocator } from "./run-pane-allocator.ts";
 
 export interface BatchTask {
 	name: string;
@@ -30,8 +33,7 @@ export interface BatchOptions {
 	cwd: string;
 	signal?: AbortSignal;
 	herdr?: HerdrAutomation;
-	ownerSessionId?: string;
-	ownerProcessId?: number;
+	owner?: OwnerIdentity;
 	onUpdate?: (result: BatchResult) => void;
 }
 
@@ -108,7 +110,7 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 		return { taskId, taskDirectory, sessionFile, reportFile: join(taskDirectory, "report.json"), taskFile, systemPromptFile, taskRecord };
 	}));
 	const runRecord: Record<string, unknown> = {
-		id: runId, label: options.label, status: "starting", cwd: options.cwd, ownerSessionId: options.ownerSessionId, ownerProcessId: options.ownerProcessId, requestedConcurrency,
+		id: runId, label: options.label, status: "starting", cwd: options.cwd, ...ownerRecord(options.owner), requestedConcurrency,
 		effectiveConcurrency, stalledWarningSeconds: options.stalledWarningSeconds, startedAt: timestamp(), taskIds: contexts.map((context) => context.taskId), paneIds: [],
 	};
 	await writeJsonAtomic(runFile, runRecord);
@@ -116,35 +118,15 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 	const results = new Array<BatchTaskResult>(tasks.length);
 	const activity: BatchResult["activity"] = tasks.map((task, index) => ({ index, name: task.name, status: "queued" }));
 	let tabId: string | undefined;
-	let rootPaneId: string | undefined;
-	let lastPaneId: string | undefined;
-	let allocation = Promise.resolve();
-	const paneIds: string[] = [];
+	const paneAllocator = new RunPaneAllocator({ herdr, run: runRecord, runFile, signal: options.signal });
 	const emit = (status: BatchResult["status"], summary: string) => options.onUpdate?.({
 		ok: false, status, runId, label: options.label, requestedConcurrency, effectiveConcurrency,
 		tasks: results.filter(Boolean), activity: activity.map((entry) => ({ ...entry })), summary,
 		documents: results.filter(Boolean).flatMap((result) => result.documents), recordDirectory: runDirectory, tabId,
 	});
 	const allocatePane = async (index: number): Promise<string> => {
-		let paneId = "";
-		allocation = allocation.then(async () => {
-			const context = contexts[index];
-			const env = { PI_HERDR_SUBAGENTS_CHILD: "1", PI_HERDR_SUBAGENTS_TASK_DIR: context.taskDirectory };
-			if (!tabId) {
-				const tab = await retryBeforePrompt(() => herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID as string, cwd: options.cwd, label: `SA · ${options.label}`, env, focus: false, signal: options.signal }));
-				tabId = tab.tabId;
-				rootPaneId = tab.paneId;
-				paneId = tab.paneId;
-			} else {
-				const split = await retryBeforePrompt(() => herdr.splitPane({ paneId: lastPaneId ?? rootPaneId as string, cwd: options.cwd, direction: paneIds.length % 2 ? "right" : "down", focus: false, env, signal: options.signal }));
-				paneId = split.paneId;
-			}
-			lastPaneId = paneId;
-			paneIds.push(paneId);
-			Object.assign(runRecord, { status: "running", tabId, paneIds: [...paneIds] });
-			await writeJsonAtomic(runFile, runRecord);
-		});
-		await allocation;
+		const paneId = await paneAllocator.allocate(contexts[index].taskDirectory);
+		tabId = paneAllocator.tabId;
 		return paneId;
 	};
 

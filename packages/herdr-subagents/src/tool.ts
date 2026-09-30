@@ -5,6 +5,7 @@ import { runHerdrSubagentsBatch, type BatchResult, type BatchTask } from "./batc
 import { respondToBlockedTask } from "./blocking.ts";
 import { cleanSubagentRun, historyText, listSubagentHistory, resumeHistoricalTask } from "./history.ts";
 import { validateToolParams } from "./validation.ts";
+import type { OwnerIdentity } from "./ownership.ts";
 
 export interface HerdrSubagentsTaskParams { name: string; prompt: string; agent?: string; model?: string; }
 
@@ -32,8 +33,7 @@ export interface HerdrSubagentsToolDependencies {
 	agentsDirectory: string;
 	herdr?: HerdrAutomation;
 	configurationPaths?: ConfigurationPaths;
-	ownerSessionId?: string;
-	ownerProcessId?: number;
+	owner?: OwnerIdentity;
 	runId?: string;
 }
 
@@ -109,7 +109,7 @@ export async function executeHerdrSubagents(
 			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
 		}
 		try {
-			const result = await resumeHistoricalTask(ctx.cwd, params.runId, params.task, params.prompt.trim(), dependencies.herdr, signal, dependencies.ownerSessionId, dependencies.ownerProcessId, (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "resume", runId: params.runId, cleanupError: text } }));
+			const result = await resumeHistoricalTask(ctx.cwd, params.runId, params.task, params.prompt.trim(), { herdr: dependencies.herdr, signal, owner: dependencies.owner, onCleanupError: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "resume", runId: params.runId, cleanupError: text } }) });
 			return { content: [{ type: "text", text: result.summary }], details: result, ...(result.status === "failed" || result.status === "cancelled" ? { isError: true } : {}) };
 		} catch (error) {
 			const text = error instanceof Error ? error.message : String(error);
@@ -122,7 +122,7 @@ export async function executeHerdrSubagents(
 			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
 		}
 		try {
-			const result = await respondToBlockedTask(ctx.cwd, params.runId.trim(), params.answer.trim(), dependencies.herdr, params.task, signal, dependencies.ownerSessionId, dependencies.ownerProcessId, (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "respond", runId: params.runId, cleanupError: text } }));
+			const result = await respondToBlockedTask(ctx.cwd, params.runId.trim(), params.answer.trim(), { herdr: dependencies.herdr, taskNumber: params.task, signal, owner: dependencies.owner, onCleanupError: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "respond", runId: params.runId, cleanupError: text } }) });
 			const text = [result.summary, ...(result.question ? [`Question: ${result.question}`] : []), ...result.documents.map((document) => `${document.description}: ${document.path}`)].join("\n");
 			return { content: [{ type: "text", text }], details: result, ...(result.status === "failed" || result.status === "partial" || result.status === "cancelled" ? { isError: true } : {}) };
 		} catch (error) {
@@ -162,8 +162,7 @@ export async function executeHerdrSubagents(
 				cwd: ctx.cwd,
 				signal,
 				herdr: dependencies.herdr,
-				ownerSessionId: dependencies.ownerSessionId,
-				ownerProcessId: dependencies.ownerProcessId,
+				owner: dependencies.owner,
 				onUpdate: (partial) => onUpdate?.({ content: [{ type: "text", text: partial.summary }], details: { ...partial, prompts: params.tasks?.map((task) => task.prompt) ?? [] } }),
 			});
 			const lines = [result.summary, ...result.tasks.map((task) => `- ${task.name}: ${task.status} — ${task.summary}`)];
@@ -206,8 +205,7 @@ export async function executeHerdrSubagents(
 		...(persona.tools ? { tools: persona.tools } : {}),
 		skills: persona.skills,
 		access: persona.access,
-		ownerSessionId: dependencies.ownerSessionId,
-		ownerProcessId: dependencies.ownerProcessId,
+		owner: dependencies.owner,
 		systemPrompt: persona.systemPrompt,
 		cwd: ctx.cwd,
 		signal,

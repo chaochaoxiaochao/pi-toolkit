@@ -1,10 +1,12 @@
 import { existsSync, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { retryBeforePrompt, type HerdrAutomation } from "./herdr.ts";
+import type { HerdrAutomation } from "./herdr.ts";
 import { liveAgentName, promptLiveAgent } from "./live-agent.ts";
 import { writeJsonAtomic } from "./state.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
+import { RunPaneAllocator } from "./run-pane-allocator.ts";
+import { aggregateTaskStatus } from "./run-status.ts";
 
 async function readJson(path: string): Promise<Record<string, any>> { return JSON.parse(await readFile(path, "utf8")) as Record<string, any>; }
 
@@ -23,37 +25,14 @@ export async function continueQueuedRun(runDirectory: string, herdr: HerdrAutoma
 	const availableSlots = Math.max(0, (Number(run.effectiveConcurrency) || 1) - blockedCount);
 	if (availableSlots === 0) return;
 	const concurrency = Math.min(availableSlots, queuedDirectories.length);
-	const paneIds: string[] = Array.isArray(run.paneIds) ? [...run.paneIds] : [];
-	let lastPaneId = paneIds.at(-1);
-	let allocation = Promise.resolve();
-	const allocate = async (directory: string): Promise<string> => {
-		let paneId = "";
-		allocation = allocation.then(async () => {
-			const env = { PI_HERDR_SUBAGENTS_CHILD: "1", PI_HERDR_SUBAGENTS_TASK_DIR: directory };
-			if (!run.tabId || !lastPaneId || !await herdr.paneExists(lastPaneId, options.signal)) {
-				const tab = await retryBeforePrompt(() => herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID ?? "", cwd: run.cwd, label: `SA · ${run.label}`, env, focus: false, signal: options.signal }));
-				run.tabId = tab.tabId;
-				paneId = tab.paneId;
-			} else {
-				const split = await retryBeforePrompt(() => herdr.splitPane({ paneId: lastPaneId as string, cwd: run.cwd, direction: paneIds.length % 2 ? "right" : "down", focus: false, env, signal: options.signal }));
-				paneId = split.paneId;
-			}
-			lastPaneId = paneId;
-			paneIds.push(paneId);
-			run.paneIds = paneIds;
-			run.status = "running";
-			await writeJsonAtomic(runFile, run);
-		});
-		await allocation;
-		return paneId;
-	};
+	const paneAllocator = new RunPaneAllocator({ herdr, run, runFile, signal: options.signal, validateExistingPane: true });
 	let nextIndex = 0;
 	const runOne = async (directory: string): Promise<string> => {
 		const taskFile = join(directory, "task.json");
 		const task = await readJson(taskFile);
 		let paneId = "";
 		try {
-			paneId = await allocate(directory);
+			paneId = await paneAllocator.allocate(directory);
 			const agentName = liveAgentName(task.id, Number(task.attempt ?? 0) + 1);
 			const paneLabel = `${String(task.order).padStart(2, "0")} · ${task.name ?? task.agent}`;
 			await herdr.renamePane(paneId, paneLabel, options.signal);
@@ -87,7 +66,7 @@ export async function continueQueuedRun(runDirectory: string, herdr: HerdrAutoma
 		}
 	}
 	const statuses = await Promise.all(taskDirectories.map(async (directory) => (await readJson(join(directory, "task.json"))).status as string));
-	run.status = statuses.some((status) => status === "blocked" || status === "queued") ? "blocked" : statuses.some((status) => status === "cancelled") ? "cancelled" : statuses.some((status) => status === "failed" || status === "interrupted") ? (statuses.some((status) => status === "completed") ? "partial" : "failed") : "completed";
+	run.status = options.signal?.aborted ? "cancelled" : aggregateTaskStatus(statuses);
 	if (run.status === "blocked") run.updatedAt = new Date().toISOString();
 	else run.completedAt = new Date().toISOString();
 	await writeJsonAtomic(runFile, run);

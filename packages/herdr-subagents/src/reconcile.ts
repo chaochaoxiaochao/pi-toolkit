@@ -2,8 +2,9 @@ import { existsSync, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { HerdrAutomation } from "./herdr.ts";
-import { isProcessAlive } from "./ownership.ts";
+import { isProcessAlive, type OwnerIdentity } from "./ownership.ts";
 import { writeJsonAtomic } from "./state.ts";
+import { aggregateTaskStatus } from "./run-status.ts";
 
 async function readJson(path: string): Promise<Record<string, any>> { return JSON.parse(await readFile(path, "utf8")) as Record<string, any>; }
 const ACTIVE = ["starting", "running", "queued", "blocked"];
@@ -23,7 +24,10 @@ async function closeRunTab(run: Record<string, any>, runFile: string, herdr: Her
 	}
 }
 
-export async function cancelActiveSubagentRuns(cwd: string, herdr: HerdrAutomation, reason = "Parent Pi session closed.", ownerSessionId?: string): Promise<CancellationResult> {
+export interface CancelActiveRunsOptions { reason?: string; owner?: OwnerIdentity; }
+
+export async function cancelActiveSubagentRuns(cwd: string, herdr: HerdrAutomation, options: CancelActiveRunsOptions = {}): Promise<CancellationResult> {
+	const reason = options.reason ?? "Parent Pi session closed.";
 	const result: CancellationResult = { cancelledRuns: 0, cleanupErrors: [] };
 	const runsDirectory = join(cwd, ".pi", "herdr-subagents", "runs");
 	if (!existsSync(runsDirectory)) return result;
@@ -33,7 +37,7 @@ export async function cancelActiveSubagentRuns(cwd: string, herdr: HerdrAutomati
 		let run: Record<string, any>;
 		try { run = await readJson(runFile); } catch { continue; }
 		if (!ACTIVE.includes(run.status)) continue;
-		if (ownerSessionId && run.ownerSessionId !== ownerSessionId) continue;
+		if (options.owner?.sessionId && run.ownerSessionId !== options.owner.sessionId) continue;
 		const now = new Date().toISOString();
 		const tasksDirectory = join(runDirectory, "tasks");
 		if (existsSync(tasksDirectory)) for (const taskEntry of readdirSync(tasksDirectory)) {
@@ -51,7 +55,7 @@ export async function cancelActiveSubagentRuns(cwd: string, herdr: HerdrAutomati
 	return result;
 }
 
-export async function reconcileSubagentRuns(cwd: string, herdr: HerdrAutomation, currentOwnerSessionId?: string, currentOwnerProcessId = process.pid): Promise<ReconciliationResult> {
+export async function reconcileSubagentRuns(cwd: string, herdr: HerdrAutomation, owner?: OwnerIdentity): Promise<ReconciliationResult> {
 	const result: ReconciliationResult = { liveTasks: 0, settledTasks: 0, interruptedTasks: 0, cancelledTasks: 0, cleanupErrors: [] };
 	const runsDirectory = join(cwd, ".pi", "herdr-subagents", "runs");
 	if (!existsSync(runsDirectory)) return result;
@@ -61,8 +65,8 @@ export async function reconcileSubagentRuns(cwd: string, herdr: HerdrAutomation,
 		let run: Record<string, any>;
 		try { run = await readJson(runFile); } catch { continue; }
 		if (!ACTIVE.includes(run.status)) continue;
-		const differentOwner = currentOwnerSessionId !== undefined && run.ownerSessionId !== currentOwnerSessionId;
-		if (differentOwner && run.ownerProcessId !== currentOwnerProcessId && isProcessAlive(run.ownerProcessId)) continue;
+		const differentOwner = owner?.sessionId !== undefined && run.ownerSessionId !== owner.sessionId;
+		if (differentOwner && run.ownerProcessId !== (owner?.processId ?? process.pid) && isProcessAlive(run.ownerProcessId)) continue;
 		const orphaned = differentOwner;
 		const statuses: string[] = [];
 		const tasksDirectory = join(runDirectory, "tasks");
@@ -102,7 +106,7 @@ export async function reconcileSubagentRuns(cwd: string, herdr: HerdrAutomation,
 			statuses.push(task.status);
 		}
 		if (orphaned || !statuses.some((status) => status === "running" || status === "starting")) {
-			run.status = statuses.every((status) => status === "completed") ? "completed" : statuses.some((status) => status === "cancelled") ? "cancelled" : statuses.some((status) => status === "blocked" || status === "queued") ? "blocked" : statuses.some((status) => status === "failed") ? (statuses.some((status) => status === "completed") ? "partial" : "failed") : "completed";
+			run.status = orphaned ? "cancelled" : aggregateTaskStatus(statuses);
 			run.completedAt = new Date().toISOString();
 			await writeJsonAtomic(runFile, run);
 			if (orphaned || run.status === "cancelled") await closeRunTab(run, runFile, herdr, result.cleanupErrors);

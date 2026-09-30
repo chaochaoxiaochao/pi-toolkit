@@ -1,3 +1,7 @@
+## Unreleased
+
+- fix Herdr Subagents Fleet state after blocked responses, preserve the active task widget while later background runs queue, and share ownership, pane-allocation, and status-reduction logic across recovery paths
+
 ## 2026-09-30 - v0.9.4
 
 - replace Herdr Subagents' hidden print/shell execution with visible interactive Pi Agents, one exclusive on-demand pane per task, Fleet keyboard navigation, durable blocked/history continuation, parent-session cancellation, and focus-safe batch tab cleanup

@@ -15,7 +15,8 @@
 - Force write-capable batches to serial execution while allowing bounded read-only parallelism.
 - Preserve compact reports, full results, Pi sessions, blocked questions, and historical follow-ups.
 - Recover queued/running work after interruption without retrying post-prompt side effects.
-- Verify the flat public contract, Fleet keyboard navigation, parent-shutdown cancellation, cleanup, atomic state replacement, startup retries, and stalled warnings.
+- Verify the flat public contract and injectable extension wiring, including Fleet rendering, editor focus ownership, terminal-input passthrough, exact-pane navigation, and stable display while another background run queues.
+- Verify parent-shutdown cancellation, cleanup, atomic state replacement, startup retries, and stalled warnings.
 
 ## Latest baseline
 

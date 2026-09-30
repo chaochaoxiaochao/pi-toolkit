@@ -7,6 +7,8 @@ import { ensureRuntimeIgnored } from "./history.ts";
 import { liveAgentName, promptLiveAgent } from "./live-agent.ts";
 import { writeJsonAtomic } from "./state.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
+import type { OwnerIdentity } from "./ownership.ts";
+import { ownerRecord } from "./ownership.ts";
 
 const CHILD_ENV = "PI_HERDR_SUBAGENTS_CHILD";
 const TASK_DIRECTORY_ENV = "PI_HERDR_SUBAGENTS_TASK_DIR";
@@ -37,8 +39,7 @@ export interface HerdrSubagentsOptions {
 	cwd?: string;
 	signal?: AbortSignal;
 	herdr?: HerdrAutomation;
-	ownerSessionId?: string;
-	ownerProcessId?: number;
+	owner?: OwnerIdentity;
 	onUpdate?: (result: HerdrSubagentsResult) => void;
 	onCleanupError?: (message: string) => void;
 }
@@ -162,8 +163,7 @@ export async function runHerdrSubagents(prompt: string, options: HerdrSubagentsO
 		label,
 		status: "starting",
 		cwd,
-		...(options.ownerSessionId ? { ownerSessionId: options.ownerSessionId } : {}),
-		...(options.ownerProcessId ? { ownerProcessId: options.ownerProcessId } : {}),
+		...ownerRecord(options.owner),
 		taskIds: [taskId],
 		startedAt: startedAtIso,
 	};

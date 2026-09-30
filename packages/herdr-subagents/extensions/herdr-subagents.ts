@@ -15,12 +15,19 @@ import { fleetEditorHasFocus, FleetSelection, fleetLines } from "../src/fleet.ts
 
 const packageAgentsDir = fileURLToPath(new URL("../agents/", import.meta.url));
 
-export interface HerdrSubagentsExtensionDependencies { herdr?: HerdrAutomation; }
+export interface HerdrSubagentsExtensionDependencies {
+	herdr?: HerdrAutomation;
+	execute?: typeof executeHerdrSubagents;
+	isEditor?: (value: unknown) => boolean;
+	createFleetWidget?: (lines: string[]) => Container;
+}
 
 export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSubagentsExtensionDependencies = {}) {
 	if (process.env.PI_HERDR_SUBAGENTS_CHILD === "1") return;
 	let activeBatch: HerdrSubagentsBatchDetails | undefined;
 	const herdr = dependencies.herdr ?? new CliHerdrAutomation();
+	const execute = dependencies.execute ?? executeHerdrSubagents;
+	const isEditorComponent = dependencies.isEditor ?? ((value: unknown) => value instanceof Editor);
 	const dispatcher = new RunDispatcher();
 	const fleetSelection = new FleetSelection();
 	const runControllers = new Map<string, AbortController>();
@@ -34,10 +41,18 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 		if (!currentUi) return;
 		currentUi.setWidget("herdr-subagents", activeBatch ? ((tui) => {
 			fleetTui = tui as { focusedComponent?: unknown };
+			const lines = fleetLines(activeBatch as HerdrSubagentsBatchDetails, fleetSelection);
+			if (dependencies.createFleetWidget) return dependencies.createFleetWidget(lines);
 			const container = new Container();
-			for (const line of fleetLines(activeBatch as HerdrSubagentsBatchDetails, fleetSelection)) container.addChild(new Text(line, 1, 0));
+			for (const line of lines) container.addChild(new Text(line, 1, 0));
 			return container;
 		}) : undefined, { placement: "belowEditor" });
+	};
+	const syncActiveBatch = (details: unknown) => {
+		const batch = details as Partial<HerdrSubagentsBatchDetails>;
+		if (!batch.activity || !batch.label || !batch.status) return;
+		activeBatch = ["starting", "running", "blocked", "queued"].includes(batch.status) ? batch as HerdrSubagentsBatchDetails : undefined;
+		renderFleet();
 	};
 	const notifyRun = (runId: string, result: { details: unknown; content?: Array<{ type: string; text?: string }> }) => {
 		const details = result.details as Partial<HerdrSubagentsBatchDetails> & { errorMessage?: string };
@@ -55,12 +70,12 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 		sessionGeneration += 1;
 		dispatcher.pause();
 		const queuedRunIds = dispatcher.cancelQueued(new Error("Parent Pi session closed."));
-		await cancelQueuedRuns(ctx.cwd, queuedRunIds, "Parent Pi session closed.", ownerSessionId);
+		await cancelQueuedRuns(ctx.cwd, queuedRunIds, { reason: "Parent Pi session closed.", owner: { sessionId: ownerSessionId, processId: process.pid } });
 		for (const controller of runControllers.values()) controller.abort(new Error("Parent Pi session closed."));
 		unsubscribeTerminalInput?.();
 		unsubscribeTerminalInput = undefined;
 		await Promise.allSettled([...inFlight]);
-		const cancellation = await cancelActiveSubagentRuns(ctx.cwd, herdr, "Parent Pi session closed.", ownerSessionId);
+		const cancellation = await cancelActiveSubagentRuns(ctx.cwd, herdr, { reason: "Parent Pi session closed.", owner: { sessionId: ownerSessionId, processId: process.pid } });
 		for (const message of cancellation.cleanupErrors) ctx.ui.notify(message, "error");
 		activeBatch = undefined;
 		fleetSelection.reset();
@@ -75,7 +90,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 			if (!activeBatch) return undefined;
 			if (isKeyRelease(data)) return undefined;
 			const focused = fleetTui?.focusedComponent;
-			if (!fleetEditorHasFocus(focused, (value) => value instanceof Editor)) {
+			if (!fleetEditorHasFocus(focused, isEditorComponent)) {
 				fleetSelection.reset();
 				renderFleet();
 				return undefined;
@@ -88,8 +103,8 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 		dispatcher.pause();
 		try {
 			const queued = await loadQueuedRuns(ctx.cwd);
-			await cancelQueuedRuns(ctx.cwd, queued.map((run) => run.runId), "Owning parent Pi session is no longer active.", undefined, true);
-			const reconciliation = await reconcileSubagentRuns(ctx.cwd, herdr, ownerSessionId, process.pid);
+			await cancelQueuedRuns(ctx.cwd, queued.map((run) => run.runId), { reason: "Owning parent Pi session is no longer active.", onlyOrphaned: true });
+			const reconciliation = await reconcileSubagentRuns(ctx.cwd, herdr, { sessionId: ownerSessionId, processId: process.pid });
 			for (const message of reconciliation.cleanupErrors) ctx.ui.notify(message, "error");
 		}
 		catch (error) { ctx.ui.notify(`Subagent recovery could not inspect Herdr: ${error instanceof Error ? error.message : String(error)}`, "error"); return; }
@@ -111,16 +126,17 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 			const controller = new AbortController();
 			runControllers.set(executionId, controller);
 			const runSignal = !params.background && signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
-			const executeRun = async () => await executeHerdrSubagents(params, runSignal, (update) => {
+			const executeRun = async () => {
+				const result = await execute(params, runSignal, (update) => {
 				const details = update.details as HerdrSubagentsBatchDetails | undefined;
-				if (details?.activity) {
-					activeBatch = ["starting", "running", "blocked", "queued"].includes(details.status) ? details : undefined;
-					renderFleet();
-				}
+				if (details?.activity) syncActiveBatch(details);
 				const updateText = update.content.find((item) => item.type === "text")?.text;
 				if (params.background && updateText && (updateText.includes("appears stalled") || updateText.includes("cleanup failed"))) ctx.ui.notify(updateText, "warning");
 				if (!params.background) onUpdate?.(update);
-			}, ctx, { agentsDirectory: packageAgentsDir, ownerSessionId, ownerProcessId: process.pid, runId });
+				}, ctx, { agentsDirectory: packageAgentsDir, owner: { sessionId: ownerSessionId, processId: process.pid }, runId });
+				syncActiveBatch(result.details);
+				return result;
+			};
 			if (!params.tasks) {
 				const promise = executeRun();
 				inFlight.add(promise);
@@ -129,7 +145,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 				return result;
 			}
 			if (!runId) throw new Error("Batch run ID was not allocated.");
-			if (params.background) await persistQueuedRun(ctx.cwd, runId, params, ownerSessionId, process.pid);
+			if (params.background) await persistQueuedRun(ctx.cwd, runId, params, { sessionId: ownerSessionId, processId: process.pid });
 			const promise = dispatcher.submit(runId, async () => {
 				const result = await executeRun();
 				if (params.background && (result.details as { runId?: string }).runId === runId) await removeQueuedRun(ctx.cwd, runId);
@@ -143,7 +159,6 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 			inFlight.add(promise);
 			void promise.finally(() => { inFlight.delete(promise); runControllers.delete(executionId); }).catch(() => undefined);
 			if (params.background) {
-				ctx.ui.setWidget("herdr-subagents", [`Subagent run ${runId.slice(0, 8)} queued`, `queued runs ${dispatcher.snapshot().queuedRunIds.length}`], { placement: "belowEditor" });
 				void promise.then((result) => {
 					if (generation !== sessionGeneration) return;
 					notifyRun(runId, result);

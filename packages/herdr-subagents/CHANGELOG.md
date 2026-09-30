@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Keep the active Fleet widget stable when another background run is queued, refresh rows and pane navigation after blocked responses, and cover the public extension UI/input wiring with injectable dependencies.
+- Centralize parent ownership, run-status aggregation, and serialized pane allocation across initial, continued, recovered, and historical runs.
 - Run every initial task, blocked response, recovered task, and historical follow-up as a visible interactive Pi Agent through Herdr Agent start/prompt; remove print mode, pane shell injection, completion markers, and marker polling.
 - Give every started task a new on-demand pane, retain completed panes until the batch settles, and then close the whole tab with focus-safe cleanup.
 - Add a flat fully described tool schema with runtime mode validation and a Fleet-style task list with direct keyboard pane navigation.

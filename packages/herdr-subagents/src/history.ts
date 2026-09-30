@@ -5,19 +5,14 @@ import { CliHerdrAutomation, retryBeforePrompt, type HerdrAutomation } from "./h
 import { liveAgentName, promptLiveAgent } from "./live-agent.ts";
 import { writeJsonAtomic, writeTextAtomic } from "./state.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
+import type { OwnerIdentity } from "./ownership.ts";
+import { ownerRecord } from "./ownership.ts";
+import { aggregateTaskStatus } from "./run-status.ts";
 
 export interface HistoricalTask { order: number; id: string; name: string; agent: string; status: string; summary?: string; question?: string; documents: Array<{ path: string; description: string }>; recordDirectory: string; sessionFile: string; model?: string; thinking?: string; tools?: string[]; skills: string[]; access?: string; }
 export interface HistoricalRun { id: string; label: string; status: string; startedAt: string; completedAt?: string; effectiveConcurrency?: number; tasks: HistoricalTask[]; recordDirectory: string; }
 
 async function readJson(path: string): Promise<Record<string, any>> { return JSON.parse(await readFile(path, "utf8")) as Record<string, any>; }
-
-function aggregateTaskStatus(statuses: string[]): string {
-	if (statuses.some((status) => status === "running" || status === "starting" || status === "queued")) return "running";
-	if (statuses.some((status) => status === "blocked")) return "blocked";
-	if (statuses.some((status) => status === "cancelled")) return statuses.some((status) => status === "completed") ? "partial" : "cancelled";
-	if (statuses.some((status) => status === "failed" || status === "interrupted")) return statuses.some((status) => status === "completed") ? "partial" : "failed";
-	return "completed";
-}
 
 export async function ensureRuntimeIgnored(cwd: string): Promise<void> {
 	const piDirectory = join(cwd, ".pi");
@@ -78,7 +73,11 @@ export async function cleanSubagentRun(cwd: string, runId: string): Promise<bool
 	return true;
 }
 
-export async function resumeHistoricalTask(cwd: string, runId: string, taskNumber: number, prompt: string, herdr: HerdrAutomation = new CliHerdrAutomation(), signal?: AbortSignal, ownerSessionId?: string, ownerProcessId?: number, onCleanupError?: (message: string) => void): Promise<{ runId: string; status: string; summary: string; documents: any[]; tabId: string; paneId: string; sessionFile: string }> {
+export interface ResumeHistoricalTaskOptions { herdr?: HerdrAutomation; signal?: AbortSignal; owner?: OwnerIdentity; onCleanupError?: (message: string) => void; }
+
+export async function resumeHistoricalTask(cwd: string, runId: string, taskNumber: number, prompt: string, options: ResumeHistoricalTaskOptions = {}): Promise<{ runId: string; status: string; summary: string; documents: any[]; tabId: string; paneId: string; sessionFile: string }> {
+	const herdr = options.herdr ?? new CliHerdrAutomation();
+	const { signal, onCleanupError } = options;
 	const run = (await listSubagentHistory(cwd)).find((candidate) => candidate.id === runId);
 	const historical = run?.tasks.find((task) => task.order === taskNumber);
 	if (!run || !historical) throw new Error(`Unknown historical task ${runId}#${taskNumber}.`);
@@ -106,7 +105,7 @@ export async function resumeHistoricalTask(cwd: string, runId: string, taskNumbe
 		Object.assign(task, { status: "running", attempt, currentTurnFile: turnFile, tabId: tab.tabId, paneId: tab.paneId, paneLabel, agentName, updatedAt: new Date().toISOString() });
 		const activeRunRecord = await readJson(join(run.recordDirectory, "run.json"));
 		const paneIds = [...new Set([...(Array.isArray(activeRunRecord.paneIds) ? activeRunRecord.paneIds : []), tab.paneId])];
-		Object.assign(activeRunRecord, { status: "running", ownerSessionId, ownerProcessId, tabId: tab.tabId, paneIds, updatedAt: new Date().toISOString() });
+		Object.assign(activeRunRecord, { status: "running", ...ownerRecord(options.owner), tabId: tab.tabId, paneIds, updatedAt: new Date().toISOString() });
 		await Promise.all([
 			writeJsonAtomic(taskFile, task),
 			writeJsonAtomic(turnFile, { attempt, prompt, status: "running", sessionFile: historical.sessionFile, tabId: tab.tabId, paneId: tab.paneId, agentName, startedAt: new Date().toISOString() }),
@@ -121,7 +120,7 @@ export async function resumeHistoricalTask(cwd: string, runId: string, taskNumbe
 		]);
 		const runRecord = await readJson(join(run.recordDirectory, "run.json"));
 		const aggregateStatus = aggregateTaskStatus((await listSubagentHistory(cwd)).find((candidate) => candidate.id === runId)?.tasks.map((entry) => entry.status) ?? [status]);
-		Object.assign(runRecord, { status: aggregateStatus, ownerSessionId, ownerProcessId, tabId: tab.tabId, ...(aggregateStatus === "blocked" ? { question: report.question, updatedAt: new Date().toISOString() } : { completedAt: new Date().toISOString() }) });
+		Object.assign(runRecord, { status: aggregateStatus, ...ownerRecord(options.owner), tabId: tab.tabId, ...(aggregateStatus === "blocked" ? { question: report.question, updatedAt: new Date().toISOString() } : { completedAt: new Date().toISOString() }) });
 		await writeJsonAtomic(join(run.recordDirectory, "run.json"), runRecord);
 		if (status !== "blocked") {
 			await cleanupRunTab({ herdr, tabId: tab.tabId, runFile: join(run.recordDirectory, "run.json"), runRecord, signal, onError: onCleanupError });
@@ -133,7 +132,7 @@ export async function resumeHistoricalTask(cwd: string, runId: string, taskNumbe
 		Object.assign(task, { status, attempt, completedAt: new Date().toISOString(), error: message });
 		const runRecord = await readJson(join(run.recordDirectory, "run.json"));
 		const aggregateStatus = aggregateTaskStatus(run.tasks.map((entry) => entry.id === historical.id ? status : entry.status));
-		Object.assign(runRecord, { status: aggregateStatus, ownerSessionId, ownerProcessId, completedAt: new Date().toISOString(), error: message, ...(tab ? { tabId: tab.tabId } : {}) });
+		Object.assign(runRecord, { status: aggregateStatus, ...ownerRecord(options.owner), completedAt: new Date().toISOString(), error: message, ...(tab ? { tabId: tab.tabId } : {}) });
 		await Promise.all([
 			writeJsonAtomic(taskFile, task),
 			writeJsonAtomic(turnFile, { attempt, prompt, status, error: message, sessionFile: historical.sessionFile, ...(tab ? { tabId: tab.tabId, paneId: tab.paneId } : {}), completedAt: new Date().toISOString() }),

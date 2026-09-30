@@ -358,7 +358,7 @@ try {
 	const twiceBlockedHerdr = fakeHerdr("blocked-twice");
 	const twiceBlocked = await executeHerdrSubagents({ concurrency: 1, tasks: [{ name: "first-question", prompt: "first", agent: "explorer" }, { name: "second-question", prompt: "second", agent: "reviewer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: twiceBlockedHerdr });
 	const secondQuestion = await executeHerdrSubagents({ action: "respond", runId: twiceBlocked.details.runId, answer: "main" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: twiceBlockedHerdr });
-	check("queued sibling blocking returns its current question", secondQuestion.details.status === "blocked" && secondQuestion.details.question === "Which environment should I inspect?" && secondQuestion.content[0].text.includes("environment"));
+	check("queued sibling blocking returns its current question and Fleet pane", secondQuestion.details.status === "blocked" && secondQuestion.details.question === "Which environment should I inspect?" && secondQuestion.content[0].text.includes("environment") && secondQuestion.details.activity[1].status === "blocked" && Boolean(secondQuestion.details.activity[1].paneId));
 	const failedAfterBlockHerdr = fakeHerdr("blocked");
 	const failedAfterBlock = await executeHerdrSubagents({ concurrency: 1, tasks: [{ name: "question-first", prompt: "question", agent: "explorer" }, { name: "fails-later", prompt: "FAIL sibling", agent: "reviewer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: failedAfterBlockHerdr });
 	const failedAnswer = await executeHerdrSubagents({ action: "respond", runId: failedAfterBlock.details.runId, answer: "main" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: failedAfterBlockHerdr });
@@ -465,8 +465,8 @@ try {
 	await cancelQueuedRuns(root, ["queued-persisted"]);
 	const cancelledQueued = (await listSubagentHistory(root)).find((run) => run.id === "queued-persisted");
 	check("parent shutdown archives queued work as cancelled", !(await loadQueuedRuns(root)).some((run) => run.runId === "queued-persisted") && cancelledQueued?.status === "cancelled" && cancelledQueued.tasks[0].status === "cancelled");
-	await persistQueuedRun(root, "live-foreign-queue", { background: true, tasks: [{ name: "foreign", prompt: "foreign" }] }, "foreign-owner", process.pid);
-	await cancelQueuedRuns(root, ["live-foreign-queue"], "orphan cleanup", undefined, true);
+	await persistQueuedRun(root, "live-foreign-queue", { background: true, tasks: [{ name: "foreign", prompt: "foreign" }] }, { sessionId: "foreign-owner", processId: process.pid });
+	await cancelQueuedRuns(root, ["live-foreign-queue"], { reason: "orphan cleanup", onlyOrphaned: true });
 	check("startup leaves another live parent process queue untouched", (await loadQueuedRuns(root)).some((run) => run.runId === "live-foreign-queue"));
 	const ownershipRoot = join(root, "ownership");
 	for (const [suffix, owner] of [["a", "owner-a"], ["b", "owner-b"]]) {
@@ -477,9 +477,9 @@ try {
 		writeFileSync(join(taskDirectory, "task.json"), JSON.stringify({ id: `task-${suffix}`, runId: `run-${suffix}`, order: 1, name: suffix, status: "blocked", sessionFile: join(taskDirectory, "session.jsonl") }));
 	}
 	const ownershipHerdr = fakeHerdr();
-	await cancelActiveSubagentRuns(ownershipRoot, ownershipHerdr, "shutdown", "owner-a");
+	await cancelActiveSubagentRuns(ownershipRoot, ownershipHerdr, { reason: "shutdown", owner: { sessionId: "owner-a" } });
 	check("graceful shutdown cancels only runs owned by that parent session", JSON.parse(readFileSync(join(ownershipRoot, ".pi", "herdr-subagents", "runs", "a", "run.json"), "utf8")).status === "cancelled" && JSON.parse(readFileSync(join(ownershipRoot, ".pi", "herdr-subagents", "runs", "b", "run.json"), "utf8")).status === "blocked");
-	await reconcileSubagentRuns(ownershipRoot, ownershipHerdr, "new-owner", process.pid + 1);
+	await reconcileSubagentRuns(ownershipRoot, ownershipHerdr, { sessionId: "new-owner", processId: process.pid + 1 });
 	check("startup reconciliation leaves another live parent process untouched", JSON.parse(readFileSync(join(ownershipRoot, ".pi", "herdr-subagents", "runs", "b", "run.json"), "utf8")).status === "blocked");
 
 	const recoveryRoot = join(root, "recovery");
@@ -487,13 +487,13 @@ try {
 	mkdirSync(recoveryTask, { recursive: true });
 	writeFileSync(join(recoveryRoot, ".pi", "herdr-subagents", "runs", "run", "run.json"), JSON.stringify({ id: "recover", label: "recover", status: "running", startedAt: new Date().toISOString() }));
 	writeFileSync(join(recoveryTask, "task.json"), JSON.stringify({ id: "task", runId: "recover", name: "lost", status: "running", paneId: "w1:missing", sessionFile: join(recoveryTask, "session.jsonl") }));
-	const reconciliation = await reconcileSubagentRuns(recoveryRoot, fakeHerdr("missing-pane"), "new-owner");
+	const reconciliation = await reconcileSubagentRuns(recoveryRoot, fakeHerdr("missing-pane"), { sessionId: "new-owner" });
 	check("reconciliation marks stale child cancelled", reconciliation.cancelledTasks === 1 && JSON.parse(readFileSync(join(recoveryTask, "task.json"), "utf8")).status === "cancelled");
 	const shellRecoveryTask = JSON.parse(readFileSync(join(recoveryTask, "task.json"), "utf8"));
 	Object.assign(shellRecoveryTask, { status: "running" });
 	writeFileSync(join(recoveryTask, "task.json"), JSON.stringify(shellRecoveryTask));
 	writeFileSync(join(recoveryRoot, ".pi", "herdr-subagents", "runs", "run", "run.json"), JSON.stringify({ id: "recover", label: "recover", status: "running", startedAt: new Date().toISOString() }));
-	const shellReconciliation = await reconcileSubagentRuns(recoveryRoot, fakeHerdr("shell-only"), "new-owner");
+	const shellReconciliation = await reconcileSubagentRuns(recoveryRoot, fakeHerdr("shell-only"), { sessionId: "new-owner" });
 	check("pane with only a shell is not treated as live child", shellReconciliation.interruptedTasks === 1);
 	const nodeProcessHerdr = join(root, "node-process-herdr");
 	writeFileSync(nodeProcessHerdr, `#!/bin/sh\nprintf '%s\\n' '{"result":{"process_info":{"foreground_processes":[{"name":"node","argv":["/usr/bin/node","/opt/pi-coding-agent/dist/bundle/cli.js"]}]}}}'\n`);
