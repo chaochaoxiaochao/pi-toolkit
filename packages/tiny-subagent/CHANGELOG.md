@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Add built-in worker, explorer, and reviewer personas with project/global/package discovery precedence.
+- Add merged global and project model, thinking, skill, and concurrency settings plus `/subagents` discovery commands.
 - Run one synchronous subagent in a dedicated, unfocused Herdr tab and close it after completion.
 - Require a structured child report and return only its summary and document paths to the parent.
 - Persist run/task metadata, the full result, and the child Pi session under `.pi/herdr-subagents/runs`.

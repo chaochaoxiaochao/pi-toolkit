@@ -3,6 +3,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { loadSubagentConfiguration } from "../src/config.ts";
 import { executeTinySubagent, type TinySubagentDetails, type TinySubagentToolParams } from "../src/tool.ts";
 
 const ACTIONS = ["list"] as const;
@@ -62,6 +63,35 @@ export default function (pi: ExtensionAPI) {
 			if (details.recordDirectory) container.addChild(new Text(theme.fg("dim", `Record: ${details.recordDirectory}`), 0, 0));
 			if (details.errorMessage) container.addChild(new Text(theme.fg("error", `Error: ${details.errorMessage}`), 0, 0));
 			return container;
+		},
+	});
+
+	pi.registerCommand("subagents", {
+		description: "Inspect effective subagent agents, models, and settings",
+		getArgumentCompletions: (prefix) => ["agents", "models", "settings"].filter((value) => value.startsWith(prefix)).map((value) => ({ value, label: value })),
+		handler: async (args, ctx) => {
+			const section = args.trim() || "agents";
+			if (section === "models") {
+				await ctx.modelRegistry.refresh();
+				const lines = ctx.modelRegistry.getAvailable().map((model) => `${model.provider}/${model.id}`).sort();
+				ctx.ui.notify(lines.length ? `Available Pi models:\n${lines.join("\n")}` : "No authenticated Pi models are available.", "info");
+				return;
+			}
+			const configuration = loadSubagentConfiguration(ctx.cwd, packageAgentsDir, ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined);
+			if (section === "agents") {
+				const lines = configuration.personas.map((persona) => `${persona.name}: ${persona.source}, ${persona.access}, model=${persona.model ?? "unresolved"} (${persona.modelSource}), thinking=${persona.thinking ?? "default"}, tools=${persona.tools?.join(",") ?? "default"}, skills=${persona.skills.join(",") || "none"}`);
+				ctx.ui.notify(lines.join("\n"), "info");
+				return;
+			}
+			if (section === "settings") {
+				const settings = configuration.settings;
+				const values: Record<string, string | number | undefined> = { defaultConcurrency: settings.defaultConcurrency, maxConcurrency: settings.maxConcurrency, stalledWarningSeconds: settings.stalledWarningSeconds, defaultModel: settings.defaultModel };
+				const lines = Object.entries(values).map(([key, value]) => `${key}=${String(value ?? "unset")} (${configuration.settingSources[key] ?? "built-in"})`);
+				if (configuration.diagnostics.length) lines.push("Diagnostics:", ...configuration.diagnostics);
+				ctx.ui.notify(lines.join("\n"), "info");
+				return;
+			}
+			ctx.ui.notify("Usage: /subagents agents|models|settings", "warning");
 		},
 	});
 }

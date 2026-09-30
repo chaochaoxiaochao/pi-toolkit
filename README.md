@@ -110,7 +110,7 @@ pi update npm:@maxiaochao/pi-toolkit
 pi update npm:@maxiaochao/pi-tiny-subagent
 ```
 
-See [packages/tiny-subagent/README.md](packages/tiny-subagent/README.md) for personas, synchronous Herdr execution, compact reports, and persistent project-local records.
+See [packages/tiny-subagent/README.md](packages/tiny-subagent/README.md) for configurable worker/explorer/reviewer personas, synchronous Herdr execution, compact reports, and persistent project-local records.
 
 ## Codex Edit (apply_patch)
 

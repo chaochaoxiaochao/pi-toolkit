@@ -1,7 +1,8 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { discoverPackageAgents, parseAgentMarkdown } from "../src/personas.ts";
+import { loadSubagentConfiguration } from "../src/config.ts";
 import { runTinySubagent } from "../src/runner.ts";
 import { executeTinySubagent } from "../src/tool.ts";
 
@@ -140,6 +141,33 @@ try {
 	writeFileSync(join(agentsDir, "broken.md"), "not frontmatter");
 	const discovery = discoverPackageAgents(agentsDir);
 	check("persona discovery and diagnostics", discovery.agents.length === 1 && discovery.agents[0].name === "worker" && discovery.diagnostics.length === 1);
+
+	const configRoot = join(root, "configuration");
+	const packageAgents = join(configRoot, "package-agents");
+	const globalAgents = join(configRoot, "global-agents");
+	const projectAgents = join(configRoot, "project-agents");
+	mkdirSync(packageAgents, { recursive: true });
+	mkdirSync(globalAgents, { recursive: true });
+	mkdirSync(projectAgents, { recursive: true });
+	writeFileSync(join(packageAgents, "worker.md"), `---\nname: worker\ndescription: Package worker\naccess: write\nmodel: package/model\nskills: package-skill\n---\nPackage prompt.`);
+	writeFileSync(join(packageAgents, "explorer.md"), `---\nname: explorer\ndescription: Package explorer\naccess: read\n---\nExplore.`);
+	writeFileSync(join(globalAgents, "worker.md"), `---\nname: worker\ndescription: Global worker\naccess: read\n---\nGlobal prompt.`);
+	writeFileSync(join(projectAgents, "worker.md"), `---\nname: worker\ndescription: Project worker\n---\nProject prompt.`);
+	const globalConfig = join(configRoot, "global.json");
+	const projectConfig = join(configRoot, "project.json");
+	writeFileSync(globalConfig, JSON.stringify({ maxConcurrency: 8, defaultModel: "global/default", personas: { worker: { model: "global/worker", thinking: "low", skills: ["global-skill"] } } }));
+	writeFileSync(projectConfig, JSON.stringify({ maxConcurrency: 3, personas: { worker: { model: "project/worker", thinking: "high", skills: ["project-skill"] } } }));
+	const configurationPaths = { globalConfig, projectConfig, globalAgents, projectAgents };
+	const configuration = loadSubagentConfiguration(configRoot, packageAgents, "parent/model", configurationPaths);
+	const configuredWorker = configuration.personas.find((persona) => persona.name === "worker");
+	const configuredExplorer = configuration.personas.find((persona) => persona.name === "explorer");
+	check("built-in settings recursively merge global then project", configuration.settings.defaultConcurrency === 1 && configuration.settings.maxConcurrency === 3 && configuration.settings.defaultModel === "global/default" && configuration.settingSources.maxConcurrency === "project");
+	check("persona definitions use project global package precedence", configuredWorker?.source === "project" && configuredWorker.description === "Project worker" && configuredWorker.systemPrompt === "Project prompt." && configuredWorker.access === "write" && configuredExplorer?.source === "package" && configuredExplorer.access === "read");
+	check("persona configuration resolves model thinking and skills", configuredWorker?.model === "project/worker" && configuredWorker.modelSource === "project persona" && configuredWorker.thinking === "high" && configuredWorker.skills.join(",") === "project-skill");
+	const configuredHerdr = fakeHerdr();
+	const configuredRun = await executeTinySubagent({ agent: "worker", model: "task/model", prompt: "Use configured values" }, undefined, undefined, { cwd: configRoot, model: { provider: "parent", id: "model" }, thinkingLevel: "medium" }, { agentsDirectory: packageAgents, configurationPaths, herdr: configuredHerdr });
+	const configuredStart = configuredHerdr.calls.find(([name]) => name === "startAgent")[1];
+	check("configured persona uses displayed effective values", !configuredRun.isError && configuredStart.args.includes("task/model") && configuredStart.args.includes("high") && configuredStart.args.includes("--skill") && configuredStart.args.includes("project-skill"));
 } finally {
 	restoreEnv();
 	rmSync(root, { recursive: true, force: true });

@@ -1,5 +1,5 @@
 import type { HerdrAutomation } from "./herdr.ts";
-import { discoverPackageAgents } from "./personas.ts";
+import { loadSubagentConfiguration, type ConfigurationPaths, type SubagentConfiguration } from "./config.ts";
 import { runTinySubagent, type TinySubagentResult } from "./runner.ts";
 
 export interface TinySubagentToolParams {
@@ -19,6 +19,7 @@ export interface TinySubagentToolContext {
 export interface TinySubagentToolDependencies {
 	agentsDirectory: string;
 	herdr?: HerdrAutomation;
+	configurationPaths?: ConfigurationPaths;
 }
 
 export type TinySubagentDetails = TinySubagentResult & {
@@ -38,13 +39,14 @@ function modelId(ctx: TinySubagentToolContext): string | undefined {
 	return ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
 }
 
-export function listText(discovery: ReturnType<typeof discoverPackageAgents>): string {
+export function listText(discovery: SubagentConfiguration): string {
 	const lines = ["Available tiny-subagent personas:"];
-	if (discovery.agents.length === 0) lines.push("- (none)");
-	for (const agent of discovery.agents) {
-		const model = agent.model ?? "inherits current session model";
+	if (discovery.personas.length === 0) lines.push("- (none)");
+	for (const agent of discovery.personas) {
+		const model = agent.model ?? "unresolved";
 		const tools = agent.tools?.join(", ") ?? "Pi default built-in tools";
-		lines.push(`- ${agent.name}: ${agent.description} (model: ${model}; tools: ${tools})`);
+		const skills = agent.skills.join(", ") || "none";
+		lines.push(`- ${agent.name}: ${agent.description} (source: ${agent.source}; access: ${agent.access}; model: ${model} [${agent.modelSource}]; thinking: ${agent.thinking ?? "default"}; tools: ${tools}; skills: ${skills})`);
 	}
 	if (discovery.diagnostics.length > 0) {
 		lines.push("", "Persona diagnostics:", ...discovery.diagnostics.map((diagnostic) => `- ${diagnostic}`));
@@ -67,11 +69,11 @@ export async function executeTinySubagent(
 	ctx: TinySubagentToolContext,
 	dependencies: TinySubagentToolDependencies,
 ): Promise<ToolResponse> {
-	const discovery = discoverPackageAgents(dependencies.agentsDirectory);
+	const discovery = loadSubagentConfiguration(ctx.cwd, dependencies.agentsDirectory, modelId(ctx), dependencies.configurationPaths);
 	if (params.action === "list") {
 		return {
 			content: [{ type: "text", text: listText(discovery) }],
-			details: { action: "list", agents: discovery.agents, diagnostics: discovery.diagnostics },
+			details: { action: "list", agents: discovery.personas, diagnostics: discovery.diagnostics, settings: discovery.settings },
 		};
 	}
 
@@ -81,7 +83,7 @@ export async function executeTinySubagent(
 	}
 
 	const selectedName = params.agent?.trim() || "worker";
-	const persona = discovery.agents.find((agent) => agent.name === selectedName);
+	const persona = discovery.personas.find((agent) => agent.name === selectedName);
 	if (!persona) {
 		const text = `Unknown persona '${selectedName}'.\n\n${listText(discovery)}`;
 		return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
@@ -89,7 +91,7 @@ export async function executeTinySubagent(
 
 	const explicitModel = params.model?.trim();
 	const selectedModel = explicitModel || persona.model || modelId(ctx);
-	const inheritThinking = !explicitModel && !persona.model ? ctx.thinkingLevel : undefined;
+	const selectedThinking = persona.thinking ?? (!explicitModel && persona.modelSource === "parent session" ? ctx.thinkingLevel : undefined);
 	const details = (result: TinySubagentResult): TinySubagentDetails => ({
 		...result,
 		agent: persona.name,
@@ -101,8 +103,10 @@ export async function executeTinySubagent(
 		agent: persona.name,
 		label: params.label,
 		...(selectedModel ? { model: selectedModel } : {}),
-		...(inheritThinking ? { thinking: inheritThinking } : {}),
+		...(selectedThinking ? { thinking: selectedThinking } : {}),
 		...(persona.tools ? { tools: persona.tools } : {}),
+		skills: persona.skills,
+		access: persona.access,
 		systemPrompt: persona.systemPrompt,
 		cwd: ctx.cwd,
 		signal,

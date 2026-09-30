@@ -14,7 +14,7 @@ The package registers one tool, `tiny_subagents`. Calls outside a Herdr workspac
 
 ## Usage
 
-Discover the package-local personas first:
+Discover the effective personas first:
 
 ```text
 tiny_subagents({ action: "list" })
@@ -51,6 +51,14 @@ The task directory contains the full result, structured report, task metadata, s
 
 ## Personas
 
+The package includes `worker` (write access), `explorer` (read access), and `reviewer` (read access). Persona definitions are discovered in this order, with the first available higher-precedence definition replacing the lower one:
+
+1. `.pi/subagents/agents/*.md` in the project
+2. `~/.pi/agent/subagents/agents/*.md` globally
+3. this package's `agents/*.md`
+
+A custom persona without `access` is treated as write-capable. Definitions may set `access`, `model`, `thinking`, `tools`, and `skills` in frontmatter.
+
 The default `agents/worker.md` uses this format:
 
 ```md
@@ -68,5 +76,21 @@ Supported frontmatter:
 - `name` and `description` are required.
 - `model` optionally selects a child model. A call-level `model` overrides it; otherwise the current session model is inherited.
 - `tools` optionally restricts built-in tools. `subagent_report` is always added so the child can settle the task.
+- `access` is `read` or `write`; omitted custom values default to `write`.
+- `thinking` and `skills` provide persona defaults.
 
-Persona files are loaded only from this package's `agents/*.md`. The child does not inherit parent extensions or skills, but normal project context files still apply. It uses the same Pi installation, provider configuration, model catalog, and credentials as the parent.
+Global settings live at `~/.pi/agent/subagents.json`; project overrides live at `.pi/subagents.json`. Both support `defaultConcurrency`, `maxConcurrency`, `stalledWarningSeconds`, `defaultModel`, and a `personas` object whose entries can override `model`, `thinking`, and `skills`.
+
+```json
+{
+  "defaultModel": "provider/model",
+  "maxConcurrency": 3,
+  "personas": {
+    "reviewer": { "thinking": "high", "skills": ["code-review"] }
+  }
+}
+```
+
+Project values override global values recursively. Model resolution is: task override, project persona setting, global persona setting, persona frontmatter, global/project default model, then parent model. Run `/subagents agents`, `/subagents models`, or `/subagents settings` to inspect effective values and their sources.
+
+The child does not inherit parent extensions, parent conversation, or unconfigured skills, but normal project context files still apply. It uses the same Pi installation, provider configuration, model catalog, and credentials as the parent.

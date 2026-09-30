@@ -27,6 +27,8 @@ export interface TinySubagentOptions {
 	model?: string;
 	thinking?: string;
 	tools?: string[];
+	skills?: string[];
+	access?: "read" | "write";
 	systemPrompt?: string;
 	cwd?: string;
 	signal?: AbortSignal;
@@ -74,6 +76,8 @@ interface TaskRecord {
 	model?: string;
 	thinking?: string;
 	tools?: string[];
+	skills?: string[];
+	access?: "read" | "write";
 	systemPrompt: string;
 	sessionFile: string;
 	startedAt: string;
@@ -181,6 +185,8 @@ export async function runTinySubagent(prompt: string, options: TinySubagentOptio
 		...(options.model ? { model: options.model } : {}),
 		...(options.thinking ? { thinking: options.thinking } : {}),
 		...(options.tools ? { tools: options.tools } : {}),
+		...(options.skills ? { skills: options.skills } : {}),
+		...(options.access ? { access: options.access } : {}),
 		systemPrompt,
 		sessionFile,
 		startedAt: startedAtIso,
@@ -248,6 +254,7 @@ export async function runTinySubagent(prompt: string, options: TinySubagentOptio
 		if (options.tools?.length) {
 			childArgs.push("--tools", [...new Set([...options.tools, "subagent_report"])].join(","));
 		}
+		for (const skill of options.skills ?? []) childArgs.push("--skill", skill);
 		const name = `tiny-${taskId.replace(/-/g, "").slice(0, 12)}`;
 		update("starting", "Starting child Pi in Herdr...");
 		await herdr.startAgent({ name, kind: "pi", paneId, args: childArgs, signal: options.signal });
