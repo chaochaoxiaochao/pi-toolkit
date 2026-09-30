@@ -7,6 +7,7 @@ import { runTinySubagent } from "../src/runner.ts";
 import { executeTinySubagent } from "../src/tool.ts";
 import { activityCounts, focusActiveTask } from "../src/monitor.ts";
 import { RunDispatcher } from "../src/dispatcher.ts";
+import { ensureRuntimeIgnored, historyText, listSubagentHistory } from "../src/history.ts";
 
 let passed = 0;
 let failed = 0;
@@ -259,6 +260,23 @@ try {
 	const blockedRuns = blockedHerdr.calls.filter(([name]) => name === "runTask:start").map(([, request]) => request);
 	check("answer resumes original pane and persistent Pi session", !resumed.isError && resumed.details.status === "completed" && blockedRuns.length === 2 && blockedRuns[0].paneId === blockedRuns[1].paneId && blockedRuns[1].args.includes("--session") && blockedRuns[1].args.includes(blocked.details.tasks[0].sessionFile));
 	check("completion after answer updates original run and closes tab", JSON.parse(readFileSync(join(blocked.details.recordDirectory, "run.json"), "utf8")).status === "completed" && blockedHerdr.calls.at(-1)[0] === "closeTab");
+
+	const history = await listSubagentHistory(root);
+	const stableHistory = history.find((run) => run.id === backgroundId);
+	check("history lists compact project-local runs and tasks", Boolean(stableHistory?.tasks.length) && historyText(history).includes("stable") && !historyText(history).includes("FULL stable"));
+	const historyHerdr = fakeHerdr();
+	const historicalResume = await executeTinySubagent({ action: "resume", runId: backgroundId, task: 1, prompt: "follow up" }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: historyHerdr });
+	const historyRunRequest = historyHerdr.calls.find(([name]) => name === "runTask:start")[1];
+	check("historical resume opens a new tab with saved Pi session", !historicalResume.isError && historyHerdr.calls[0][0] === "createTab" && historyRunRequest.args.includes(stableHistory.tasks[0].sessionFile));
+	const ignoreFile = join(root, ".pi", ".gitignore");
+	writeFileSync(ignoreFile, `${readFileSync(ignoreFile, "utf8")}unrelated-state/\n`);
+	await ensureRuntimeIgnored(root);
+	const ignoreText = readFileSync(ignoreFile, "utf8");
+	check("runtime archive is ignored without overwriting unrelated rules", ignoreText.includes("herdr-subagents/") && ignoreText.includes("unrelated-state/") && ignoreText.match(/herdr-subagents\//g)?.length === 1);
+	const remainingRunId = history.find((run) => run.id !== backgroundId)?.id;
+	const cleaned = await executeTinySubagent({ action: "cleanup", runId: backgroundId }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: fakeHerdr() });
+	const afterCleanup = await listSubagentHistory(root);
+	check("explicit cleanup removes only the selected run", !cleaned.isError && !afterCleanup.some((run) => run.id === backgroundId) && (!remainingRunId || afterCleanup.some((run) => run.id === remainingRunId)));
 } finally {
 	restoreEnv();
 	rmSync(root, { recursive: true, force: true });

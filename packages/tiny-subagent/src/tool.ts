@@ -3,11 +3,12 @@ import { loadSubagentConfiguration, type ConfigurationPaths, type SubagentConfig
 import { runTinySubagent, type TinySubagentResult } from "./runner.ts";
 import { runTinySubagentBatch, type BatchResult, type BatchTask } from "./batch-runner.ts";
 import { respondToBlockedTask } from "./blocking.ts";
+import { cleanSubagentRun, historyText, listSubagentHistory, resumeHistoricalTask } from "./history.ts";
 
 export interface TinySubagentTaskParams { name: string; prompt: string; agent?: string; model?: string; }
 
 export interface TinySubagentToolParams {
-	action?: "list" | "respond";
+	action?: "list" | "respond" | "history" | "resume" | "cleanup";
 	prompt?: string;
 	agent?: string;
 	label?: string;
@@ -17,6 +18,7 @@ export interface TinySubagentToolParams {
 	background?: boolean;
 	runId?: string;
 	answer?: string;
+	task?: number;
 }
 
 export interface TinySubagentToolContext {
@@ -81,6 +83,28 @@ export async function executeTinySubagent(
 	dependencies: TinySubagentToolDependencies,
 ): Promise<ToolResponse> {
 	const discovery = loadSubagentConfiguration(ctx.cwd, dependencies.agentsDirectory, modelId(ctx), dependencies.configurationPaths);
+	if (params.action === "history") {
+		const history = await listSubagentHistory(ctx.cwd);
+		return { content: [{ type: "text", text: historyText(history) }], details: { action: "history", runs: history } };
+	}
+	if (params.action === "cleanup") {
+		const cleaned = params.runId ? await cleanSubagentRun(ctx.cwd, params.runId) : false;
+		const text = cleaned ? `Removed Subagent run ${params.runId}.` : `Unknown Subagent run '${params.runId ?? ""}'.`;
+		return { content: [{ type: "text", text }], details: { action: "cleanup", runId: params.runId, cleaned }, ...(cleaned ? {} : { isError: true }) };
+	}
+	if (params.action === "resume") {
+		if (!params.runId || !params.task || !params.prompt?.trim()) {
+			const text = "runId, task, and prompt are required to resume historical work.";
+			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
+		}
+		try {
+			const result = await resumeHistoricalTask(ctx.cwd, params.runId, params.task, params.prompt.trim(), dependencies.herdr);
+			return { content: [{ type: "text", text: result.summary }], details: result, ...(result.status === "failed" ? { isError: true } : {}) };
+		} catch (error) {
+			const text = error instanceof Error ? error.message : String(error);
+			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
+		}
+	}
 	if (params.action === "respond") {
 		if (!params.runId?.trim() || !params.answer?.trim()) {
 			const text = "runId and answer are required to respond to a blocked task.";

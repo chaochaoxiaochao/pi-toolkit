@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CliHerdrAutomation, type HerdrAutomation } from "./herdr.ts";
+import { ensureRuntimeIgnored } from "./history.ts";
 
 const CHILD_ENV = "PI_SUBAGENT_CHILD";
 const TASK_DIRECTORY_ENV = "PI_TINY_SUBAGENT_TASK_DIR";
@@ -192,6 +193,7 @@ export async function runTinySubagent(prompt: string, options: TinySubagentOptio
 		sessionFile,
 		startedAt: startedAtIso,
 	};
+	await ensureRuntimeIgnored(cwd);
 	await mkdir(taskDirectory, { recursive: true, mode: 0o700 });
 	await writeFile(systemPromptFile, systemPrompt, { encoding: "utf8", mode: 0o600 });
 	await Promise.all([writeJson(runFile, runRecord), writeJson(taskFile, taskRecord)]);

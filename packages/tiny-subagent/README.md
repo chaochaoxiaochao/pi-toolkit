@@ -53,6 +53,12 @@ tiny_subagents({ action: "respond", runId: "<run-id>", answer: "Use the main bra
 
 `/subagents focus <task-number>` can also open the blocked pane for direct manual interaction.
 
+## History
+
+Run `/subagents history` or `tiny_subagents({ action: "history" })` to list compact project-local run and task reports after Herdr tabs close. Full results, described documents, artifacts, and persistent Pi sessions remain separate on disk and are not loaded into parent context.
+
+Continue a saved conversation in a new Herdr tab with `tiny_subagents({ action: "resume", runId: "<run-id>", task: 1, prompt: "Follow up..." })`. Remove only a selected archive with `tiny_subagents({ action: "cleanup", runId: "<run-id>" })`. History has no automatic count-based eviction. The extension maintains `.pi/.gitignore` so `herdr-subagents/` state is not accidentally committed while preserving unrelated rules.
+
 Read-only tasks start FIFO up to the configured concurrency limit. Worker panes are reused as tasks settle, results remain in input order, and one failed task does not cancel its siblings. Any batch containing a write-capable persona is forced to concurrency one.
 
 While a run is active, the parent widget shows running, queued, blocked, failed, and completed counts. `/subagents active` shows the compact task list, and `/subagents focus <task-number>` jumps to the exact active Herdr pane without copying its transcript into Pi. Tab and pane labels track progress and stable task order. Completed tabs close immediately when unfocused; a tab being inspected waits until focus leaves.

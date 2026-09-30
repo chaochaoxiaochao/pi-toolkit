@@ -8,6 +8,7 @@ import { loadSubagentConfiguration } from "../src/config.ts";
 import { CliHerdrAutomation } from "../src/herdr.ts";
 import { activeRunText, activityCounts, focusActiveTask } from "../src/monitor.ts";
 import { RunDispatcher } from "../src/dispatcher.ts";
+import { historyText, listSubagentHistory } from "../src/history.ts";
 import { executeTinySubagent, type TinySubagentBatchDetails, type TinySubagentDetails, type TinySubagentToolParams } from "../src/tool.ts";
 
 const ACTIONS = ["list"] as const;
@@ -20,6 +21,9 @@ const TinySubagentParams = Type.Union([
 		runId: Type.String({ minLength: 1 }),
 		answer: Type.String({ minLength: 1 }),
 	}),
+	Type.Object({ action: StringEnum(["history"] as const) }),
+	Type.Object({ action: StringEnum(["cleanup"] as const), runId: Type.String({ minLength: 1 }) }),
+	Type.Object({ action: StringEnum(["resume"] as const), runId: Type.String({ minLength: 1 }), task: Type.Integer({ minimum: 1 }), prompt: Type.String({ minLength: 1 }) }),
 	Type.Object({
 		prompt: Type.String({ minLength: 1, description: "One self-contained task for the subagent." }),
 		agent: Type.Optional(Type.String({ minLength: 1, description: "Persona name selected from action=list. Defaults to worker." })),
@@ -143,12 +147,16 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("subagents", {
 		description: "Inspect effective subagent agents, models, and settings",
-		getArgumentCompletions: (prefix) => ["active", "agents", "models", "settings", "focus "].filter((value) => value.startsWith(prefix)).map((value) => ({ value, label: value })),
+		getArgumentCompletions: (prefix) => ["active", "history", "agents", "models", "settings", "focus "].filter((value) => value.startsWith(prefix)).map((value) => ({ value, label: value })),
 		handler: async (args, ctx) => {
 			const section = args.trim() || "active";
 			if (section === "active") {
 				if (!activeBatch) { ctx.ui.notify("No active Subagent run.", "info"); return; }
 				ctx.ui.notify(activeRunText(activeBatch), "info");
+				return;
+			}
+			if (section === "history") {
+				ctx.ui.notify(historyText(await listSubagentHistory(ctx.cwd)), "info");
 				return;
 			}
 			if (section.startsWith("focus ")) {
@@ -176,7 +184,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(lines.join("\n"), "info");
 				return;
 			}
-			ctx.ui.notify("Usage: /subagents active|focus <task-number>|agents|models|settings", "warning");
+			ctx.ui.notify("Usage: /subagents active|history|focus <task-number>|agents|models|settings", "warning");
 		},
 	});
 }

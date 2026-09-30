@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Add compact project-local history, saved-session follow-ups in new Herdr tabs, explicit per-run cleanup, unlimited retention, and generated-state Git exclusion.
 - Support structured `needs-input` reports, preserve blocked panes and sessions, and resume the original child with `action: respond`.
 - Queue background batches behind one active run, return stable IDs immediately, keep progress visible, and send one compact run-level parent notification.
 - Show active run counts in a persistent widget, expose compact `/subagents active` and pane focus navigation, update progress labels, and defer cleanup while a completed tab is focused.

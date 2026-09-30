@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { CliHerdrAutomation, type HerdrAutomation } from "./herdr.ts";
 import type { PersonaAccess } from "./config.ts";
 import type { TinySubagentDocument, TinySubagentReport } from "./runner.ts";
+import { ensureRuntimeIgnored } from "./history.ts";
 
 export interface BatchTask {
 	name: string;
@@ -78,6 +79,7 @@ export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOpt
 	const effectiveConcurrency = hasWriter ? 1 : Math.min(requestedConcurrency, options.maxConcurrency, tasks.length);
 	const runDirectory = join(options.cwd, ".pi", "herdr-subagents", "runs", `${timestamp().replace(/[-:.]/g, "").replace("Z", "Z-")}${runId.slice(0, 8)}`);
 	const runFile = join(runDirectory, "run.json");
+	await ensureRuntimeIgnored(options.cwd);
 	await mkdir(join(runDirectory, "tasks"), { recursive: true, mode: 0o700 });
 	const runRecord: Record<string, unknown> = { id: runId, label: options.label, status: "starting", cwd: options.cwd, requestedConcurrency, effectiveConcurrency, startedAt: timestamp(), taskIds: [] };
 	await writeJson(runFile, runRecord);
