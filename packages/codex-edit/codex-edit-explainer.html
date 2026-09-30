@@ -187,9 +187,9 @@ footer { max-width: 1180px; margin: 0 auto; padding: 0 26px 54px; color: var(--m
       <div class="arch-row">
         <div class="arch-node"><small>01 · Model state</small><strong>当前模型配置</strong><p>ctx.model.provider、api、id、compat 能力标记。</p></div>
         <div class="arch-arrow">→</div>
-        <div class="arch-node"><small>02 · Routing</small><strong>syncEditorTools()</strong><p>GPT/Codex grammar 模型启用 apply_patch；其他模型启用 edit。</p></div>
+        <div class="arch-node"><small>02 · Routing</small><strong>syncEditorTools()</strong><p>命中的 GPT/Codex 模型启用 apply_patch；其他模型启用 edit。</p></div>
         <div class="arch-arrow">→</div>
-        <div class="arch-node"><small>03 · Provider</small><strong>Responses serializer</strong><p>Grammar 支持时序列化为 type=custom + Lark definition。</p></div>
+        <div class="arch-node"><small>03 · Provider</small><strong>Responses serializer</strong><p>Grammar 支持时序列化为 type=custom + Lark definition，否则回退为普通 function tool。</p></div>
         <div class="arch-arrow">→</div>
         <div class="arch-node"><small>04 · Execution</small><strong>parse → validate → apply</strong><p>完整解析、路径检查、预校验，最后才写文件。</p></div>
       </div>
@@ -240,7 +240,6 @@ footer { max-width: 1180px; margin: 0 auto; padding: 0 26px 54px; color: var(--m
 
 if enabled
 and model.api in ["openai-responses", "openai-codex-responses"]
-and model.compat.supportsOpenAIGrammarTools == true
 and provider/model matches allowlist:
     active = ["apply_patch"]
 else:

@@ -1,11 +1,10 @@
+## 2026-09-30 - v0.1.6
+
+- route apply_patch by API plus model-ID glob instead of requiring grammar-tool support
+
 ## 2026-09-08 - v0.1.5
 
 - route gpt-5.6-* models to apply_patch by model glob
-
-## Unreleased
-
-- route all `gpt-5.6-*` models to `apply_patch` regardless of provider
-- route by model-ID glob instead of provider/model pairs
 
 ## 2026-09-04 - v0.1.4
 

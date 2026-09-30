@@ -10,7 +10,7 @@ pi install npm:@maxiaochao/pi-codex-edit
 
 The package registers `apply_patch` and selects the editing tool from the resolved model configuration:
 
-- GPT/Codex model with OpenAI grammar support: `apply_patch`
+- Allowlisted GPT/Codex model: `apply_patch`
 - Other models: Pi's native `edit`
 
 The default allowlist enables all `gpt-5.6-*` models regardless of provider. Other model families can be added after separate validation by editing the package `config.json`.
@@ -36,8 +36,9 @@ The package defaults to a model-ID allowlist in `config.json`: `"gpt-5.6-*"`. Pr
 
 ```text
 model.api = openai-responses or openai-codex-responses
-model.compat.supportsOpenAIGrammarTools = true
 ```
+
+Grammar support is not part of the route. When a provider does not emit Lark grammar tools, Pi falls back to a normal function tool, so `apply_patch` still runs there — only the grammar-enforced output shape is lost.
 
 Edit `config.json` in the installed package only if you need to change the default allowlist. The package's current implementation keeps both tools registered for session replay and changes only the active tool set on `session_start` and `model_select`.
 

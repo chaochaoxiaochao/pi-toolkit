@@ -15,7 +15,7 @@ test("package config is next to the extension parent directory", async () => {
   assert.deepEqual(config.models, ["gpt-5.6-*"]);
 });
 
-test("matches allowed model IDs with globs independently of provider", () => {
+test("matches allowed model IDs with globs independently of provider and grammar support", () => {
   const settings = { enabled: true, models: ["gpt-5.6-*"] };
   const baseModel = {
     id: "gpt-5.6-terra",
@@ -24,5 +24,15 @@ test("matches allowed model IDs with globs independently of provider", () => {
   };
   assert.equal(modelIsAllowed({ ...baseModel, provider: "openai-codex" }, settings), true);
   assert.equal(modelIsAllowed({ ...baseModel, provider: "another-provider" }, settings), true);
-  assert.equal(modelIsAllowed({ ...baseModel, compat: { supportsOpenAIGrammarTools: false } }, settings), false);
+  assert.equal(modelIsAllowed({ ...baseModel, compat: { supportsOpenAIGrammarTools: false } }, settings), true);
+  assert.equal(
+    modelIsAllowed(
+      { ...baseModel, api: "openai-responses", compat: { sessionAffinityFormat: "openai-nosession" } },
+      settings,
+    ),
+    true,
+  );
+  assert.equal(modelIsAllowed({ ...baseModel, api: "openai-completions" }, settings), false);
+  assert.equal(modelIsAllowed({ ...baseModel, id: "gpt-5.5" }, settings), false);
+  assert.equal(modelIsAllowed(baseModel, { enabled: false, models: ["gpt-5.6-*"] }), false);
 });
