@@ -1,7 +1,7 @@
 {
   "name": "@maxiaochao/pi-toolkit",
-  "version": "0.8.2",
-  "description": "Personal pi coding agent toolkit: /todos, /btw, /cache_export extensions, browser automation, and bundled theme/skills.",
+  "version": "0.9.0",
+  "description": "Personal pi coding agent toolkit: /todos, /btw, /cache_export and apply_patch extensions, browser automation, and bundled theme/skills.",
   "type": "module",
   "keywords": [
     "pi-package",
@@ -25,7 +25,8 @@
     "extensions": [
       "./extensions/todo.ts",
       "./extensions/cache-export/index.ts",
-      "./extensions/btw.ts"
+      "./extensions/btw.ts",
+      "./extensions/codex-edit/index.ts"
     ],
     "skills": [
       "./skills"
@@ -47,8 +48,8 @@
     "ws": "^8.19.0"
   },
   "scripts": {
-    "test": "cd extensions/cache-export && node --experimental-strip-types tests/run-tests.mjs && node --experimental-strip-types ../tests/btw-history.mjs && node tests/e2e-browser.mjs",
-    "load-test": "pi -ne -e ./extensions/todo.ts && pi -ne -e ./extensions/cache-export/index.ts && pi -ne -e ./extensions/btw.ts",
+    "test": "cd extensions/cache-export && node --experimental-strip-types tests/run-tests.mjs && node --experimental-strip-types ../tests/btw-history.mjs && node tests/e2e-browser.mjs && cd ../codex-edit && node --experimental-strip-types --test tests/package.test.mjs tests/parser.test.mjs",
+    "load-test": "pi -ne -e ./extensions/todo.ts && pi -ne -e ./extensions/cache-export/index.ts && pi -ne -e ./extensions/btw.ts && pi -ne -e ./extensions/codex-edit/index.ts",
     "eval:agents": "node evaluations/agents-md/run.mjs",
     "eval:agents:test": "node evaluations/agents-md/tests/run-tests.mjs",
     "postinstall": "node scripts/install-agents.mjs"

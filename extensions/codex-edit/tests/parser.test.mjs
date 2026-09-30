@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { applyUpdate, parsePatch, resolveWorkspacePath } from "../src/parser.ts";
+import { applyUpdate, parsePatch, resolveWorkspacePath } from "../parser.ts";
 
 test("parses add, delete, update, and move operations", () => {
   const operations = parsePatch(`*** Begin Patch

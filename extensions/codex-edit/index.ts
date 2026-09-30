@@ -13,11 +13,11 @@ import {
   applyUpdate,
   parsePatch,
   resolveWorkspacePath,
-} from "../src/parser.ts";
-import { modelIsAllowed } from "../src/model-routing.ts";
+} from "./parser.ts";
+import { modelIsAllowed } from "./model-routing.ts";
 
 const editorToolNames = new Set(["edit", "apply_patch"]);
-const settingsUrl = new URL("../config.json", import.meta.url);
+const settingsUrl = new URL("./config.json", import.meta.url);
 
 async function loadSettings() {
   try {

@@ -1,6 +1,6 @@
 # pi-toolkit
 
-Personal Pi toolkit with the `/todos`, `/btw`, and `/cache_export` extensions, bundled agent skills including Chrome/Chromium automation, the Night Owl theme, and the `pi-worktree` CLI.
+Personal Pi toolkit with the `/todos`, `/btw`, `/cache_export`, and `apply_patch` extensions, bundled agent skills including Chrome/Chromium automation, the Night Owl theme, and the `pi-worktree` CLI.
 
 ## Install
 
@@ -110,21 +110,13 @@ pi update npm:@maxiaochao/pi-tiny-subagent
 
 See [packages/tiny-subagent/README.md](packages/tiny-subagent/README.md) for personas, model selection, child isolation, live transcript rendering, and diagnostics.
 
-## Codex Edit
+## Codex Edit (apply_patch)
 
-The Codex edit package is a separate npm package. Install it when you want GPT/Codex models to use the freeform `apply_patch` protocol while other models keep Pi's native `edit` tool:
+The `apply_patch` extension ships with the toolkit as part of `pi.extensions`. It activates Codex's freeform `apply_patch` protocol for GPT/Codex models while other models keep Pi's native `edit` tool. Routing is by model ID (`gpt-5.6-*`) plus API (`openai-responses` or `openai-codex-responses`); provider does not matter. For every other model the extension only re-syncs an already-active editor tool, so it is a no-op.
 
-```bash
-pi install npm:@maxiaochao/pi-codex-edit
-```
+Because it ships with the toolkit, there is nothing extra to install or update — `pi update npm:@maxiaochao/pi-toolkit` covers it. The model allowlist lives in `extensions/codex-edit/config.json` inside the installed package; edit it there only if you need a different allowlist.
 
-It includes the extension implementation plus the benchmark summary and interactive architecture explainer. Its versions, release workflow, and tag are independent from the root package and tiny subagent:
-
-```bash
-pi update npm:@maxiaochao/pi-codex-edit
-```
-
-See [packages/codex-edit/README.md](packages/codex-edit/README.md) for the routing rules and [packages/codex-edit/summary.md](packages/codex-edit/summary.md) for the measured tradeoffs.
+See [extensions/codex-edit/README.md](extensions/codex-edit/README.md) for the routing rules and [extensions/codex-edit/summary.md](extensions/codex-edit/summary.md) for the measured tradeoffs, including why it stays limited to the `gpt-5.6-*` allowlist instead of replacing `edit` everywhere.
 
 ## Development
 

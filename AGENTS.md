@@ -13,11 +13,17 @@ pi-toolkit/
 │   ├── btw.ts              # /btw 独立侧聊会话
 │   ├── btw-scroll.ts       # BTW transcript 滚动边界与分页步长纯逻辑
 │   ├── tests/              # BTW 等根扩展的轻量确定性测试
-│   └── cache-export/       # /cache_export 交互式缓存仪表盘
-│       ├── index.ts        # 入口：注册命令、输出路径、WSL 打开
-│       ├── render.ts       # 聚合 + miss/streak 规则 + HTML 渲染（改逻辑在这里）
-│       ├── tau-assets.ts   # tau 原版 CSS/JS 资产（勿手改，重生成，见下）
-│       └── tests/          # 确定性测试（阈值边界、规则路径、退化输入）
+│   ├── cache-export/       # /cache_export 交互式缓存仪表盘
+│   │   ├── index.ts        # 入口：注册命令、输出路径、WSL 打开
+│   │   ├── render.ts       # 聚合 + miss/streak 规则 + HTML 渲染（改逻辑在这里）
+│   │   ├── tau-assets.ts   # tau 原版 CSS/JS 资产（勿手改，重生成，见下）
+│   │   └── tests/          # 确定性测试（阈值边界、规则路径、退化输入）
+│   └── codex-edit/         # apply_patch 扩展（GPT/Codex 路由）+ benchmark docs
+│       ├── index.ts        # 工具注册、执行、防护、renderer、模型路由
+│       ├── parser.ts       # patch grammar parser / hunk matcher / path resolver
+│       ├── model-routing.ts # 模型 ID glob + API 路由判定
+│       ├── config.json     # 模型 allowlist（用户可改）
+│       └── tests/          # parser 与 config 路由测试
 ├── skills/
 │   ├── html-artifact/     # 复杂说明的自包含 HTML artifact skill
 │   ├── web-browser/       # Chrome/Chromium CDP 自动化（含 WSL Windows Chrome 支持）
@@ -33,11 +39,9 @@ pi-toolkit/
 │   ├── pi-worktree        # worktree 创建/进入/合并/清理一条龙包装
 │   └── pi-worktree-completion.bash  # bash 补全（装到 ~/.local/share/bash-completion）
 ├── packages/tiny-subagent/  # 独立 npm 包：tiny_subagents Pi 扩展
-├── packages/codex-edit/     # 独立 npm 包：GPT/Codex apply_patch Pi 扩展 + docs
 ├── scripts/release.sh      # 根包一键发布（测试→版本→tag→推→publish）
 ├── scripts/release-tiny-subagent.sh # tiny 包独立发布
-├── scripts/release-codex-edit.sh # codex-edit 包独立发布
-└── .github/workflows/      # 三个包各自的 npm 发布 workflow
+└── .github/workflows/      # 根包与 tiny 包各自的 npm 发布 workflow
 ```
 
 ## 开发规则
@@ -93,13 +97,14 @@ pi install npm:@maxiaochao/pi-toolkit
 pi install npm:@maxiaochao/pi-tiny-subagent
 ```
 
-三个包使用独立版本号和 tag：
+两个包使用独立版本号和 tag：
 
 | 包 | 版本来源 | 发布 tag | 发布 workflow |
 |---|---|---|---|
 | `@maxiaochao/pi-toolkit` | 根目录 `package.json` | `vX.Y.Z` | `.github/workflows/publish.yml` |
 | `@maxiaochao/pi-tiny-subagent` | `packages/tiny-subagent/package.json` | `tiny-subagent-vX.Y.Z` | `.github/workflows/publish-tiny-subagent.yml` |
-| `@maxiaochao/pi-codex-edit` | `packages/codex-edit/package.json` | `codex-edit-vX.Y.Z` | `.github/workflows/publish-codex-edit.yml` |
+
+> `apply_patch`（原独立包 `@maxiaochao/pi-codex-edit` v0.1.6）已合并进根包，作为 `./extensions/codex-edit/index.ts` 随 `pi.extensions` 发布，因此没有单独的 codex-edit 包、tag、release 脚本或 workflow。旧 npm 包已 deprecated，已装的机器执行 `pi remove npm:@maxiaochao/pi-codex-edit` 后 `pi update npm:@maxiaochao/pi-toolkit`；两边同时存在会重复注册 `apply_patch`。
 
 tiny 包首次发版（使用当前 `0.1.0` 版本）：
 ```bash
@@ -113,23 +118,7 @@ tiny 包首次发版（使用当前 `0.1.0` 版本）：
 
 该脚本只运行 tiny 包测试和扩展加载检查，只修改 tiny 包版本及 CHANGELOG，并且只暂存 `packages/tiny-subagent`。它创建 `tiny-subagent-vX.Y.Z` tag 并推送；tag push 后由专用 GitHub Actions 校验版本、运行测试并执行 npm publish。不要用根目录 `scripts/release.sh` 发布 tiny 包，也不要在本地执行 `npm publish`。
 
-根包的 `vX.Y.Z`、tiny 包的 `tiny-subagent-vX.Y.Z` 和 codex-edit 包的 `codex-edit-vX.Y.Z` 互不触发彼此 workflow；三个包可以共用仓库和 `NPM_TOKEN`，但 npm 版本号、发布 tag 和 CI 发布步骤彼此独立。
-
-### 独立 codex-edit 包发布
-
-`packages/codex-edit` 是独立 npm 包 `@maxiaochao/pi-codex-edit`，包含真正的 `apply_patch` Pi extension，以及 `summary.md` 和交互式 HTML 说明页。它不属于根包的 `pi.extensions`，需要单独安装：
-
-```bash
-pi install npm:@maxiaochao/pi-codex-edit
-```
-
-它使用独立版本号和 `codex-edit-vX.Y.Z` tag：
-
-```bash
-./scripts/release-codex-edit.sh initial "initial release"
-```
-
-后续发布使用 `patch`、`minor` 或 `major`。tag push 后由 `.github/workflows/publish-codex-edit.yml` 测试并发布到 npm；不要在本地执行 `npm publish`。
+根包的 `vX.Y.Z` 与 tiny 包的 `tiny-subagent-vX.Y.Z` 互不触发彼此 workflow；两个包可以共用仓库和 `NPM_TOKEN`，但 npm 版本号、发布 tag 和 CI 发布步骤彼此独立。
 
 ### 首次启用自动发布（一次性）
 
@@ -139,10 +128,9 @@ pi install npm:@maxiaochao/pi-codex-edit
 ### 更新已装机器的包
 
 ```bash
-pi update npm:@maxiaochao/pi-toolkit      # 更新根包
+pi update npm:@maxiaochao/pi-toolkit      # 更新根包（含 apply_patch）
 pi update npm:@maxiaochao/pi-tiny-subagent # 更新 tiny 包
-pi update npm:@maxiaochao/pi-codex-edit    # 更新 codex-edit 包
-pi remove npm:@maxiaochao/pi-codex-edit    # 卸载 codex-edit 包
+pi remove npm:@maxiaochao/pi-codex-edit    # 卸载旧 codex-edit 独立包（已 deprecated）
 ```
 
 ## 回滚

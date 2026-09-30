@@ -1,3 +1,7 @@
+## 2026-09-30 - v0.9.0
+
+- merge the Codex-style apply_patch extension into the toolkit (from the standalone @maxiaochao/pi-codex-edit v0.1.6): it now ships as extensions/codex-edit/ registered in pi.extensions, its parser and model-routing tests join npm test, and the separate package, release script and publish workflow are removed
+
 ## 2026-09-24 - v0.8.2
 
 - tapd skill: document the safe attachment-download flow for the short-lived signed URLs (re-fetch the URL for every attempt, download to .part with curl --fail --location --retry 3, reject text/error bodies before resuming, accept only 206 with a matching Content-Range, then verify size and zip integrity before renaming); it is a local addition on top of the `tapd skill init` output, recorded in AGENTS.md
