@@ -57,13 +57,13 @@ tiny_subagents({ action: "respond", runId: "<run-id>", answer: "Use the main bra
 
 Run `/subagents history` or `tiny_subagents({ action: "history" })` to list compact project-local run and task reports after Herdr tabs close. Full results, described documents, artifacts, and persistent Pi sessions remain separate on disk and are not loaded into parent context.
 
-Continue a saved conversation in a new Herdr tab with `tiny_subagents({ action: "resume", runId: "<run-id>", task: 1, prompt: "Follow up..." })`. Remove only a selected archive with `tiny_subagents({ action: "cleanup", runId: "<run-id>" })`. History has no automatic count-based eviction. The extension maintains `.pi/.gitignore` so `herdr-subagents/` state is not accidentally committed while preserving unrelated rules.
+Continue a saved conversation in a new Herdr tab with `tiny_subagents({ action: "resume", runId: "<run-id>", task: 1, prompt: "Follow up..." })`. Remove only a selected archive with `tiny_subagents({ action: "cleanup", runId: "<run-id>" })`. History has no automatic count-based eviction. The extension adds the runtime path to local Git excludes when available (and otherwise uses `.pi/.gitignore`) without overwriting unrelated rules.
 
 Read-only tasks start FIFO up to the configured concurrency limit. Worker panes are reused as tasks settle, results remain in input order, and one failed task does not cancel its siblings. Any batch containing a write-capable persona is forced to concurrency one.
 
 While a run is active, the parent widget shows running, queued, blocked, failed, and completed counts. `/subagents active` shows the compact task list, and `/subagents focus <task-number>` jumps to the exact active Herdr pane without copying its transcript into Pi. Tab and pane labels track progress and stable task order. Completed tabs close immediately when unfocused; a tab being inspected waits until focus leaves.
 
-Foreground calls block until all children report completion or failure. Each run creates one unfocused Herdr tab in the current workspace, starts visible Pi tasks in a bounded number of reusable panes, and closes the tab after the run settles. Recovery and history UI are not yet provided.
+Foreground calls block until all children report completion, failure, or a request for input. Each run creates one unfocused Herdr tab in the current workspace, starts visible Pi tasks in a bounded number of reusable panes, and closes the tab after the run settles unless it is focused or blocked.
 
 ## Reports and records
 

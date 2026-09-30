@@ -111,7 +111,7 @@ export async function executeTinySubagent(
 			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
 		}
 		try {
-			const result = await respondToBlockedTask(ctx.cwd, params.runId.trim(), params.answer.trim(), dependencies.herdr);
+			const result = await respondToBlockedTask(ctx.cwd, params.runId.trim(), params.answer.trim(), dependencies.herdr, params.task);
 			const text = [result.summary, ...(result.question ? [`Question: ${result.question}`] : []), ...result.documents.map((document) => `${document.description}: ${document.path}`)].join("\n");
 			return { content: [{ type: "text", text }], details: result, ...(result.status === "failed" ? { isError: true } : {}) };
 		} catch (error) {

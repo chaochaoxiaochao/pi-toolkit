@@ -47,6 +47,7 @@ export interface HerdrAutomation {
 	startAgent(request: StartAgentRequest): Promise<void>;
 	promptAgent(request: PromptAgentRequest): Promise<{ status?: string }>;
 	splitPane(request: SplitPaneRequest): Promise<{ paneId: string }>;
+	prepareTask(args: string[], signal?: AbortSignal): Promise<void>;
 	runTask(request: RunTaskRequest): Promise<void>;
 	renamePane(paneId: string, label: string, signal?: AbortSignal): Promise<void>;
 	renameTab(tabId: string, label: string, signal?: AbortSignal): Promise<void>;
@@ -184,14 +185,33 @@ export class CliHerdrAutomation implements HerdrAutomation {
 		return { paneId };
 	}
 
+	async prepareTask(args: string[], signal?: AbortSignal): Promise<void> {
+		const [binary] = args;
+		if (!binary) throw new Error("Child Pi command is empty");
+		await runCommand(binary, ["--version"], signal);
+	}
+
 	async runTask(request: RunTaskRequest): Promise<void> {
 		const environment = Object.entries(request.env).sort(([left], [right]) => left.localeCompare(right)).map(([key, value]) => `${key}=${shellQuote(value)}`).join(" ");
 		const encodedMarker = Buffer.from(request.marker, "utf8").toString("base64");
 		const command = `${environment ? `${environment} ` : ""}${request.args.map(shellQuote).join(" ")} -- ${shellQuote(request.prompt)}; code=$?; printf '\\n%s\\n' "$(printf %s ${shellQuote(encodedMarker)} | base64 -d)"; test "$code" -eq 0`;
 		await runCommand(this.binary, ["pane", "run", request.paneId, command], request.signal);
-		const timer = request.stalledWarningMs ? setTimeout(() => request.onStalled?.(), request.stalledWarningMs) : undefined;
+		let lastOutput = "";
+		let lastActivity = Date.now();
+		let warned = false;
+		let checking = false;
+		const interval = request.stalledWarningMs ? setInterval(async () => {
+			if (checking) return;
+			checking = true;
+			try {
+				const output = await runCommand(this.binary, ["pane", "read", request.paneId, "--source", "recent-unwrapped", "--lines", "40"], request.signal);
+				if (output !== lastOutput) { lastOutput = output; lastActivity = Date.now(); warned = false; }
+				else if (!warned && Date.now() - lastActivity >= (request.stalledWarningMs ?? 0)) { warned = true; request.onStalled?.(); }
+			} catch {}
+			finally { checking = false; }
+		}, Math.max(250, Math.min(1000, Math.floor(request.stalledWarningMs / 2)))) : undefined;
 		try { await runCommand(this.binary, ["pane", "wait-output", request.paneId, "--match", request.marker, "--source", "recent-unwrapped"], request.signal); }
-		finally { if (timer) clearTimeout(timer); }
+		finally { if (interval) clearInterval(interval); }
 	}
 
 	async renamePane(paneId: string, label: string, signal?: AbortSignal): Promise<void> {

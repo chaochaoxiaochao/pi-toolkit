@@ -83,7 +83,21 @@ export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOpt
 	const runFile = join(runDirectory, "run.json");
 	await ensureRuntimeIgnored(options.cwd);
 	await mkdir(join(runDirectory, "tasks"), { recursive: true, mode: 0o700 });
-	const runRecord: Record<string, unknown> = { id: runId, label: options.label, status: "starting", cwd: options.cwd, requestedConcurrency, effectiveConcurrency, startedAt: timestamp(), taskIds: [] };
+	const taskContexts = await Promise.all(tasks.map(async (task, index) => {
+		const taskId = randomUUID();
+		const taskDirectory = join(runDirectory, "tasks", `${String(index + 1).padStart(2, "0")}-${taskId.slice(0, 8)}`);
+		const sessionFile = join(taskDirectory, "session.jsonl");
+		const reportFile = join(taskDirectory, "report.json");
+		const taskFile = join(taskDirectory, "task.json");
+		const systemPromptFile = join(taskDirectory, "system-prompt.md");
+		const systemPrompt = protocolPrompt(task.systemPrompt);
+		const taskRecord: Record<string, unknown> = { id: taskId, runId, order: index + 1, name: task.name, status: "queued", prompt: task.prompt, agent: task.agent, access: task.access, model: task.model, thinking: task.thinking, tools: task.tools, skills: task.skills, systemPrompt, sessionFile };
+		await mkdir(taskDirectory, { recursive: true, mode: 0o700 });
+		await writeFile(systemPromptFile, systemPrompt, { encoding: "utf8", mode: 0o600 });
+		await writeJson(taskFile, taskRecord);
+		return { taskId, taskDirectory, sessionFile, reportFile, taskFile, systemPromptFile, taskRecord };
+	}));
+	const runRecord: Record<string, unknown> = { id: runId, label: options.label, status: "starting", cwd: options.cwd, requestedConcurrency, effectiveConcurrency, startedAt: timestamp(), taskIds: taskContexts.map((context) => context.taskId) };
 	await writeJson(runFile, runRecord);
 	const herdr = options.herdr ?? new CliHerdrAutomation();
 	let tabId: string | undefined;
@@ -109,17 +123,8 @@ export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOpt
 		const started = tasks.map((_, index) => new Promise<void>((resolve) => { startResolvers[index] = resolve; }));
 		const runOne = async (index: number, paneId: string): Promise<void> => {
 			const task = tasks[index];
-			const taskId = randomUUID();
-			(runRecord.taskIds as string[]).push(taskId);
-			const taskDirectory = join(runDirectory, "tasks", `${String(index + 1).padStart(2, "0")}-${taskId.slice(0, 8)}`);
-			const sessionFile = join(taskDirectory, "session.jsonl");
-			const reportFile = join(taskDirectory, "report.json");
-			const taskFile = join(taskDirectory, "task.json");
-			const systemPromptFile = join(taskDirectory, "system-prompt.md");
-			const systemPrompt = protocolPrompt(task.systemPrompt);
-			await mkdir(taskDirectory, { recursive: true, mode: 0o700 });
-			await writeFile(systemPromptFile, systemPrompt, { encoding: "utf8", mode: 0o600 });
-			const taskRecord: Record<string, unknown> = { id: taskId, runId, order: index + 1, name: task.name, status: "running", prompt: task.prompt, agent: task.agent, access: task.access, model: task.model, thinking: task.thinking, tools: task.tools, skills: task.skills, systemPrompt, sessionFile, paneId, startedAt: timestamp() };
+			const { taskId, taskDirectory, sessionFile, reportFile, taskFile, systemPromptFile, taskRecord } = taskContexts[index];
+			Object.assign(taskRecord, { status: "running", paneId, startedAt: timestamp() });
 			await writeJson(taskFile, taskRecord);
 			activity[index] = { index, name: task.name, status: "running", paneId };
 			await herdr.renamePane(paneId, `${index + 1}. ${task.name}`, options.signal);
@@ -131,6 +136,7 @@ export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOpt
 			for (const skill of task.skills) args.push("--skill", skill);
 			let report: TinySubagentReport;
 			try {
+				await retryBeforePrompt(() => herdr.prepareTask(args, options.signal));
 				if (index > 0) await started[index - 1];
 				const running = herdr.runTask({ paneId, args, prompt: task.prompt, env: { PI_SUBAGENT_CHILD: "1", PI_TINY_SUBAGENT_TASK_DIR: taskDirectory }, marker: `PI_SUBAGENT_DONE_${taskId.replace(/-/g, "")}`, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => emit("running", `${task.name} appears stalled; it is still running.`), signal: options.signal });
 				startResolvers[index]();
@@ -166,6 +172,10 @@ export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOpt
 		const documents = settledResults.flatMap((result) => result.documents);
 		const summary = blocked ? `${blocked.name} needs input: ${blocked.question}` : failed ? `${tasks.length - failed}/${tasks.length} tasks completed; ${failed} failed.` : `${tasks.length}/${tasks.length} tasks completed.`;
 		return { ok: status === "completed", status, runId, label: options.label, requestedConcurrency, effectiveConcurrency, tasks: settledResults, activity, summary, documents, recordDirectory: runDirectory, tabId };
+	} catch (error) {
+		Object.assign(runRecord, { status: "failed", completedAt: timestamp(), error: error instanceof Error ? error.message : String(error) });
+		await writeJson(runFile, runRecord);
+		throw error;
 	} finally {
 		if (tabId && !keepTab) {
 			const cleanupSignal = options.signal?.aborted ? undefined : options.signal;

@@ -48,7 +48,7 @@ export async function reconcileSubagentRuns(cwd: string, herdr: HerdrAutomation)
 			statuses.push(task.status);
 		}
 		if (runLiveTasks === 0 || !statuses.some((status) => status === "running" || status === "starting")) {
-			run.status = statuses.some((status) => status === "blocked") ? "blocked" : statuses.some((status) => status === "interrupted") ? "interrupted" : statuses.some((status) => status === "failed") ? (statuses.some((status) => status === "completed") ? "partial" : "failed") : "completed";
+			run.status = statuses.length === 0 ? "interrupted" : statuses.some((status) => status === "blocked") ? "blocked" : statuses.some((status) => status === "queued") ? "queued" : statuses.some((status) => status === "interrupted") ? "interrupted" : statuses.some((status) => status === "failed") ? (statuses.some((status) => status === "completed") ? "partial" : "failed") : "completed";
 			run.completedAt = new Date().toISOString();
 			await writeJsonAtomic(runFile, run);
 		}

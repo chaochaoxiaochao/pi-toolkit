@@ -11,6 +11,7 @@ import { ensureRuntimeIgnored, historyText, listSubagentHistory } from "../src/h
 import { writeJsonAtomic } from "../src/state.ts";
 import { loadQueuedRuns, persistQueuedRun } from "../src/queued-runs.ts";
 import { reconcileSubagentRuns } from "../src/reconcile.ts";
+import { continueQueuedRun } from "../src/continue-run.ts";
 
 let passed = 0;
 let failed = 0;
@@ -79,6 +80,7 @@ function fakeHerdr(mode = "completed") {
 			paneSequence += 1;
 			return { paneId: `w1:p${paneSequence}` };
 		},
+		async prepareTask(args) { calls.push(["prepareTask", { args }]); },
 		async runTask(request) {
 			calls.push(["runTask:start", request]);
 			taskRuns += 1;
@@ -133,7 +135,7 @@ try {
 		herdr,
 	});
 	check("compact successful report", success.ok && success.status === "completed" && success.summary === "Authentication review completed." && success.documents.length === 1 && !success.output.includes("FULL RESULT"));
-	check("Herdr lifecycle", herdr.calls.map(([name]) => name).join(",") === "createTab,startAgent,promptAgent,closeTab");
+	check("Herdr lifecycle", herdr.calls.map(([name]) => name).join(",") === "createTab,startAgent,promptAgent,isTabFocused,closeTab");
 	const createRequest = herdr.calls[0][1];
 	const startRequest = herdr.calls[1][1];
 	check("named unfocused tab in parent workspace", createRequest.workspaceId === "w1" && createRequest.cwd === root && createRequest.label === "SA · auth-review" && createRequest.focus === false);
@@ -154,7 +156,7 @@ try {
 		model: { provider: "fake", id: "model" },
 		thinkingLevel: "medium",
 	}, { agentsDirectory: join(process.cwd(), "agents"), herdr: extensionHerdr });
-	check("public extension behavior uses injectable Herdr", !publicResult.isError && publicResult.content[0].text.includes("Authentication review completed.") && !publicResult.content[0].text.includes("FULL RESULT") && extensionHerdr.calls.map(([name]) => name).join(",") === "createTab,startAgent,promptAgent,closeTab", JSON.stringify({ publicResult, calls: extensionHerdr.calls.map(([name]) => name) }));
+	check("public extension behavior uses injectable Herdr", !publicResult.isError && publicResult.content[0].text.includes("Authentication review completed.") && !publicResult.content[0].text.includes("FULL RESULT") && extensionHerdr.calls.map(([name]) => name).join(",") === "createTab,startAgent,promptAgent,isTabFocused,closeTab", JSON.stringify({ publicResult, calls: extensionHerdr.calls.map(([name]) => name) }));
 
 	const failedHerdr = fakeHerdr("failed");
 	const failedRun = await runTinySubagent("Fail cleanly", { cwd: root, herdr: failedHerdr });
@@ -264,12 +266,13 @@ try {
 	check("preallocated background run id stays stable", stable.details.runId === backgroundId && readFileSync(join(stable.details.recordDirectory, "run.json"), "utf8").includes(backgroundId));
 
 	const blockedHerdr = fakeHerdr("blocked");
-	const blocked = await executeTinySubagent({ tasks: [{ name: "question", prompt: "inspect branch", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: blockedHerdr });
+	const blocked = await executeTinySubagent({ concurrency: 1, tasks: [{ name: "question", prompt: "inspect branch", agent: "explorer" }, { name: "after-answer", prompt: "continue queued", agent: "reviewer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: blockedHerdr });
 	check("needs-input returns foreground control and preserves tab", blocked.details.status === "blocked" && blocked.details.tasks[0].question === "Which branch should I inspect?" && !blockedHerdr.calls.some(([name]) => name === "closeTab"));
 	const resumed = await executeTinySubagent({ action: "respond", runId: blocked.details.runId, answer: "Inspect main." }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: blockedHerdr });
 	const blockedRuns = blockedHerdr.calls.filter(([name]) => name === "runTask:start").map(([, request]) => request);
-	check("answer resumes original pane and persistent Pi session", !resumed.isError && resumed.details.status === "completed" && blockedRuns.length === 2 && blockedRuns[0].paneId === blockedRuns[1].paneId && blockedRuns[1].args.includes("--session") && blockedRuns[1].args.includes(blocked.details.tasks[0].sessionFile));
-	check("completion after answer updates original run and closes tab", JSON.parse(readFileSync(join(blocked.details.recordDirectory, "run.json"), "utf8")).status === "completed" && blockedHerdr.calls.at(-1)[0] === "closeTab");
+	check("answer resumes original pane and persistent Pi session", !resumed.isError && resumed.details.status === "completed" && blockedRuns.length === 3 && blockedRuns.every((request) => request.paneId === blockedRuns[0].paneId) && blockedRuns[1].args.includes("--session") && blockedRuns[1].args.includes(blocked.details.tasks[0].sessionFile));
+	const resumedTasks = readdirSync(join(blocked.details.recordDirectory, "tasks")).sort().map((entry) => JSON.parse(readFileSync(join(blocked.details.recordDirectory, "tasks", entry, "task.json"), "utf8")));
+	check("completion after answer continues queued siblings and settles original run", JSON.parse(readFileSync(join(blocked.details.recordDirectory, "run.json"), "utf8")).status === "completed" && resumedTasks.every((task) => task.status === "completed") && blockedHerdr.calls.at(-1)[0] === "closeTab");
 
 	const history = await listSubagentHistory(root);
 	const stableHistory = history.find((run) => run.id === backgroundId);
@@ -277,7 +280,11 @@ try {
 	const historyHerdr = fakeHerdr();
 	const historicalResume = await executeTinySubagent({ action: "resume", runId: backgroundId, task: 1, prompt: "follow up" }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: historyHerdr });
 	const historyRunRequest = historyHerdr.calls.find(([name]) => name === "runTask:start")[1];
-	check("historical resume opens a new tab with saved Pi session", !historicalResume.isError && historyHerdr.calls[0][0] === "createTab" && historyRunRequest.args.includes(stableHistory.tasks[0].sessionFile));
+	check("historical resume opens a new tab with saved Pi session and effective config", !historicalResume.isError && historyHerdr.calls[0][0] === "createTab" && historyRunRequest.args.includes(stableHistory.tasks[0].sessionFile) && historyRunRequest.args.includes("fake/model") && historyRunRequest.args.some((value) => String(value).includes("subagent_report")));
+	const followupBlockedHerdr = fakeHerdr("blocked");
+	const blockedFollowup = await executeTinySubagent({ action: "resume", runId: backgroundId, task: 1, prompt: "ask a follow-up" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: followupBlockedHerdr });
+	const answeredFollowup = await executeTinySubagent({ action: "respond", runId: backgroundId, answer: "follow-up answer" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: followupBlockedHerdr });
+	check("blocked historical follow-up remains publicly resumable", blockedFollowup.details.status === "blocked" && !answeredFollowup.isError && answeredFollowup.details.status === "completed");
 	const ignoreFile = join(root, ".pi", ".gitignore");
 	writeFileSync(ignoreFile, `${readFileSync(ignoreFile, "utf8")}unrelated-state/\n`);
 	await ensureRuntimeIgnored(root);
@@ -294,6 +301,12 @@ try {
 	retryHerdr.createTab = async (request) => { createAttempts += 1; if (createAttempts < 3) throw new Error("transient startup failure"); return await createTab(request); };
 	const retried = await executeTinySubagent({ tasks: [{ name: "retry", prompt: "retry", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: retryHerdr });
 	check("startup failures retry at most twice before prompt", !retried.isError && createAttempts === 3 && retryHerdr.calls.filter(([name]) => name === "runTask:start").length === 1);
+	const permanentStartupHerdr = fakeHerdr();
+	let permanentAttempts = 0;
+	permanentStartupHerdr.createTab = async () => { permanentAttempts += 1; throw new Error("permanent startup failure"); };
+	const permanentStartup = await executeTinySubagent({ label: "permanent-startup", tasks: [{ name: "never-started", prompt: "never", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: permanentStartupHerdr });
+	const permanentHistory = (await listSubagentHistory(root)).find((run) => run.label === "permanent-startup");
+	check("exhausted startup failure persists failed run", permanentStartup.isError && permanentAttempts === 3 && permanentHistory?.status === "failed");
 	const postFailureHerdr = fakeHerdr("post-fail");
 	const postFailure = await executeTinySubagent({ tasks: [{ name: "no-retry", prompt: "side effect", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: postFailureHerdr });
 	check("failure after prompt submission is preserved without rerun", postFailure.isError && postFailureHerdr.calls.filter(([name]) => name === "runTask:start").length === 1 && postFailure.details.tasks[0].error.includes("after prompt"));
@@ -315,6 +328,23 @@ try {
 	writeFileSync(join(recoveryTask, "task.json"), JSON.stringify({ id: "task", runId: "recover", name: "lost", status: "running", paneId: "w1:missing", sessionFile: join(recoveryTask, "session.jsonl") }));
 	const reconciliation = await reconcileSubagentRuns(recoveryRoot, fakeHerdr("missing-pane"));
 	check("reconciliation marks missing child interrupted", reconciliation.interruptedTasks === 1 && JSON.parse(readFileSync(join(recoveryTask, "task.json"), "utf8")).status === "interrupted");
+
+	const queuedRecoveryRoot = join(root, "queued-recovery");
+	const queuedRunDirectory = join(queuedRecoveryRoot, ".pi", "herdr-subagents", "runs", "run");
+	const firstRecoveryTask = join(queuedRunDirectory, "tasks", "01-first");
+	const secondRecoveryTask = join(queuedRunDirectory, "tasks", "02-second");
+	mkdirSync(firstRecoveryTask, { recursive: true });
+	mkdirSync(secondRecoveryTask, { recursive: true });
+	writeFileSync(join(queuedRunDirectory, "run.json"), JSON.stringify({ id: "queued-recovery", label: "queued-recovery", status: "running", cwd: queuedRecoveryRoot, startedAt: new Date().toISOString(), tabId: "w1:t2", paneIds: ["w1:p2"] }));
+	writeFileSync(join(firstRecoveryTask, "task.json"), JSON.stringify({ id: "first", runId: "queued-recovery", order: 1, name: "first", status: "running", paneId: "w1:p2", sessionFile: join(firstRecoveryTask, "session.jsonl") }));
+	writeFileSync(join(firstRecoveryTask, "report.json"), JSON.stringify({ status: "completed", summary: "first completed", documents: [] }));
+	writeFileSync(join(secondRecoveryTask, "task.json"), JSON.stringify({ id: "second", runId: "queued-recovery", order: 2, name: "second", status: "queued", prompt: "second", agent: "explorer", tools: ["read"], skills: [], sessionFile: join(secondRecoveryTask, "session.jsonl") }));
+	writeFileSync(join(secondRecoveryTask, "system-prompt.md"), "Report the result.");
+	const queuedRecoveryHerdr = fakeHerdr();
+	await reconcileSubagentRuns(queuedRecoveryRoot, queuedRecoveryHerdr);
+	check("reconciliation preserves unstarted tasks as queued", JSON.parse(readFileSync(join(queuedRunDirectory, "run.json"), "utf8")).status === "queued");
+	await continueQueuedRun(queuedRunDirectory, queuedRecoveryHerdr);
+	check("startup continuation dispatches persisted queued tasks", JSON.parse(readFileSync(join(secondRecoveryTask, "task.json"), "utf8")).status === "completed" && JSON.parse(readFileSync(join(queuedRunDirectory, "run.json"), "utf8")).status === "completed");
 } finally {
 	restoreEnv();
 	rmSync(root, { recursive: true, force: true });

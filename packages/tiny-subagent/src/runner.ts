@@ -306,7 +306,9 @@ export async function runTinySubagent(prompt: string, options: TinySubagentOptio
 	} finally {
 		if (tabId && result?.status !== "blocked") {
 			try {
-				await herdr.closeTab(tabId, options.signal?.aborted ? undefined : options.signal);
+				const cleanupSignal = options.signal?.aborted ? undefined : options.signal;
+				if (await herdr.isTabFocused(tabId, cleanupSignal)) void herdr.waitForTabUnfocused(tabId, cleanupSignal).then(() => herdr.closeTab(tabId as string, cleanupSignal)).catch(() => undefined);
+				else await herdr.closeTab(tabId, cleanupSignal);
 			} catch (error) {
 				const cleanupError = error instanceof Error ? error.message : String(error);
 				if (result?.ok) {

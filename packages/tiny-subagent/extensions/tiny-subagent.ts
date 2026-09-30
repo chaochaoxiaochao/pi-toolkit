@@ -11,6 +11,7 @@ import { RunDispatcher } from "../src/dispatcher.ts";
 import { historyText, listSubagentHistory } from "../src/history.ts";
 import { loadQueuedRuns, persistQueuedRun, removeQueuedRun } from "../src/queued-runs.ts";
 import { reconcileSubagentRuns } from "../src/reconcile.ts";
+import { continueQueuedRun } from "../src/continue-run.ts";
 import { executeTinySubagent, type TinySubagentBatchDetails, type TinySubagentDetails, type TinySubagentToolParams } from "../src/tool.ts";
 
 const ACTIONS = ["list"] as const;
@@ -22,6 +23,7 @@ const TinySubagentParams = Type.Union([
 		action: StringEnum(["respond"] as const),
 		runId: Type.String({ minLength: 1 }),
 		answer: Type.String({ minLength: 1 }),
+		task: Type.Optional(Type.Integer({ minimum: 1 })),
 	}),
 	Type.Object({ action: StringEnum(["history"] as const) }),
 	Type.Object({ action: StringEnum(["cleanup"] as const), runId: Type.String({ minLength: 1 }) }),
@@ -52,8 +54,13 @@ export default function (pi: ExtensionAPI) {
 	let activeBatch: TinySubagentBatchDetails | undefined;
 	const herdr = new CliHerdrAutomation();
 	const dispatcher = new RunDispatcher();
-	const notifyRun = (runId: string, result: { details: unknown }) => {
-		const details = result.details as TinySubagentBatchDetails;
+	const notifyRun = (runId: string, result: { details: unknown; content?: Array<{ type: string; text?: string }> }) => {
+		const details = result.details as Partial<TinySubagentBatchDetails> & { errorMessage?: string };
+		if (!details.tasks || !details.documents || !details.status) {
+			const error = details.errorMessage ?? result.content?.find((item) => item.type === "text")?.text ?? "Unknown Subagent failure.";
+			pi.sendMessage({ customType: "tiny-subagents-run", content: `Subagent run ${runId} failed: ${error}`, display: true, details: { runId, status: "failed" } }, { triggerTurn: true, deliverAs: "followUp" });
+			return;
+		}
 		const lines = [`Subagent run ${runId} ${details.status}: ${details.summary}`, ...details.tasks.map((task) => `- ${task.name}: ${task.summary}`)];
 		if (details.documents.length) lines.push("Documents:", ...details.documents.map((document) => `- ${document.description}: ${document.path}`));
 		pi.sendMessage({ customType: "tiny-subagents-run", content: lines.join("\n"), display: true, details: { runId, status: details.status } }, { triggerTurn: true, deliverAs: "followUp" });
@@ -71,13 +78,17 @@ export default function (pi: ExtensionAPI) {
 				const result = await executeTinySubagent(queued.params, undefined, undefined, ctx, { agentsDirectory: packageAgentsDir });
 				notifyRun(queued.runId, result);
 				return result;
-			});
+			}).catch((error) => notifyRun(queued.runId, { details: { errorMessage: error instanceof Error ? error.message : String(error) } }));
 		}
-		if (reconciliation.liveTasks === 0) dispatcher.resume();
+		const continuePersistedTasks = async () => {
+			for (const run of await listSubagentHistory(ctx.cwd)) if (run.status === "queued") await continueQueuedRun(run.recordDirectory, herdr);
+		};
+		if (reconciliation.liveTasks === 0) { await continuePersistedTasks(); dispatcher.resume(); }
 		else {
 			ctx.ui.notify(`${reconciliation.liveTasks} Subagent task(s) are still running in Herdr; queued dispatch remains paused.`, "info");
 			void (async () => {
 				while ((await reconcileSubagentRuns(ctx.cwd, herdr)).liveTasks > 0) await new Promise((resolve) => setTimeout(resolve, 1000));
+				await continuePersistedTasks();
 				dispatcher.resume();
 			})();
 		}
@@ -88,10 +99,14 @@ export default function (pi: ExtensionAPI) {
 		label: "Tiny Subagent",
 		description: "Run one focused task or an ordered bounded-concurrency batch synchronously in a visible Herdr tab. Returns compact reports while complete results and Pi sessions stay in project-local records.",
 		promptSnippet: "Run focused work in visible Herdr subagents",
-		promptGuidelines: ["Call action=list once before the first execution. Submit one prompt or an ordered tasks list; use concurrency only for independent read-only tasks. Calls block until all tasks settle."],
+		promptGuidelines: ["Call action=list once before the first execution. Submit one prompt or an ordered tasks list; use concurrency only for independent read-only tasks. Foreground calls block until the run settles; background calls return a run ID immediately."],
 		parameters: TinySubagentParams,
 
 		async execute(_toolCallId, params: TinySubagentToolParams, signal, onUpdate, ctx) {
+			if (!params.action && params.prompt && !params.tasks) {
+				params.tasks = [{ name: params.label?.trim() || params.agent?.trim() || "task", prompt: params.prompt, agent: params.agent, model: params.model }];
+				params.label ??= params.agent?.trim() || "task";
+			}
 			const runSignal = params.background ? undefined : signal;
 			const executeRun = async () => await executeTinySubagent(params, runSignal, (update) => {
 				const details = update.details as TinySubagentBatchDetails | undefined;
