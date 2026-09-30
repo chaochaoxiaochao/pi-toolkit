@@ -6,7 +6,7 @@ on:
       - "todo-v*"
       - "cache-export-v*"
       - "codex-edit-v*"
-      - "tiny-subagent-v*"
+      - "herdr-subagents-v*"
       - "worktree-v*"
 
 jobs:

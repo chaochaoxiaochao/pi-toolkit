@@ -19,7 +19,7 @@ This report covers the root bundle and the five independently releasable package
 
 - Cache Export: 47 deterministic assertions and 18 Chromium E2E assertions passed, with 0 failures and 0 skips.
 - Codex Edit: 12 parser, matcher, routing, and package tests passed.
-- Tiny Subagent: 12 process, persona, and rendering tests passed.
+- Herdr Subagents: 58 scheduler, recovery, persona, and process-boundary tests passed.
 - Todo, BTW, Worktree installer, and Worktree CLI integration tests passed.
 - Media: all five screenshots are non-empty; Cache Export is a full-page 1440 × 2278 capture; all five GIFs contain three distinct frames.
 

@@ -1,7 +1,7 @@
 {
-  "name": "@maxiaochao/pi-tiny-subagent",
+  "name": "@maxiaochao/pi-herdr-subagents",
   "version": "0.1.1",
-  "description": "A tiny Pi subagent tool with package-local personas and detailed process errors.",
+  "description": "Run inspectable synchronous or background Pi subagent batches through Herdr.",
   "type": "module",
   "keywords": [
     "pi-package",
@@ -21,11 +21,11 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/chaochaoxiaochao/pi-toolkit.git",
-    "directory": "packages/tiny-subagent"
+    "directory": "packages/herdr-subagents"
   },
   "pi": {
     "extensions": [
-      "./extensions/tiny-subagent.ts"
+      "./extensions/herdr-subagents.ts"
     ]
   },
   "peerDependencies": {
@@ -36,7 +36,7 @@
   },
   "scripts": {
     "test": "node --experimental-strip-types tests/run-tests.mjs",
-    "load-test": "pi -ne -ns --no-session -e ./extensions/tiny-subagent.ts"
+    "load-test": "pi -ne -ns --no-session -e ./extensions/herdr-subagents.ts"
   },
   "publishConfig": {
     "access": "public"

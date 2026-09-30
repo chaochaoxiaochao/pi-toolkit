@@ -15,7 +15,7 @@
     "packages/todo",
     "packages/cache-export",
     "packages/codex-edit",
-    "packages/tiny-subagent",
+    "packages/herdr-subagents",
     "packages/worktree",
     "themes",
     "README.md",
@@ -34,7 +34,7 @@
       "./packages/cache-export/extensions/cache-export.ts",
       "./extensions/btw/index.ts",
       "./packages/codex-edit/extensions/codex-edit.ts",
-      "./packages/tiny-subagent/extensions/tiny-subagent.ts"
+      "./packages/herdr-subagents/extensions/herdr-subagents.ts"
     ],
     "skills": [
       "./skills",
@@ -57,8 +57,8 @@
     "ws": "^8.19.0"
   },
   "scripts": {
-    "test": "node tests/package-layout.mjs && npm --prefix packages/todo test && npm --prefix packages/cache-export test && npm --prefix packages/codex-edit test && npm --prefix packages/tiny-subagent test && npm --prefix packages/worktree test && node --experimental-strip-types extensions/btw/tests/history.mjs",
-    "load-test": "pi -ne -e ./packages/todo/extensions/todo.ts && pi -ne -e ./packages/cache-export/extensions/cache-export.ts && pi -ne -e ./extensions/btw/index.ts && pi -ne -e ./packages/codex-edit/extensions/codex-edit.ts && pi -ne -e ./packages/tiny-subagent/extensions/tiny-subagent.ts",
+    "test": "node tests/package-layout.mjs && npm --prefix packages/todo test && npm --prefix packages/cache-export test && npm --prefix packages/codex-edit test && npm --prefix packages/herdr-subagents test && npm --prefix packages/worktree test && node --experimental-strip-types extensions/btw/tests/history.mjs",
+    "load-test": "pi -ne -e ./packages/todo/extensions/todo.ts && pi -ne -e ./packages/cache-export/extensions/cache-export.ts && pi -ne -e ./extensions/btw/index.ts && pi -ne -e ./packages/codex-edit/extensions/codex-edit.ts && pi -ne -e ./packages/herdr-subagents/extensions/herdr-subagents.ts",
     "eval:agents": "node evaluations/agents-md/run.mjs",
     "eval:agents:test": "node evaluations/agents-md/tests/run-tests.mjs",
     "postinstall": "node scripts/install-agents.mjs"

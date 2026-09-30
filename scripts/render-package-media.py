@@ -17,7 +17,7 @@ FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
 PACKAGES = {
     "todo": ("Pi Todo", "Production state-machine output"),
     "codex-edit": ("Pi Codex Edit", "Production parser and patch application"),
-    "tiny-subagent": ("Pi Tiny Subagent", "Production runner with an isolated deterministic child"),
+    "herdr-subagents": ("Pi Herdr Subagents", "Inspectable bounded batches in visible Herdr sessions"),
     "worktree": ("Pi Worktree", "Shipped CLI running in a temporary Git repository"),
 }
 

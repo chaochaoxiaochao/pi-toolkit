@@ -151,30 +151,35 @@ function table(state) {
   pages("codex-edit", [one, two, three]);
 }
 
-// Tiny Subagent: run the production runner through a real isolated child process.
+// Herdr Subagents: run the production runner through its injectable Herdr boundary.
 {
-  const { runTinySubagent } = await import(join(root, "packages/tiny-subagent/src/runner.ts"));
-  const temp = mkdtempSync(join(tmpdir(), "tiny-media-"));
+  const { runHerdrSubagents } = await import(join(root, "packages/herdr-subagents/src/runner.ts"));
+  const temp = mkdtempSync(join(tmpdir(), "herdr-subagents-media-"));
   try {
-    const child = join(temp, "child.mjs");
-    const capture = join(temp, "launch.json");
-    writeFileSync(child, `#!/usr/bin/env node
-import { writeFileSync } from "node:fs";
-writeFileSync(process.env.TINY_MEDIA_CAPTURE, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), child: process.env.PI_SUBAGENT_CHILD }));
-process.stdout.write(JSON.stringify({ type: "message_end", message: { role: "assistant", model: "fixture/reviewer", stopReason: "stop", content: [{ type: "text", text: "Found one issue: validate the empty path before writing." }] } }) + "\\n");
-`, { mode: 0o700 });
-    chmodSync(child, 0o700);
-    const previous = { binary: process.env.PI_TINY_SUBAGENT_PI_BINARY, capture: process.env.TINY_MEDIA_CAPTURE };
-    process.env.PI_TINY_SUBAGENT_PI_BINARY = child;
-    process.env.TINY_MEDIA_CAPTURE = capture;
-    const result = await runTinySubagent("Review src/export.ts", { cwd: temp, model: "fixture/reviewer", tools: ["read", "grep"] });
-    const launch = JSON.parse(readFileSync(capture, "utf8"));
-    if (previous.binary === undefined) delete process.env.PI_TINY_SUBAGENT_PI_BINARY; else process.env.PI_TINY_SUBAGENT_PI_BINARY = previous.binary;
-    if (previous.capture === undefined) delete process.env.TINY_MEDIA_CAPTURE; else process.env.TINY_MEDIA_CAPTURE = previous.capture;
-    const one = [`$ tiny_subagents run reviewer "Review src/export.ts"`, ``, `Launching isolated child process...`].join("\n");
-    const two = [one, `  model: fixture/reviewer`, `  tools: read, grep`, `  session: ${launch.args.includes("--no-session") ? "fresh (--no-session)" : "unexpected"}`, `  extension discovery: ${launch.args.includes("--no-extensions") ? "disabled" : "enabled"}`, `  child marker: ${launch.child}`].join("\n");
+    let taskDirectory;
+    let childArgs = [];
+    const herdr = {
+      async createTab(request) { taskDirectory = request.env.PI_HERDR_SUBAGENTS_TASK_DIR; return { tabId: "media:t1", paneId: "media:p1" }; },
+      async startAgent(request) { childArgs = request.args; },
+      async promptAgent() {
+        writeFileSync(join(taskDirectory, "session.jsonl"), `${JSON.stringify({ type: "session", version: 3, id: "media-session", cwd: temp })}\n`);
+        writeFileSync(join(taskDirectory, "result.md"), "Found one issue: validate the empty path before writing.");
+        writeFileSync(join(taskDirectory, "report.json"), JSON.stringify({ status: "completed", summary: "Found one issue: validate the empty path before writing.", documents: [] }));
+        return { status: "idle" };
+      },
+      async isTabFocused() { return false; },
+      async closeTab() {},
+    };
+    const previous = { herdr: process.env.HERDR_ENV, workspace: process.env.HERDR_WORKSPACE_ID };
+    process.env.HERDR_ENV = "1";
+    process.env.HERDR_WORKSPACE_ID = "media";
+    const result = await runHerdrSubagents("Review src/export.ts", { cwd: temp, model: "fixture/reviewer", tools: ["read", "grep"], herdr });
+    if (previous.herdr === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = previous.herdr;
+    if (previous.workspace === undefined) delete process.env.HERDR_WORKSPACE_ID; else process.env.HERDR_WORKSPACE_ID = previous.workspace;
+    const one = [`$ herdr_subagents run reviewer "Review src/export.ts"`, ``, `Opening an inspectable Herdr child session...`].join("\n");
+    const two = [one, `  model: fixture/reviewer`, `  tools: read, grep`, `  persistent session: ${childArgs.includes("--session") ? "enabled" : "missing"}`, `  extension discovery: ${childArgs.includes("--no-extensions") ? "disabled" : "enabled"}`, `  child recursion guard: enabled`].join("\n");
     const three = [two, ``, `Child result`, `------------`, result.output, ``, `Process exited successfully.`].join("\n");
-    pages("tiny-subagent", [one, two, three]);
+    pages("herdr-subagents", [one, two, three]);
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }

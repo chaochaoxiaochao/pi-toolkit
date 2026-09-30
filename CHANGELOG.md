@@ -2,7 +2,7 @@
 
 - retain Codex Edit in the root toolkit while restoring `@maxiaochao/pi-codex-edit` as an independently installable child package; both distributions share the implementation under `packages/codex-edit`
 - align repeated-region hunk matching with Codex by selecting the first match at or after the current cursor
-- reorganize the repository as an npm workspace: todo, cache-export, codex-edit, tiny-subagent, and worktree own their source, docs, tests, versions, and child-package releases while the root manifest loads their entrypoints directly; BTW remains root-only
+- reorganize the repository as an npm workspace: todo, cache-export, codex-edit, herdr-subagents, and worktree own their source, docs, tests, versions, and child-package releases while the root manifest loads their entrypoints directly; BTW remains root-only
 - expand every child README with motivation or upstream alignment, usage examples, screenshots and animated demos captured from the real implementation; document Cache Export's alignment with Hugging Face Tau
 - coordinate child and toolkit releases from one commit with two version updates, two tags, and one atomic push so standalone and bundled users cannot receive mismatched source revisions
 
