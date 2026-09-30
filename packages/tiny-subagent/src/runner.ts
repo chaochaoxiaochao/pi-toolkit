@@ -14,10 +14,11 @@ export interface TinySubagentDocument {
 }
 
 export interface TinySubagentReport {
-	status: "completed" | "failed";
+	status: "completed" | "needs-input" | "failed";
 	summary: string;
 	documents: TinySubagentDocument[];
 	error?: string;
+	question?: string;
 	reportedAt?: string;
 }
 
@@ -38,7 +39,7 @@ export interface TinySubagentOptions {
 
 export interface TinySubagentResult {
 	ok: boolean;
-	status: "starting" | "running" | "completed" | "failed";
+	status: "starting" | "running" | "blocked" | "completed" | "failed";
 	summary: string;
 	documents: TinySubagentDocument[];
 	output: string;
@@ -57,7 +58,7 @@ export interface TinySubagentResult {
 interface RunRecord {
 	id: string;
 	label: string;
-	status: "starting" | "running" | "completed" | "failed";
+	status: "starting" | "running" | "blocked" | "completed" | "failed";
 	cwd: string;
 	taskIds: string[];
 	startedAt: string;
@@ -70,7 +71,7 @@ interface RunRecord {
 interface TaskRecord {
 	id: string;
 	runId: string;
-	status: "starting" | "running" | "completed" | "failed";
+	status: "starting" | "running" | "blocked" | "completed" | "failed";
 	prompt: string;
 	agent: string;
 	model?: string;
@@ -117,7 +118,7 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 function validReport(value: unknown): value is TinySubagentReport {
 	if (!value || typeof value !== "object") return false;
 	const report = value as Record<string, unknown>;
-	if (report.status !== "completed" && report.status !== "failed") return false;
+	if (report.status !== "completed" && report.status !== "needs-input" && report.status !== "failed") return false;
 	if (typeof report.summary !== "string" || !report.summary.trim()) return false;
 	if (!Array.isArray(report.documents)) return false;
 	return report.documents.every((document) => {
@@ -143,7 +144,7 @@ function protocolPrompt(systemPrompt: string): string {
 		"",
 		"When the task is finished, call subagent_report exactly once.",
 		"Put the complete final answer in result, a concise parent-facing paragraph in summary, and list any useful document paths.",
-		"Use status=failed with an error when the task cannot be completed.",
+		"Use status=needs-input with question when missing information prevents progress, or status=failed with an error when the task cannot be completed.",
 	].join("\n").trim();
 }
 
@@ -264,24 +265,27 @@ export async function runTinySubagent(prompt: string, options: TinySubagentOptio
 		const report = await readReport(reportFile);
 		if (!report) throw new Error("Child Pi settled but did not submit a valid subagent_report.");
 		const completedAt = new Date().toISOString();
+		const settledStatus = report.status === "needs-input" ? "blocked" : report.status;
 		Object.assign(runRecord, {
-			status: report.status,
+			status: settledStatus,
 			completedAt,
 			...(report.error ? { error: report.error } : {}),
+			...(report.question ? { question: report.question } : {}),
 		});
 		Object.assign(taskRecord, {
-			status: report.status,
+			status: settledStatus,
 			completedAt,
 			...(report.error ? { error: report.error } : {}),
+			...(report.question ? { question: report.question } : {}),
 		});
 		await Promise.all([writeJson(runFile, runRecord), writeJson(taskFile, taskRecord)]);
 		result = {
 			ok: report.status === "completed",
-			status: report.status,
+			status: settledStatus,
 			summary: report.summary,
 			documents: report.documents,
 			output: compactText(report),
-			...(report.error ? { errorMessage: report.error } : {}),
+			...(report.error || report.question ? { errorMessage: report.error ?? report.question } : {}),
 			cwd,
 			durationMs: Date.now() - startedAt,
 			...common(),
@@ -297,7 +301,7 @@ export async function runTinySubagent(prompt: string, options: TinySubagentOptio
 		}
 		result = failure(cwd, startedAt, errorMessage, common());
 	} finally {
-		if (tabId) {
+		if (tabId && result?.status !== "blocked") {
 			try {
 				await herdr.closeTab(tabId, options.signal?.aborted ? undefined : options.signal);
 			} catch (error) {

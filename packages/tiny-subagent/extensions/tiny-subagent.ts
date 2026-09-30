@@ -16,6 +16,11 @@ const TinySubagentParams = Type.Union([
 		action: StringEnum(ACTIONS, { description: "Discover package-local personas before execution." }),
 	}),
 	Type.Object({
+		action: StringEnum(["respond"] as const),
+		runId: Type.String({ minLength: 1 }),
+		answer: Type.String({ minLength: 1 }),
+	}),
+	Type.Object({
 		prompt: Type.String({ minLength: 1, description: "One self-contained task for the subagent." }),
 		agent: Type.Optional(Type.String({ minLength: 1, description: "Persona name selected from action=list. Defaults to worker." })),
 		label: Type.Optional(Type.String({ minLength: 1, maxLength: 48, description: "Short label for the Herdr run tab." })),
@@ -61,12 +66,21 @@ export default function (pi: ExtensionAPI) {
 				}
 				if (!params.background) onUpdate?.(update);
 			}, ctx, { agentsDirectory: packageAgentsDir });
-			if (!params.tasks) return await executeRun();
+			if (!params.tasks) {
+				const result = await executeRun();
+				if (params.action === "respond" && (result.details as { status?: string }).status !== "blocked") { activeBatch = undefined; ctx.ui.setWidget("tiny-subagents", undefined); }
+				return result;
+			}
 			const runId = randomUUID();
 			params.runId = runId;
 			const promise = dispatcher.submit(runId, async () => {
 				const result = await executeRun();
-				activeBatch = undefined;
+				const details = result.details as TinySubagentBatchDetails;
+				activeBatch = details.status === "blocked" ? details : undefined;
+				if (activeBatch) {
+					const counts = activityCounts(activeBatch);
+					ctx.ui.setWidget("tiny-subagents", [`Subagents · ${activeBatch.label}`, `running ${counts.running} · queued ${counts.queued} · blocked ${counts.blocked} · failed ${counts.failed} · completed ${counts.completed}`]);
+				}
 				return result;
 			});
 			if (params.background) {
@@ -76,19 +90,20 @@ export default function (pi: ExtensionAPI) {
 					const lines = [`Subagent run ${runId} ${details.status}: ${details.summary}`, ...details.tasks.map((task) => `- ${task.name}: ${task.summary}`)];
 					if (details.documents.length) lines.push("Documents:", ...details.documents.map((document) => `- ${document.description}: ${document.path}`));
 					pi.sendMessage({ customType: "tiny-subagents-run", content: lines.join("\n"), display: true, details: { runId, status: details.status } }, { triggerTurn: true, deliverAs: "followUp" });
-					if (!dispatcher.snapshot().activeRunId && dispatcher.snapshot().queuedRunIds.length === 0) ctx.ui.setWidget("tiny-subagents", undefined);
+					if (!activeBatch && !dispatcher.snapshot().activeRunId && dispatcher.snapshot().queuedRunIds.length === 0) ctx.ui.setWidget("tiny-subagents", undefined);
 				}).catch((error) => {
 					pi.sendMessage({ customType: "tiny-subagents-run", content: `Subagent run ${runId} failed: ${error instanceof Error ? error.message : String(error)}`, display: true, details: { runId, status: "failed" } }, { triggerTurn: true, deliverAs: "followUp" });
 				});
 				return { content: [{ type: "text" as const, text: `Subagent run queued: ${runId}` }], details: { runId, status: "queued", background: true } };
 			}
 			const result = await promise;
-			if (!dispatcher.snapshot().activeRunId && dispatcher.snapshot().queuedRunIds.length === 0) ctx.ui.setWidget("tiny-subagents", undefined);
+			if (!activeBatch && !dispatcher.snapshot().activeRunId && dispatcher.snapshot().queuedRunIds.length === 0) ctx.ui.setWidget("tiny-subagents", undefined);
 			return result;
 		},
 
 		renderCall(args, theme) {
 			if (args.action === "list") return new Text(theme.fg("toolTitle", theme.bold("tiny_subagents list")), 0, 0);
+			if (args.action === "respond") return new Text(`${theme.fg("toolTitle", theme.bold("tiny_subagents respond"))} ${theme.fg("muted", String(args.runId))}`, 0, 0);
 			if (args.tasks) return new Text(`${theme.fg("toolTitle", theme.bold("tiny_subagents"))} ${theme.fg("accent", `${args.tasks.length} tasks`)}${theme.fg("muted", ` · concurrency ${args.concurrency ?? "default"}`)}`, 0, 0);
 			const agent = args.agent || "worker";
 			const label = args.label ? ` · ${String(args.label)}` : "";

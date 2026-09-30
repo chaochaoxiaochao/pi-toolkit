@@ -33,10 +33,11 @@ export interface BatchOptions {
 export interface BatchTaskResult {
 	index: number;
 	name: string;
-	status: "completed" | "failed";
+	status: "completed" | "blocked" | "failed";
 	summary: string;
 	documents: TinySubagentDocument[];
 	error?: string;
+	question?: string;
 	paneId: string;
 	recordDirectory: string;
 	sessionFile: string;
@@ -44,13 +45,13 @@ export interface BatchTaskResult {
 
 export interface BatchResult {
 	ok: boolean;
-	status: "starting" | "running" | "completed" | "partial" | "failed";
+	status: "starting" | "running" | "blocked" | "completed" | "partial" | "failed";
 	runId: string;
 	label: string;
 	requestedConcurrency: number;
 	effectiveConcurrency: number;
 	tasks: BatchTaskResult[];
-	activity: Array<{ index: number; name: string; status: "queued" | "running" | "completed" | "failed"; paneId?: string }>;
+	activity: Array<{ index: number; name: string; status: "queued" | "running" | "blocked" | "completed" | "failed"; paneId?: string }>;
 	summary: string;
 	documents: TinySubagentDocument[];
 	recordDirectory: string;
@@ -62,10 +63,10 @@ async function writeJson(path: string, value: unknown): Promise<void> { await wr
 function validReport(value: unknown): value is TinySubagentReport {
 	if (!value || typeof value !== "object") return false;
 	const report = value as Record<string, unknown>;
-	return (report.status === "completed" || report.status === "failed") && typeof report.summary === "string" && Array.isArray(report.documents);
+	return (report.status === "completed" || report.status === "needs-input" || report.status === "failed") && typeof report.summary === "string" && Array.isArray(report.documents) && (report.status !== "needs-input" || typeof report.question === "string");
 }
 function protocolPrompt(systemPrompt: string): string {
-	return `${systemPrompt.trim()}\n\nWhen the task is finished, call subagent_report exactly once. Put the complete final answer in result, a concise parent-facing paragraph in summary, and list any useful document paths. Use status=failed with an error when the task cannot be completed.`;
+	return `${systemPrompt.trim()}\n\nWhen the task is finished, call subagent_report exactly once. Put the complete final answer in result, a concise parent-facing paragraph in summary, and list any useful document paths. Use status=needs-input with question when missing information prevents progress, or status=failed with an error when the task cannot be completed.`;
 }
 
 export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOptions): Promise<BatchResult> {
@@ -82,6 +83,7 @@ export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOpt
 	await writeJson(runFile, runRecord);
 	const herdr = options.herdr ?? new CliHerdrAutomation();
 	let tabId: string | undefined;
+	let keepTab = false;
 	const results = new Array<BatchTaskResult>(tasks.length);
 	const activity: BatchResult["activity"] = tasks.map((task, index) => ({ index, name: task.name, status: "queued" }));
 	const emit = (status: BatchResult["status"], summary: string) => options.onUpdate?.({ ok: false, status, runId, label: options.label, requestedConcurrency, effectiveConcurrency, tasks: results.filter(Boolean), activity: activity.map((task) => ({ ...task })), summary, documents: [], recordDirectory: runDirectory, tabId });
@@ -98,6 +100,7 @@ export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOpt
 		await writeJson(runFile, runRecord);
 		let nextIndex = 0;
 		let settled = 0;
+		let blockedDetected = false;
 		const startResolvers: Array<() => void> = [];
 		const started = tasks.map((_, index) => new Promise<void>((resolve) => { startResolvers[index] = resolve; }));
 		const runOne = async (index: number, paneId: string): Promise<void> => {
@@ -137,24 +140,30 @@ export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOpt
 				report = { status: "failed", summary: `${task.name} failed.`, documents: [], error: message, reportedAt: timestamp() };
 				if (!existsSync(reportFile)) await writeJson(reportFile, report);
 			}
-			Object.assign(taskRecord, { status: report.status, completedAt: timestamp(), ...(report.error ? { error: report.error } : {}) });
+			const taskStatus = report.status === "needs-input" ? "blocked" : report.status;
+			if (taskStatus === "blocked") blockedDetected = true;
+			Object.assign(taskRecord, { status: taskStatus, completedAt: timestamp(), ...(report.error ? { error: report.error } : {}), ...(report.question ? { question: report.question } : {}) });
 			await writeJson(taskFile, taskRecord);
-			results[index] = { index, name: task.name, status: report.status, summary: report.summary, documents: report.documents, ...(report.error ? { error: report.error } : {}), paneId, recordDirectory: taskDirectory, sessionFile };
-			activity[index] = { index, name: task.name, status: report.status, paneId };
+			results[index] = { index, name: task.name, status: taskStatus, summary: report.summary, documents: report.documents, ...(report.error ? { error: report.error } : {}), ...(report.question ? { question: report.question } : {}), paneId, recordDirectory: taskDirectory, sessionFile };
+			activity[index] = { index, name: task.name, status: taskStatus, paneId };
 			settled += 1;
 			await herdr.renameTab(tabId as string, `SA · ${options.label} · ${settled}/${tasks.length}`, options.signal);
 			emit("running", `${settled}/${tasks.length} tasks settled.`);
 		};
-		const worker = async (paneId: string) => { while (true) { const index = nextIndex++; if (index >= tasks.length) return; await runOne(index, paneId); } };
+		const worker = async (paneId: string) => { while (true) { if (blockedDetected) return; const index = nextIndex++; if (index >= tasks.length) return; await runOne(index, paneId); } };
 		await Promise.all(panes.map(worker));
-		const failed = results.filter((result) => result.status === "failed").length;
-		const status = failed === 0 ? "completed" : failed === tasks.length ? "failed" : "partial";
-		Object.assign(runRecord, { status, completedAt: timestamp() });
+		const settledResults = results.filter(Boolean);
+		const failed = settledResults.filter((result) => result.status === "failed").length;
+		const blocked = settledResults.find((result) => result.status === "blocked");
+		const status = blocked ? "blocked" : failed === 0 ? "completed" : failed === tasks.length ? "failed" : "partial";
+		keepTab = status === "blocked";
+		Object.assign(runRecord, { status, ...(blocked ? { question: blocked.question, updatedAt: timestamp() } : { completedAt: timestamp() }) });
 		await writeJson(runFile, runRecord);
-		const documents = results.flatMap((result) => result.documents);
-		return { ok: failed === 0, status, runId, label: options.label, requestedConcurrency, effectiveConcurrency, tasks: results, activity, summary: failed ? `${tasks.length - failed}/${tasks.length} tasks completed; ${failed} failed.` : `${tasks.length}/${tasks.length} tasks completed.`, documents, recordDirectory: runDirectory, tabId };
+		const documents = settledResults.flatMap((result) => result.documents);
+		const summary = blocked ? `${blocked.name} needs input: ${blocked.question}` : failed ? `${tasks.length - failed}/${tasks.length} tasks completed; ${failed} failed.` : `${tasks.length}/${tasks.length} tasks completed.`;
+		return { ok: status === "completed", status, runId, label: options.label, requestedConcurrency, effectiveConcurrency, tasks: settledResults, activity, summary, documents, recordDirectory: runDirectory, tabId };
 	} finally {
-		if (tabId) {
+		if (tabId && !keepTab) {
 			const cleanupSignal = options.signal?.aborted ? undefined : options.signal;
 			if (await herdr.isTabFocused(tabId, cleanupSignal)) {
 				void herdr.waitForTabUnfocused(tabId, cleanupSignal).then(() => herdr.closeTab(tabId as string, cleanupSignal)).catch(() => undefined);

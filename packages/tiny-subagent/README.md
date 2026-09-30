@@ -45,6 +45,14 @@ tiny_subagents({
 
 Set `background: true` to return a stable run ID immediately while the queue continues. One run is dispatched at a time by an extension instance; later runs remain queued and start FIFO. Each background run sends one compact parent notification only when the whole run completes, partially fails, fails, or blocks. Individual successful tasks do not wake the parent model.
 
+A child missing required information reports `needs-input` with an exact question. The run becomes blocked, keeps its Herdr tab, pane, partial report, and Pi session, and returns control to the parent. Answer through the same tool to continue the original session:
+
+```text
+tiny_subagents({ action: "respond", runId: "<run-id>", answer: "Use the main branch." })
+```
+
+`/subagents focus <task-number>` can also open the blocked pane for direct manual interaction.
+
 Read-only tasks start FIFO up to the configured concurrency limit. Worker panes are reused as tasks settle, results remain in input order, and one failed task does not cancel its siblings. Any batch containing a write-capable persona is forced to concurrency one.
 
 While a run is active, the parent widget shows running, queued, blocked, failed, and completed counts. `/subagents active` shows the compact task list, and `/subagents focus <task-number>` jumps to the exact active Herdr pane without copying its transcript into Pi. Tab and pane labels track progress and stable task order. Completed tabs close immediately when unfocused; a tab being inspected waits until focus leaves.

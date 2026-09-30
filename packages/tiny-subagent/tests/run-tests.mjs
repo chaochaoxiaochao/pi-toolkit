@@ -37,6 +37,7 @@ function fakeHerdr(mode = "completed") {
 	let paneSequence = 2;
 	let active = 0;
 	let maxActive = 0;
+	let taskRuns = 0;
 	return {
 		calls,
 		get maxActive() { return maxActive; },
@@ -76,14 +77,16 @@ function fakeHerdr(mode = "completed") {
 		},
 		async runTask(request) {
 			calls.push(["runTask:start", request]);
+			taskRuns += 1;
 			active += 1;
 			maxActive = Math.max(maxActive, active);
 			await new Promise((resolve) => setTimeout(resolve, request.prompt.includes("slow") ? 15 : 2));
 			const directory = request.env.PI_TINY_SUBAGENT_TASK_DIR;
 			writeFileSync(join(directory, "session.jsonl"), `${JSON.stringify({ type: "session", version: 3, id: request.marker, cwd: root })}\n`);
+			const needsInput = mode === "blocked" && taskRuns === 1;
 			const failed = request.prompt.includes("FAIL");
 			writeFileSync(join(directory, "result.md"), `FULL ${request.prompt}`);
-			writeFileSync(join(directory, "report.json"), JSON.stringify({ status: failed ? "failed" : "completed", summary: failed ? `${request.prompt} failed.` : `${request.prompt} completed.`, ...(failed ? { error: "expected failure" } : {}), documents: [] }));
+			writeFileSync(join(directory, "report.json"), JSON.stringify({ status: needsInput ? "needs-input" : failed ? "failed" : "completed", summary: needsInput ? "Need the target branch." : failed ? `${request.prompt} failed.` : `${request.prompt} completed.`, ...(needsInput ? { question: "Which branch should I inspect?" } : {}), ...(failed ? { error: "expected failure" } : {}), documents: [] }));
 			active -= 1;
 			calls.push(["runTask:end", request]);
 		},
@@ -248,6 +251,14 @@ try {
 	const stableHerdr = fakeHerdr();
 	const stable = await executeTinySubagent({ runId: backgroundId, tasks: [{ name: "stable", prompt: "stable", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: stableHerdr });
 	check("preallocated background run id stays stable", stable.details.runId === backgroundId && readFileSync(join(stable.details.recordDirectory, "run.json"), "utf8").includes(backgroundId));
+
+	const blockedHerdr = fakeHerdr("blocked");
+	const blocked = await executeTinySubagent({ tasks: [{ name: "question", prompt: "inspect branch", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: blockedHerdr });
+	check("needs-input returns foreground control and preserves tab", blocked.details.status === "blocked" && blocked.details.tasks[0].question === "Which branch should I inspect?" && !blockedHerdr.calls.some(([name]) => name === "closeTab"));
+	const resumed = await executeTinySubagent({ action: "respond", runId: blocked.details.runId, answer: "Inspect main." }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: blockedHerdr });
+	const blockedRuns = blockedHerdr.calls.filter(([name]) => name === "runTask:start").map(([, request]) => request);
+	check("answer resumes original pane and persistent Pi session", !resumed.isError && resumed.details.status === "completed" && blockedRuns.length === 2 && blockedRuns[0].paneId === blockedRuns[1].paneId && blockedRuns[1].args.includes("--session") && blockedRuns[1].args.includes(blocked.details.tasks[0].sessionFile));
+	check("completion after answer updates original run and closes tab", JSON.parse(readFileSync(join(blocked.details.recordDirectory, "run.json"), "utf8")).status === "completed" && blockedHerdr.calls.at(-1)[0] === "closeTab");
 } finally {
 	restoreEnv();
 	rmSync(root, { recursive: true, force: true });

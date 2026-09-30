@@ -2,11 +2,12 @@ import type { HerdrAutomation } from "./herdr.ts";
 import { loadSubagentConfiguration, type ConfigurationPaths, type SubagentConfiguration } from "./config.ts";
 import { runTinySubagent, type TinySubagentResult } from "./runner.ts";
 import { runTinySubagentBatch, type BatchResult, type BatchTask } from "./batch-runner.ts";
+import { respondToBlockedTask } from "./blocking.ts";
 
 export interface TinySubagentTaskParams { name: string; prompt: string; agent?: string; model?: string; }
 
 export interface TinySubagentToolParams {
-	action?: "list";
+	action?: "list" | "respond";
 	prompt?: string;
 	agent?: string;
 	label?: string;
@@ -15,6 +16,7 @@ export interface TinySubagentToolParams {
 	concurrency?: number;
 	background?: boolean;
 	runId?: string;
+	answer?: string;
 }
 
 export interface TinySubagentToolContext {
@@ -79,6 +81,20 @@ export async function executeTinySubagent(
 	dependencies: TinySubagentToolDependencies,
 ): Promise<ToolResponse> {
 	const discovery = loadSubagentConfiguration(ctx.cwd, dependencies.agentsDirectory, modelId(ctx), dependencies.configurationPaths);
+	if (params.action === "respond") {
+		if (!params.runId?.trim() || !params.answer?.trim()) {
+			const text = "runId and answer are required to respond to a blocked task.";
+			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
+		}
+		try {
+			const result = await respondToBlockedTask(ctx.cwd, params.runId.trim(), params.answer.trim(), dependencies.herdr);
+			const text = [result.summary, ...(result.question ? [`Question: ${result.question}`] : []), ...result.documents.map((document) => `${document.description}: ${document.path}`)].join("\n");
+			return { content: [{ type: "text", text }], details: result, ...(result.status === "failed" ? { isError: true } : {}) };
+		} catch (error) {
+			const text = error instanceof Error ? error.message : String(error);
+			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
+		}
+	}
 	if (params.action === "list") {
 		return {
 			content: [{ type: "text", text: listText(discovery) }],

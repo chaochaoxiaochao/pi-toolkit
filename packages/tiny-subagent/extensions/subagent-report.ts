@@ -5,7 +5,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 const ReportParams = Type.Object({
-	status: StringEnum(["completed", "failed"] as const, { description: "Terminal outcome for this task." }),
+	status: StringEnum(["completed", "needs-input", "failed"] as const, { description: "Current outcome for this task." }),
 	summary: Type.String({ minLength: 1, description: "One concise paragraph for the parent agent." }),
 	result: Type.String({ description: "Complete final result. Stored on disk and excluded from the parent context." }),
 	documents: Type.Optional(Type.Array(Type.Object({
@@ -13,6 +13,7 @@ const ReportParams = Type.Object({
 		description: Type.String({ minLength: 1, description: "Short description of the document." }),
 	}))),
 	error: Type.Optional(Type.String({ minLength: 1, description: "Failure detail when status is failed." })),
+	question: Type.Optional(Type.String({ minLength: 1, description: "Exact question when status is needs-input." })),
 });
 
 export default function (pi: ExtensionAPI) {
@@ -39,6 +40,7 @@ export default function (pi: ExtensionAPI) {
 				summary: params.summary,
 				documents,
 				...(params.error ? { error: params.error } : {}),
+				...(params.question ? { question: params.question } : {}),
 				reportedAt: new Date().toISOString(),
 			};
 			writeFileSync(resolve(taskDirectory, "report.json"), `${JSON.stringify(report, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
