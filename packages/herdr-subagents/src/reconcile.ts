@@ -1,26 +1,25 @@
 import { existsSync, readdirSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { HerdrAutomation } from "./herdr.ts";
 import { isProcessAlive, type OwnerIdentity } from "./ownership.ts";
 import { writeJsonAtomic } from "./state.ts";
-import { aggregateTaskStatus } from "./run-status.ts";
+import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
+import { applyReport, applyTaskStatus, isActiveStatus, persistFailureReport, readReport, readRunRecord, readTaskRecord, type RunRecord, type TaskStatus } from "./records.ts";
+import { cleanupRunTab } from "./tab-cleanup.ts";
 
-async function readJson(path: string): Promise<Record<string, any>> { return JSON.parse(await readFile(path, "utf8")) as Record<string, any>; }
-const ACTIVE = ["starting", "running", "queued", "blocked"];
 
 export interface CancellationResult { cancelledRuns: number; cleanupErrors: string[]; }
 export interface ReconciliationResult { liveTasks: number; settledTasks: number; interruptedTasks: number; cancelledTasks: number; cleanupErrors: string[]; }
 
-async function closeRunTab(run: Record<string, any>, runFile: string, herdr: HerdrAutomation, cleanupErrors: string[]): Promise<void> {
+async function closeRunTab(run: RunRecord, runFile: string, herdr: HerdrAutomation, cleanupErrors: string[]): Promise<void> {
 	if (!run.tabId) return;
-	try { await herdr.closeTab(run.tabId); }
-	catch (error) {
-		const detail = error instanceof Error ? error.message : String(error);
-		const message = `Could not close Subagent tab ${run.tabId}: ${detail}`;
-		run.cleanupError = detail;
-		await writeJsonAtomic(runFile, run);
-		cleanupErrors.push(message);
+	const forceClose = new AbortController();
+	forceClose.abort(new Error("Owning parent Pi session is no longer active."));
+	const errorsBeforeCleanup = cleanupErrors.length;
+	try {
+		await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, signal: forceClose.signal, onError: (message) => cleanupErrors.push(message), errorPrefix: `Could not close Subagent tab ${run.tabId}` });
+	} catch (error) {
+		if (cleanupErrors.length === errorsBeforeCleanup) cleanupErrors.push(`Could not close Subagent tab ${run.tabId}: ${error instanceof Error ? error.message : String(error)}`);
 	}
 }
 
@@ -34,20 +33,29 @@ export async function cancelActiveSubagentRuns(cwd: string, herdr: HerdrAutomati
 	for (const runEntry of readdirSync(runsDirectory)) {
 		const runDirectory = join(runsDirectory, runEntry);
 		const runFile = join(runDirectory, "run.json");
-		let run: Record<string, any>;
-		try { run = await readJson(runFile); } catch { continue; }
-		if (!ACTIVE.includes(run.status)) continue;
+		let run: RunRecord;
+		try { run = await readRunRecord(runFile); }
+		catch (error) {
+			result.cleanupErrors.push(`Could not inspect Subagent run ${runFile}: ${error instanceof Error ? error.message : String(error)}`);
+			continue;
+		}
+		if (!isActiveStatus(run.status)) continue;
 		if (options.owner?.sessionId && run.ownerSessionId !== options.owner.sessionId) continue;
 		const now = new Date().toISOString();
 		const tasksDirectory = join(runDirectory, "tasks");
 		if (existsSync(tasksDirectory)) for (const taskEntry of readdirSync(tasksDirectory)) {
 			const taskFile = join(tasksDirectory, taskEntry, "task.json");
-			const task = await readJson(taskFile);
-			if (!ACTIVE.includes(task.status)) continue;
-			Object.assign(task, { status: "cancelled", error: reason, completedAt: now });
+			let task;
+			try { task = await readTaskRecord(taskFile); }
+			catch (error) {
+				result.cleanupErrors.push(`Could not cancel Subagent task ${taskFile}: ${error instanceof Error ? error.message : String(error)}`);
+				continue;
+			}
+			if (!isActiveStatus(task.status)) continue;
+			applyTaskStatus(task, "cancelled", { error: reason, at: now });
 			await writeJsonAtomic(taskFile, task);
 		}
-		Object.assign(run, { status: "cancelled", error: reason, completedAt: now });
+		applyRunStatus(run, "cancelled", { error: reason, at: now });
 		await writeJsonAtomic(runFile, run);
 		await closeRunTab(run, runFile, herdr, result.cleanupErrors);
 		result.cancelledRuns += 1;
@@ -62,41 +70,77 @@ export async function reconcileSubagentRuns(cwd: string, herdr: HerdrAutomation,
 	for (const runEntry of readdirSync(runsDirectory)) {
 		const runDirectory = join(runsDirectory, runEntry);
 		const runFile = join(runDirectory, "run.json");
-		let run: Record<string, any>;
-		try { run = await readJson(runFile); } catch { continue; }
-		if (!ACTIVE.includes(run.status)) continue;
+		let run: RunRecord;
+		try { run = await readRunRecord(runFile); }
+		catch (error) {
+			result.cleanupErrors.push(`Could not inspect Subagent run ${runFile}: ${error instanceof Error ? error.message : String(error)}`);
+			continue;
+		}
 		const differentOwner = owner?.sessionId !== undefined && run.ownerSessionId !== owner.sessionId;
 		if (differentOwner && run.ownerProcessId !== (owner?.processId ?? process.pid) && isProcessAlive(run.ownerProcessId)) continue;
-		const orphaned = differentOwner;
-		const statuses: string[] = [];
+		for (const pendingTabId of [...(run.cleanupPendingTabIds ?? [])]) {
+			const errorsBeforeCleanup = result.cleanupErrors.length;
+			try {
+				await cleanupRunTab({ herdr, tabId: pendingTabId, runFile, runRecord: run, onError: (message) => result.cleanupErrors.push(message), errorPrefix: `Could not finish deferred cleanup for Herdr tab ${pendingTabId}` });
+			} catch (error) {
+				if (result.cleanupErrors.length === errorsBeforeCleanup) result.cleanupErrors.push(`Could not finish deferred cleanup for Herdr tab ${pendingTabId}: ${error instanceof Error ? error.message : String(error)}`);
+			}
+		}
+		if (!isActiveStatus(run.status)) continue;
 		const tasksDirectory = join(runDirectory, "tasks");
-		if (!existsSync(tasksDirectory)) continue;
+		if (!existsSync(tasksDirectory)) {
+			const message = `Active Subagent run ${run.id} has no tasks directory.`;
+			result.cleanupErrors.push(message);
+			applyRunStatus(run, "failed", { error: message });
+			await writeJsonAtomic(runFile, run);
+			await closeRunTab(run, runFile, herdr, result.cleanupErrors);
+			continue;
+		}
+		const statuses: TaskStatus[] = [];
+		let unreadableTasks = 0;
 		for (const taskEntry of readdirSync(tasksDirectory)) {
-			const taskDirectory = join(tasksDirectory, taskEntry);
-			const taskFile = join(taskDirectory, "task.json");
-			const task = await readJson(taskFile);
-			if (ACTIVE.includes(task.status)) {
-				const reportFile = join(taskDirectory, "report.json");
+			const taskFile = join(tasksDirectory, taskEntry, "task.json");
+			let task;
+			try { task = await readTaskRecord(taskFile); }
+			catch (error) {
+				result.cleanupErrors.push(`Could not inspect Subagent task ${taskFile}: ${error instanceof Error ? error.message : String(error)}`);
+				unreadableTasks += 1;
+				continue;
+			}
+			if (isActiveStatus(task.status)) {
+				const reportFile = join(tasksDirectory, taskEntry, "report.json");
 				if (existsSync(reportFile) && (task.status === "running" || task.status === "starting")) {
-					const report = await readJson(reportFile);
-					task.status = report.status === "needs-input" ? "blocked" : report.status;
-					task.completedAt = report.reportedAt ?? new Date().toISOString();
-					if (report.error) task.error = report.error;
-					if (report.question) task.question = report.question;
-					result.settledTasks += 1;
+					try {
+						const report = await readReport(reportFile);
+						applyReport(task, report, report.reportedAt ?? new Date().toISOString());
+						result.settledTasks += 1;
+					} catch (error) {
+						const detail = error instanceof Error ? error.message : String(error);
+						result.cleanupErrors.push(`Invalid Subagent report ${reportFile}: ${detail}`);
+						await persistFailureReport(reportFile, { status: "failed", summary: "Recovered task had an invalid structured report.", documents: [], error: detail, reportedAt: new Date().toISOString() });
+						if (!differentOwner) {
+							applyTaskStatus(task, "failed", { error: `Invalid structured report: ${detail}` });
+							result.settledTasks += 1;
+							result.interruptedTasks += 1;
+						}
+					}
 				}
-				if (orphaned && ACTIVE.includes(task.status)) {
-					task.status = "cancelled";
-					task.error = "Owning parent Pi session is no longer active.";
-					task.completedAt = new Date().toISOString();
+				if (differentOwner && isActiveStatus(task.status)) {
+					applyTaskStatus(task, "cancelled", { error: "Owning parent Pi session is no longer active." });
 					result.cancelledTasks += 1;
 					result.interruptedTasks += 1;
-				} else if (!orphaned && (task.status === "running" || task.status === "starting")) {
-					if (task.paneId && await herdr.isTaskRunning(task.paneId)) result.liveTasks += 1;
+				} else if (!differentOwner && (task.status === "running" || task.status === "starting")) {
+					let childIsLive = false;
+					if (task.paneId) {
+						try { childIsLive = await herdr.isTaskRunning(task.paneId); }
+						catch (error) {
+							result.cleanupErrors.push(`Could not inspect Subagent pane ${task.paneId}: ${error instanceof Error ? error.message : String(error)}`);
+							childIsLive = true;
+						}
+					}
+					if (childIsLive) result.liveTasks += 1;
 					else {
-						task.status = "cancelled";
-						task.error = "Child pane disappeared before a structured report was recorded.";
-						task.completedAt = new Date().toISOString();
+						applyTaskStatus(task, "cancelled", { error: "Child pane disappeared before a structured report was recorded." });
 						result.cancelledTasks += 1;
 						result.interruptedTasks += 1;
 					}
@@ -105,11 +149,18 @@ export async function reconcileSubagentRuns(cwd: string, herdr: HerdrAutomation,
 			}
 			statuses.push(task.status);
 		}
-		if (orphaned || !statuses.some((status) => status === "running" || status === "starting")) {
-			run.status = orphaned ? "cancelled" : aggregateTaskStatus(statuses);
-			run.completedAt = new Date().toISOString();
+		if (unreadableTasks > 0) {
+			const message = `Could not reconcile ${unreadableTasks} unreadable task record${unreadableTasks === 1 ? "" : "s"}.`;
+			applyRunStatus(run, "failed", { error: message });
 			await writeJsonAtomic(runFile, run);
-			if (orphaned || run.status === "cancelled") await closeRunTab(run, runFile, herdr, result.cleanupErrors);
+			await closeRunTab(run, runFile, herdr, result.cleanupErrors);
+			result.interruptedTasks += unreadableTasks;
+			continue;
+		}
+		if (differentOwner || !statuses.some((status) => status === "running" || status === "starting")) {
+			applyRunStatus(run, differentOwner ? "cancelled" : aggregateTaskStatus(statuses), { error: differentOwner ? "Owning parent Pi session is no longer active." : undefined });
+			await writeJsonAtomic(runFile, run);
+			if (differentOwner || run.status === "cancelled") await closeRunTab(run, runFile, herdr, result.cleanupErrors);
 		}
 	}
 	return result;

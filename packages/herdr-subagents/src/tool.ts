@@ -4,7 +4,7 @@ import { runHerdrSubagents, type HerdrSubagentsResult } from "./runner.ts";
 import { runHerdrSubagentsBatch, type BatchResult, type BatchTask } from "./batch-runner.ts";
 import { respondToBlockedTask } from "./blocking.ts";
 import { cleanSubagentRun, historyText, listSubagentHistory, resumeHistoricalTask } from "./history.ts";
-import { validateToolParams } from "./validation.ts";
+import { HERDR_ACTIONS, validateToolParams } from "./validation.ts";
 import type { OwnerIdentity } from "./ownership.ts";
 
 export interface HerdrSubagentsTaskParams { name: string; prompt: string; agent?: string; model?: string; }
@@ -79,125 +79,107 @@ function summaryText(result: HerdrSubagentsResult): string {
 	return lines.join("\n");
 }
 
-export async function executeHerdrSubagents(
-	params: HerdrSubagentsToolParams,
-	signal: AbortSignal | undefined,
-	onUpdate: ((response: ToolResponse) => void) | undefined,
-	ctx: HerdrSubagentsToolContext,
-	dependencies: HerdrSubagentsToolDependencies,
-): Promise<ToolResponse> {
-	const validationError = validateToolParams(params);
-	if (validationError) return { content: [{ type: "text", text: validationError }], details: { errorMessage: validationError }, isError: true };
-	const discovery = loadSubagentConfiguration(ctx.cwd, dependencies.agentsDirectory, modelId(ctx), dependencies.configurationPaths);
-	if (params.action === "history") {
+interface ToolExecutionContext {
+	params: HerdrSubagentsToolParams;
+	signal?: AbortSignal;
+	onUpdate?: (response: ToolResponse) => void;
+	ctx: HerdrSubagentsToolContext;
+	dependencies: HerdrSubagentsToolDependencies;
+	discovery: SubagentConfiguration;
+}
+
+type ActionHandler = (execution: ToolExecutionContext) => Promise<ToolResponse>;
+
+const errorResponse = (text: string, details: Record<string, unknown> = {}): ToolResponse => ({
+	content: [{ type: "text", text }], details: { ...details, errorMessage: text }, isError: true,
+});
+
+const actionHandlers = {
+	async history({ ctx }: ToolExecutionContext) {
 		const history = await listSubagentHistory(ctx.cwd);
 		return { content: [{ type: "text", text: historyText(history) }], details: { action: "history", runs: history } };
-	}
-	if (params.action === "cleanup") {
+	},
+	async cleanup({ params, ctx }: ToolExecutionContext) {
 		try {
-			const cleaned = params.runId ? await cleanSubagentRun(ctx.cwd, params.runId) : false;
-			const text = cleaned ? `Removed Subagent run ${params.runId}.` : `Unknown Subagent run '${params.runId ?? ""}'.`;
+			const cleaned = await cleanSubagentRun(ctx.cwd, params.runId as string);
+			const text = cleaned ? `Removed Subagent run ${params.runId}.` : `Unknown Subagent run '${params.runId}'.`;
 			return { content: [{ type: "text", text }], details: { action: "cleanup", runId: params.runId, cleaned }, ...(cleaned ? {} : { isError: true }) };
 		} catch (error) {
 			const text = error instanceof Error ? error.message : String(error);
-			return { content: [{ type: "text", text }], details: { action: "cleanup", runId: params.runId, cleaned: false, errorMessage: text }, isError: true };
+			return errorResponse(text, { action: "cleanup", runId: params.runId, cleaned: false });
 		}
-	}
-	if (params.action === "resume") {
-		if (!params.runId || !params.task || !params.prompt?.trim()) {
-			const text = "runId, task, and prompt are required to resume historical work.";
-			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
-		}
+	},
+	async resume({ params, signal, onUpdate, ctx, dependencies, discovery }: ToolExecutionContext) {
 		try {
-			const result = await resumeHistoricalTask(ctx.cwd, params.runId, params.task, params.prompt.trim(), { herdr: dependencies.herdr, signal, owner: dependencies.owner, onCleanupError: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "resume", runId: params.runId, cleanupError: text } }) });
+			const result = await resumeHistoricalTask(ctx.cwd, params.runId as string, params.task as number, (params.prompt as string).trim(), {
+				herdr: dependencies.herdr, signal, owner: dependencies.owner, stalledWarningSeconds: discovery.settings.stalledWarningSeconds,
+				onStalled: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "resume", runId: params.runId, stalled: true } }),
+				onCleanupError: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "resume", runId: params.runId, cleanupError: text } }),
+			});
 			return { content: [{ type: "text", text: result.summary }], details: result, ...(result.status === "failed" || result.status === "cancelled" ? { isError: true } : {}) };
-		} catch (error) {
-			const text = error instanceof Error ? error.message : String(error);
-			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
-		}
-	}
-	if (params.action === "respond") {
-		if (!params.runId?.trim() || !params.answer?.trim()) {
-			const text = "runId and answer are required to respond to a blocked task.";
-			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
-		}
+		} catch (error) { return errorResponse(error instanceof Error ? error.message : String(error)); }
+	},
+	async respond({ params, signal, onUpdate, ctx, dependencies }: ToolExecutionContext) {
 		try {
-			const result = await respondToBlockedTask(ctx.cwd, params.runId.trim(), params.answer.trim(), { herdr: dependencies.herdr, taskNumber: params.task, signal, owner: dependencies.owner, onCleanupError: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "respond", runId: params.runId, cleanupError: text } }) });
+			const result = await respondToBlockedTask(ctx.cwd, (params.runId as string).trim(), (params.answer as string).trim(), {
+				herdr: dependencies.herdr, taskNumber: params.task, signal, owner: dependencies.owner,
+				onUpdate: (partial) => onUpdate?.({ content: [{ type: "text", text: partial.summary }], details: partial }),
+				onStalled: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "respond", runId: params.runId, stalled: true } }),
+				onWarning: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "respond", runId: params.runId, warning: text } }),
+				onCleanupError: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "respond", runId: params.runId, cleanupError: text } }),
+			});
 			const text = [result.summary, ...(result.question ? [`Question: ${result.question}`] : []), ...result.documents.map((document) => `${document.description}: ${document.path}`)].join("\n");
 			return { content: [{ type: "text", text }], details: result, ...(result.status === "failed" || result.status === "partial" || result.status === "cancelled" ? { isError: true } : {}) };
-		} catch (error) {
-			const text = error instanceof Error ? error.message : String(error);
-			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
-		}
-	}
-	if (params.action === "list") {
-		return {
-			content: [{ type: "text", text: listText(discovery) }],
-			details: { action: "list", agents: discovery.personas, diagnostics: discovery.diagnostics, settings: discovery.settings },
-		};
-	}
+		} catch (error) { return errorResponse(error instanceof Error ? error.message : String(error)); }
+	},
+	async list({ discovery }: ToolExecutionContext) {
+		return { content: [{ type: "text", text: listText(discovery) }], details: { action: "list", agents: discovery.personas, diagnostics: discovery.diagnostics, settings: discovery.settings } };
+	},
+} satisfies Record<keyof typeof HERDR_ACTIONS, ActionHandler>;
 
-	if (params.tasks) {
-		if (params.tasks.length === 0) {
-			const text = "tasks must contain at least one task.";
-			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
-		}
-		const resolved: BatchTask[] = [];
-		for (const task of params.tasks) {
-			const personaName = task.agent?.trim() || "worker";
-			const persona = discovery.personas.find((candidate) => candidate.name === personaName);
-			if (!persona) {
-				const text = `Unknown persona '${personaName}'.\n\n${listText(discovery)}`;
-				return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
-			}
-			resolved.push({ name: task.name, prompt: task.prompt, agent: persona.name, access: persona.access, model: task.model?.trim() || persona.model, thinking: persona.thinking ?? (persona.modelSource === "parent session" && !task.model ? ctx.thinkingLevel : undefined), tools: persona.tools, skills: persona.skills, systemPrompt: persona.systemPrompt });
-		}
-		try {
-			const result = await runHerdrSubagentsBatch(resolved, {
-				runId: dependencies.runId,
-				label: params.label?.trim() || "batch",
-				concurrency: params.concurrency ?? discovery.settings.defaultConcurrency,
-				maxConcurrency: discovery.settings.maxConcurrency,
-				stalledWarningSeconds: discovery.settings.stalledWarningSeconds,
-				cwd: ctx.cwd,
-				signal,
-				herdr: dependencies.herdr,
-				owner: dependencies.owner,
-				onUpdate: (partial) => onUpdate?.({ content: [{ type: "text", text: partial.summary }], details: { ...partial, prompts: params.tasks?.map((task) => task.prompt) ?? [] } }),
-			});
-			const lines = [result.summary, ...result.tasks.map((task) => `- ${task.name}: ${task.status} — ${task.summary}`)];
-			if (result.documents.length) lines.push("", "Documents:", ...result.documents.map((document) => `- ${document.description}: ${document.path}`));
-			return { content: [{ type: "text", text: lines.join("\n") }], details: { ...result, prompts: params.tasks.map((task) => task.prompt) }, ...(result.ok ? {} : { isError: true }) };
-		} catch (error) {
-			const text = error instanceof Error ? error.message : String(error);
-			const diagnostic = error as { recordDirectory?: string; runId?: string };
-			return { content: [{ type: "text", text }], details: { errorMessage: text, ...(diagnostic.recordDirectory ? { recordDirectory: diagnostic.recordDirectory } : {}), ...(diagnostic.runId ? { runId: diagnostic.runId } : {}) }, isError: true };
-		}
+async function executeBatch({ params, signal, onUpdate, ctx, dependencies, discovery }: ToolExecutionContext): Promise<ToolResponse> {
+	const tasks = params.tasks as HerdrSubagentsTaskParams[];
+	const resolved: BatchTask[] = [];
+	for (const task of tasks) {
+		const personaName = task.agent?.trim() || "worker";
+		const persona = discovery.personas.find((candidate) => candidate.name === personaName);
+		if (!persona) return errorResponse(`Unknown persona '${personaName}'.\n\n${listText(discovery)}`);
+		resolved.push({ name: task.name, prompt: task.prompt, agent: persona.name, access: persona.access, model: task.model?.trim() || persona.model, thinking: persona.thinking ?? (persona.modelSource === "parent session" && !task.model ? ctx.thinkingLevel : undefined), tools: persona.tools, skills: persona.skills, systemPrompt: persona.systemPrompt });
 	}
-
-	if (!params.prompt?.trim()) {
-		const text = "prompt is required for execution. Use action: list to inspect available personas.";
-		return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
+	try {
+		const result = await runHerdrSubagentsBatch(resolved, {
+			runId: dependencies.runId,
+			label: params.label?.trim() || "batch",
+			concurrency: params.concurrency ?? discovery.settings.defaultConcurrency,
+			maxConcurrency: discovery.settings.maxConcurrency,
+			stalledWarningSeconds: discovery.settings.stalledWarningSeconds,
+			cwd: ctx.cwd,
+			signal,
+			herdr: dependencies.herdr,
+			owner: dependencies.owner,
+			onCleanupError: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "batch", runId: dependencies.runId, cleanupError: text } }),
+			onUpdate: (partial) => onUpdate?.({ content: [{ type: "text", text: partial.summary }], details: { ...partial, prompts: tasks.map((task) => task.prompt) } }),
+		});
+		const lines = [result.summary, ...result.tasks.map((task) => `- ${task.name}: ${task.status} — ${task.summary}`)];
+		if (result.documents.length) lines.push("", "Documents:", ...result.documents.map((document) => `- ${document.description}: ${document.path}`));
+		return { content: [{ type: "text", text: lines.join("\n") }], details: { ...result, prompts: tasks.map((task) => task.prompt) }, ...(result.ok ? {} : { isError: true }) };
+	} catch (error) {
+		const text = error instanceof Error ? error.message : String(error);
+		const diagnostic = error as { recordDirectory?: string; runId?: string };
+		return errorResponse(text, { ...(diagnostic.recordDirectory ? { recordDirectory: diagnostic.recordDirectory } : {}), ...(diagnostic.runId ? { runId: diagnostic.runId } : {}) });
 	}
+}
 
+async function executeSingle({ params, signal, onUpdate, ctx, dependencies, discovery }: ToolExecutionContext): Promise<ToolResponse> {
+	const prompt = params.prompt as string;
 	const selectedName = params.agent?.trim() || "worker";
 	const persona = discovery.personas.find((agent) => agent.name === selectedName);
-	if (!persona) {
-		const text = `Unknown persona '${selectedName}'.\n\n${listText(discovery)}`;
-		return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
-	}
-
+	if (!persona) return errorResponse(`Unknown persona '${selectedName}'.\n\n${listText(discovery)}`);
 	const explicitModel = params.model?.trim();
 	const selectedModel = explicitModel || persona.model || modelId(ctx);
 	const selectedThinking = persona.thinking ?? (!explicitModel && persona.modelSource === "parent session" ? ctx.thinkingLevel : undefined);
-	const details = (result: HerdrSubagentsResult): HerdrSubagentsDetails => ({
-		...result,
-		agent: persona.name,
-		description: persona.description,
-		prompt: params.prompt as string,
-		personaPath: persona.filePath,
-	});
-	const result = await runHerdrSubagents(params.prompt, {
+	const details = (result: HerdrSubagentsResult): HerdrSubagentsDetails => ({ ...result, agent: persona.name, description: persona.description, prompt, personaPath: persona.filePath });
+	const result = await runHerdrSubagents(prompt, {
 		agent: persona.name,
 		label: params.label,
 		...(selectedModel ? { model: selectedModel } : {}),
@@ -210,14 +192,26 @@ export async function executeHerdrSubagents(
 		cwd: ctx.cwd,
 		signal,
 		herdr: dependencies.herdr,
-		onUpdate: (partial) => onUpdate?.({
-			content: [{ type: "text", text: partial.summary }],
-			details: details(partial),
-		}),
+		stalledWarningSeconds: discovery.settings.stalledWarningSeconds,
+		onStalled: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { status: "running", stalled: true } }),
+		onCleanupError: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { status: "failed", cleanupError: text } }),
+		onUpdate: (partial) => onUpdate?.({ content: [{ type: "text", text: partial.summary }], details: details(partial) }),
 	});
-	return {
-		content: [{ type: "text", text: summaryText(result) }],
-		details: details(result),
-		...(result.ok ? {} : { isError: true }),
-	};
+	return { content: [{ type: "text", text: summaryText(result) }], details: details(result), ...(result.ok ? {} : { isError: true }) };
+}
+
+export async function executeHerdrSubagents(
+	params: HerdrSubagentsToolParams,
+	signal: AbortSignal | undefined,
+	onUpdate: ((response: ToolResponse) => void) | undefined,
+	ctx: HerdrSubagentsToolContext,
+	dependencies: HerdrSubagentsToolDependencies,
+): Promise<ToolResponse> {
+	const validationError = validateToolParams(params);
+	if (validationError) return { content: [{ type: "text", text: validationError }], details: { errorMessage: validationError }, isError: true };
+	const discovery = loadSubagentConfiguration(ctx.cwd, dependencies.agentsDirectory, modelId(ctx), dependencies.configurationPaths);
+	const execution = { params, signal, onUpdate, ctx, dependencies, discovery };
+	if (params.action) return actionHandlers[params.action](execution);
+
+	return params.tasks ? executeBatch(execution) : executeSingle(execution);
 }

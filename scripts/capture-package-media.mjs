@@ -151,39 +151,17 @@ function table(state) {
   pages("codex-edit", [one, two, three]);
 }
 
-// Herdr Subagents: run the production runner through its injectable Herdr boundary.
+// Herdr Subagents: run the production runner against the live Herdr session.
 {
   const { runHerdrSubagents } = await import(join(root, "packages/herdr-subagents/src/runner.ts"));
-  const temp = mkdtempSync(join(tmpdir(), "herdr-subagents-media-"));
-  try {
-    let taskDirectory;
-    let childArgs = [];
-    const herdr = {
-      async createTab(request) { taskDirectory = request.env.PI_HERDR_SUBAGENTS_TASK_DIR; return { tabId: "media:t1", paneId: "media:p1" }; },
-      async startAgent(request) { childArgs = request.args; },
-	  async renamePane() {},
-      async promptAgent() {
-        writeFileSync(join(taskDirectory, "session.jsonl"), `${JSON.stringify({ type: "session", version: 3, id: "media-session", cwd: temp })}\n`);
-        writeFileSync(join(taskDirectory, "result.md"), "Found one issue: validate the empty path before writing.");
-        writeFileSync(join(taskDirectory, "report.json"), JSON.stringify({ status: "completed", summary: "Found one issue: validate the empty path before writing.", documents: [] }));
-        return { status: "idle" };
-      },
-      async isTabFocused() { return false; },
-      async closeTab() {},
-    };
-    const previous = { herdr: process.env.HERDR_ENV, workspace: process.env.HERDR_WORKSPACE_ID };
-    process.env.HERDR_ENV = "1";
-    process.env.HERDR_WORKSPACE_ID = "media";
-    const result = await runHerdrSubagents("Review src/export.ts", { cwd: temp, model: "fixture/reviewer", tools: ["read", "grep"], herdr });
-    if (previous.herdr === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = previous.herdr;
-    if (previous.workspace === undefined) delete process.env.HERDR_WORKSPACE_ID; else process.env.HERDR_WORKSPACE_ID = previous.workspace;
-	const one = [`$ herdr_subagents run reviewer "Review src/export.ts"`, ``, `Opening an interactive Pi Agent in a dedicated Herdr pane...`].join("\n");
-	const two = [one, `  lifecycle: agent start → agent prompt --wait`, `  print mode: ${childArgs.includes("--print") ? "unexpected" : "disabled"}`, `  model: fixture/reviewer`, `  tools: read, grep`, `  persistent session: ${childArgs.includes("--session") ? "enabled" : "missing"}`, `  extension discovery: ${childArgs.includes("--no-extensions") ? "disabled" : "enabled"}`, `  child recursion guard: enabled`].join("\n");
-    const three = [two, ``, `Child result`, `------------`, result.output, ``, `Process exited successfully.`].join("\n");
-    pages("herdr-subagents", [one, two, three]);
-  } finally {
-    rmSync(temp, { recursive: true, force: true });
-  }
+  if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_WORKSPACE_ID) throw new Error("Herdr Subagents media capture must run inside Herdr.");
+  const model = process.env.PI_HERDR_MEDIA_MODEL ?? "pudu/gpt-5.6-sol";
+  const result = await runHerdrSubagents("Inspect packages/herdr-subagents/src/result-path.ts and summarize what it guarantees.", { cwd: root, model, tools: ["read", "grep"] });
+  if (!result.ok) throw new Error(`Herdr Subagents media capture failed: ${result.errorMessage ?? result.summary}`);
+	const one = [`$ herdr_subagents run explorer "Inspect result-path.ts"`, ``, `Opening an interactive Pi Agent in a dedicated Herdr pane...`].join("\n");
+	const two = [one, `  lifecycle: agent start → agent prompt --wait`, `  print mode: disabled`, `  model: ${model}`, `  tools: read, grep`, `  persistent session: ${result.sessionFile ? "enabled" : "missing"}`, `  child recursion guard: enabled`].join("\n");
+  const three = [two, ``, `Child result`, `------------`, result.output, ``, `Process exited successfully.`].join("\n");
+  pages("herdr-subagents", [one, two, three]);
 }
 
 // Worktree: run the shipped CLI against a real temporary Git repository.

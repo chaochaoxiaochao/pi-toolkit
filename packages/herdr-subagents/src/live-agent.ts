@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { retryBeforePrompt, type HerdrAutomation } from "./herdr.ts";
 import type { HerdrSubagentsReport } from "./runner.ts";
+import { parseReport } from "./records.ts";
 
 export interface LiveTaskRecord {
 	id: string;
@@ -37,19 +38,6 @@ export function liveAgentName(taskId: string, attempt = 1): string {
 	return `herdr-subagent-${taskId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12)}-${attempt}`;
 }
 
-function validReport(value: unknown): value is HerdrSubagentsReport {
-	if (!value || typeof value !== "object") return false;
-	const report = value as Record<string, unknown>;
-	return (report.status === "completed" || report.status === "needs-input" || report.status === "failed")
-		&& typeof report.summary === "string" && report.summary.trim().length > 0
-		&& Array.isArray(report.documents) && report.documents.every((document) => {
-			if (!document || typeof document !== "object") return false;
-			const entry = document as Record<string, unknown>;
-			return typeof entry.path === "string" && typeof entry.description === "string";
-		})
-		&& (report.status !== "needs-input" || typeof report.question === "string");
-}
-
 export async function promptLiveAgent(options: {
 	herdr: HerdrAutomation;
 	task: LiveTaskRecord;
@@ -77,12 +65,23 @@ export async function promptLiveAgent(options: {
 		}));
 	}
 	const stalledTimer = options.stalledWarningMs ? setTimeout(() => options.onStalled?.(), options.stalledWarningMs) : undefined;
+	let promptError: unknown;
 	try { await options.herdr.promptAgent({ target: agentName, prompt: options.prompt, signal: options.signal }); }
+	catch (error) { promptError = error; }
 	finally { if (stalledTimer) clearTimeout(stalledTimer); }
-	if (!existsSync(reportFile)) throw new Error("Child Pi settled but did not submit a subagent_report.");
+	if (!existsSync(reportFile)) {
+		if (promptError) throw promptError;
+		throw new Error("Child Pi settled but did not submit a subagent_report.");
+	}
 	let value: unknown;
 	try { value = JSON.parse(await readFile(reportFile, "utf8")); }
-	catch { throw new Error("Child Pi submitted an invalid subagent_report."); }
-	if (!validReport(value)) throw new Error("Child Pi submitted an invalid subagent_report.");
-	return { report: value, agentName };
+	catch {
+		if (promptError) throw new Error(`${promptError instanceof Error ? promptError.message : String(promptError)}; Child Pi also submitted an invalid subagent_report.`);
+		throw new Error("Child Pi submitted an invalid subagent_report.");
+	}
+	try { return { report: parseReport(value, "child subagent_report") as HerdrSubagentsReport, agentName }; }
+	catch (error) {
+		const detail = `Child Pi submitted an invalid subagent_report: ${error instanceof Error ? error.message : String(error)}`;
+		throw new Error(promptError ? `${promptError instanceof Error ? promptError.message : String(promptError)}; ${detail}` : detail);
+	}
 }

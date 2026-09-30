@@ -12,7 +12,7 @@ export function activeRunText(run: Pick<BatchResult, "label" | "runId" | "activi
 
 export async function focusActiveTask(run: Pick<BatchResult, "activity"> | undefined, taskNumber: number, herdr: HerdrAutomation): Promise<boolean> {
 	const task = run?.activity.find((candidate) => candidate.index === taskNumber - 1);
-	if (!task?.paneId || (task.status !== "running" && task.status !== "blocked")) return false;
+	if (!task?.paneId) return false;
 	await herdr.focusPane(task.paneId);
 	return true;
 }

@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { CliHerdrAutomation, retryBeforePrompt, type HerdrAutomation } from "./herdr.ts";
@@ -9,23 +8,16 @@ import { writeJsonAtomic } from "./state.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
 import type { OwnerIdentity } from "./ownership.ts";
 import { ownerRecord } from "./ownership.ts";
+import { applyReport, applyTaskStatus, settleAttemptFailure, type PersistedDocument, type PersistedReport, type RunRecord, type TaskRecord } from "./records.ts";
+import { reportProtocolPrompt } from "./protocol.ts";
+import { applyRunStatus } from "./run-status.ts";
+import { isAbortError } from "./errors.ts";
 
 const CHILD_ENV = "PI_HERDR_SUBAGENTS_CHILD";
 const TASK_DIRECTORY_ENV = "PI_HERDR_SUBAGENTS_TASK_DIR";
 
-export interface HerdrSubagentsDocument {
-	path: string;
-	description: string;
-}
-
-export interface HerdrSubagentsReport {
-	status: "completed" | "needs-input" | "failed";
-	summary: string;
-	documents: HerdrSubagentsDocument[];
-	error?: string;
-	question?: string;
-	reportedAt?: string;
-}
+export type HerdrSubagentsDocument = PersistedDocument;
+export type HerdrSubagentsReport = PersistedReport;
 
 export interface HerdrSubagentsOptions {
 	agent?: string;
@@ -42,6 +34,8 @@ export interface HerdrSubagentsOptions {
 	owner?: OwnerIdentity;
 	onUpdate?: (result: HerdrSubagentsResult) => void;
 	onCleanupError?: (message: string) => void;
+	stalledWarningSeconds?: number;
+	onStalled?: (message: string) => void;
 }
 
 export interface HerdrSubagentsResult {
@@ -60,45 +54,6 @@ export interface HerdrSubagentsResult {
 	model?: string;
 	cwd: string;
 	durationMs: number;
-}
-
-interface RunRecord {
-	id: string;
-	label: string;
-	status: "starting" | "running" | "blocked" | "completed" | "failed" | "cancelled";
-	cwd: string;
-	ownerSessionId?: string;
-	ownerProcessId?: number;
-	taskIds: string[];
-	startedAt: string;
-	completedAt?: string;
-	tabId?: string;
-	paneId?: string;
-	error?: string;
-}
-
-interface TaskRecord {
-	id: string;
-	runId: string;
-	order: number;
-	name: string;
-	status: "starting" | "running" | "blocked" | "completed" | "failed" | "cancelled";
-	prompt: string;
-	agent: string;
-	model?: string;
-	thinking?: string;
-	tools?: string[];
-	skills?: string[];
-	access?: "read" | "write";
-	systemPrompt: string;
-	sessionFile: string;
-	startedAt: string;
-	completedAt?: string;
-	tabId?: string;
-	paneId?: string;
-	paneLabel?: string;
-	agentName?: string;
-	error?: string;
 }
 
 function compactText(report: HerdrSubagentsReport): string {
@@ -128,16 +83,6 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 	await writeJsonAtomic(path, value);
 }
 
-function protocolPrompt(systemPrompt: string): string {
-	return [
-		systemPrompt.trim(),
-		"",
-		"When the task is finished, call subagent_report exactly once.",
-		"Put the complete final answer in result, a concise parent-facing paragraph in summary, and list any useful document paths.",
-		"Use status=needs-input with question when missing information prevents progress, or status=failed with an error when the task cannot be completed.",
-	].join("\n").trim();
-}
-
 export async function runHerdrSubagents(prompt: string, options: HerdrSubagentsOptions = {}): Promise<HerdrSubagentsResult> {
 	const startedAt = Date.now();
 	const cwd = options.cwd ?? process.cwd();
@@ -157,13 +102,14 @@ export async function runHerdrSubagents(prompt: string, options: HerdrSubagentsO
 	const runFile = join(runDirectory, "run.json");
 	const taskFile = join(taskDirectory, "task.json");
 	const startedAtIso = new Date(startedAt).toISOString();
-	const systemPrompt = protocolPrompt(options.systemPrompt ?? "You are a focused worker subagent.");
+	const systemPrompt = reportProtocolPrompt(options.systemPrompt ?? "You are a focused worker subagent.");
 	const runRecord: RunRecord = {
 		id: runId,
 		label,
 		status: "starting",
 		cwd,
 		...ownerRecord(options.owner),
+		stalledWarningSeconds: options.stalledWarningSeconds,
 		taskIds: [taskId],
 		startedAt: startedAtIso,
 	};
@@ -216,6 +162,7 @@ export async function runHerdrSubagents(prompt: string, options: HerdrSubagentsO
 	};
 	update("starting", "Creating Herdr tab...");
 
+	let attempt: { status: "blocked" | "completed" | "failed" | "cancelled"; report: PersistedReport; error?: unknown };
 	try {
 		const tab = await retryBeforePrompt(() => herdr.createTab({
 			workspaceId: process.env.HERDR_WORKSPACE_ID,
@@ -232,8 +179,10 @@ export async function runHerdrSubagents(prompt: string, options: HerdrSubagentsO
 		paneId = tab.paneId;
 		const paneLabel = `01 · ${label}`;
 		await herdr.renamePane(paneId, paneLabel, options.signal);
-		Object.assign(runRecord, { status: "running", tabId, paneId });
-		Object.assign(taskRecord, { status: "running", tabId, paneId, paneLabel });
+		applyRunStatus(runRecord, "running");
+		Object.assign(runRecord, { tabId, paneId });
+		applyTaskStatus(taskRecord, "running");
+		Object.assign(taskRecord, { tabId, paneId, paneLabel });
 		await Promise.all([writeJson(runFile, runRecord), writeJson(taskFile, taskRecord)]);
 
 		const name = liveAgentName(taskId);
@@ -241,58 +190,55 @@ export async function runHerdrSubagents(prompt: string, options: HerdrSubagentsO
 		await writeJson(taskFile, taskRecord);
 		update("starting", "Starting child Pi in Herdr...");
 		update("running", "Child Pi is working...");
-		const { report } = await promptLiveAgent({ herdr, task: { ...taskRecord, id: taskId, sessionFile }, paneId, prompt, systemPromptFile, agentName: name, signal: options.signal });
-		const completedAt = new Date().toISOString();
-		const settledStatus = report.status === "needs-input" ? "blocked" : report.status;
-		Object.assign(runRecord, {
-			status: settledStatus,
-			completedAt,
-			...(report.error ? { error: report.error } : {}),
-			...(report.question ? { question: report.question } : {}),
-		});
-		Object.assign(taskRecord, {
-			status: settledStatus,
-			completedAt,
-			...(report.error ? { error: report.error } : {}),
-			...(report.question ? { question: report.question } : {}),
-		});
-		await Promise.all([writeJson(runFile, runRecord), writeJson(taskFile, taskRecord)]);
-		result = {
-			ok: report.status === "completed",
-			status: settledStatus,
-			summary: report.summary,
-			documents: report.documents,
-			output: compactText(report),
-			...(report.error || report.question ? { errorMessage: report.error ?? report.question } : {}),
-			cwd,
-			durationMs: Date.now() - startedAt,
-			...common(),
-		};
+		const report = (await promptLiveAgent({ herdr, task: { ...taskRecord, id: taskId, sessionFile }, paneId, prompt, systemPromptFile, agentName: name, signal: options.signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => options.onStalled?.(`${label} appears stalled; it is still running.`) })).report;
+		attempt = { status: applyReport(taskRecord, report), report };
 	} catch (error) {
-		const errorMessage = error instanceof Error ? error.message : String(error);
-		const cancelled = options.signal?.aborted === true;
-		const completedAt = new Date().toISOString();
-		Object.assign(runRecord, { status: cancelled ? "cancelled" : "failed", completedAt, error: errorMessage });
-		Object.assign(taskRecord, { status: cancelled ? "cancelled" : "failed", completedAt, error: errorMessage });
-		await Promise.all([writeJson(runFile, runRecord), writeJson(taskFile, taskRecord)]);
-		if (!existsSync(reportFile)) {
-			await writeJson(reportFile, { status: "failed", summary: "Herdr Subagents failed.", documents: [], error: errorMessage, reportedAt: completedAt });
+		const settled = await settleAttemptFailure(taskRecord, reportFile, {
+			cancelled: isAbortError(error, options.signal),
+			error: error instanceof Error ? error.message : String(error),
+			name: "Herdr Subagents",
+			summary: isAbortError(error, options.signal) ? "Herdr Subagents was cancelled." : "Herdr Subagents failed.",
+		});
+		attempt = { ...settled, error };
+	}
+	try {
+		if (!attempt.error) {
+			const { report, status: settledStatus } = attempt;
+			const completedAt = new Date().toISOString();
+			applyRunStatus(runRecord, settledStatus, { at: completedAt, error: report.error, question: report.question });
+			await Promise.all([writeJson(runFile, runRecord), writeJson(taskFile, taskRecord)]);
+			result = {
+				ok: report.status === "completed",
+				status: settledStatus,
+				summary: report.summary,
+				documents: report.documents,
+				output: compactText(report),
+				...(report.error || report.question ? { errorMessage: report.error ?? report.question } : {}),
+				cwd,
+				durationMs: Date.now() - startedAt,
+				...common(),
+			};
+		} else {
+			const errorMessage = attempt.error instanceof Error ? attempt.error.message : String(attempt.error);
+			const cancelled = attempt.status === "cancelled";
+			const completedAt = new Date().toISOString();
+			applyRunStatus(runRecord, cancelled ? "cancelled" : "failed", { at: completedAt, error: errorMessage });
+			await Promise.all([writeJson(runFile, runRecord), writeJson(taskFile, taskRecord)]);
+			result = cancelled
+				? { ...failure(cwd, startedAt, errorMessage, common()), status: "cancelled", summary: "Herdr Subagents cancelled.", output: `Herdr Subagents cancelled.\nError: ${errorMessage}` }
+				: failure(cwd, startedAt, errorMessage, common());
 		}
-		result = cancelled
-			? { ...failure(cwd, startedAt, errorMessage, common()), status: "cancelled", summary: "Herdr Subagents cancelled.", output: `Herdr Subagents cancelled.\nError: ${errorMessage}` }
-			: failure(cwd, startedAt, errorMessage, common());
 	} finally {
 		if (tabId && result?.status !== "blocked") {
 			try {
-				const cleanupSignal = options.signal?.aborted ? undefined : options.signal;
-				await cleanupRunTab({ herdr, tabId, runFile, runRecord, signal: cleanupSignal, onError: options.onCleanupError });
+				await cleanupRunTab({ herdr, tabId, runFile, runRecord, signal: options.signal, onError: options.onCleanupError, failureStatus: "failed" });
 			} catch (error) {
 				const cleanupError = error instanceof Error ? error.message : String(error);
 				if (result?.ok) {
 					const errorMessage = `Task completed but Herdr tab cleanup failed: ${cleanupError}`;
 					const completedAt = new Date().toISOString();
-					Object.assign(runRecord, { status: "failed", completedAt, error: errorMessage });
-					Object.assign(taskRecord, { status: "failed", completedAt, error: errorMessage });
+					applyRunStatus(runRecord, "failed", { at: completedAt, error: errorMessage });
+					applyTaskStatus(taskRecord, "failed", { at: completedAt, error: errorMessage });
 					await Promise.all([writeJson(runFile, runRecord), writeJson(taskFile, taskRecord)]);
 					result = failure(cwd, startedAt, errorMessage, common());
 				}

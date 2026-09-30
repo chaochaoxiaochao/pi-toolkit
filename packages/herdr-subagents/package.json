@@ -12,6 +12,7 @@
     "extensions",
     "src",
     "agents",
+    "tests",
     "docs",
     "README.md",
     "TESTING.md",

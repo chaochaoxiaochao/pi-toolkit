@@ -19,7 +19,7 @@ This report covers the root bundle and the five independently releasable package
 
 - Cache Export: 47 deterministic assertions and 18 Chromium E2E assertions passed, with 0 failures and 0 skips.
 - Codex Edit: 12 parser, matcher, routing, and package tests passed.
-- Herdr Subagents: 81 scheduler, recovery, schema, navigation, persona, and process-boundary tests passed. A real Herdr smoke completed two concurrent interactive Pi Agents in distinct panes and confirmed their shared run tab closed after settlement.
+- Herdr Subagents: 128 scheduler, recovery, schema, navigation, persona, and process-boundary tests passed. A real Herdr smoke completed two concurrent interactive Pi Agents in distinct panes, kept the focused shared tab open through settlement, and automatically closed it after focus moved away. Deterministic extension coverage also verifies blocked dispatcher/Fleet ownership, parent-shutdown cleanup, malformed-report repair, and deferred cleanup notifications.
 - Todo, BTW, Worktree installer, and Worktree CLI integration tests passed.
 - Media: all five screenshots are non-empty; Cache Export is a full-page 1440 × 2278 capture; all five GIFs contain three distinct frames.
 

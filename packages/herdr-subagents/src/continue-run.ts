@@ -1,23 +1,30 @@
-import { existsSync, readdirSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { HerdrAutomation } from "./herdr.ts";
 import { liveAgentName, promptLiveAgent } from "./live-agent.ts";
 import { writeJsonAtomic } from "./state.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
 import { RunPaneAllocator } from "./run-pane-allocator.ts";
-import { aggregateTaskStatus } from "./run-status.ts";
+import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
+import { applyReport, applyTaskStatus, readRunRecord, readTaskRecord, settleAttemptFailure } from "./records.ts";
+import { isAbortError } from "./errors.ts";
 
-async function readJson(path: string): Promise<Record<string, any>> { return JSON.parse(await readFile(path, "utf8")) as Record<string, any>; }
+export interface ContinueQueuedRunOptions {
+	cleanup?: boolean;
+	onStalled?: (message: string) => void;
+	onCleanupError?: (message: string) => void;
+	onUpdate?: () => void | Promise<void>;
+	signal?: AbortSignal;
+}
 
-export async function continueQueuedRun(runDirectory: string, herdr: HerdrAutomation, options: { cleanup?: boolean; onStalled?: (message: string) => void; onCleanupError?: (message: string) => void; signal?: AbortSignal } = {}): Promise<void> {
+export async function continueQueuedRun(runDirectory: string, herdr: HerdrAutomation, options: ContinueQueuedRunOptions = {}): Promise<void> {
 	const runFile = join(runDirectory, "run.json");
-	const run = await readJson(runFile);
+	const run = await readRunRecord(runFile);
 	const taskDirectories = readdirSync(join(runDirectory, "tasks")).sort().map((entry) => join(runDirectory, "tasks", entry));
 	const queuedDirectories: string[] = [];
 	let blockedCount = 0;
 	for (const directory of taskDirectories) {
-		const status = (await readJson(join(directory, "task.json"))).status;
+		const status = (await readTaskRecord(join(directory, "task.json"))).status;
 		if (status === "queued") queuedDirectories.push(directory);
 		if (status === "blocked") blockedCount += 1;
 	}
@@ -25,27 +32,33 @@ export async function continueQueuedRun(runDirectory: string, herdr: HerdrAutoma
 	const availableSlots = Math.max(0, (Number(run.effectiveConcurrency) || 1) - blockedCount);
 	if (availableSlots === 0) return;
 	const concurrency = Math.min(availableSlots, queuedDirectories.length);
-	const paneAllocator = new RunPaneAllocator({ herdr, run, runFile, signal: options.signal, validateExistingPane: true });
+	const paneAllocator = new RunPaneAllocator({ herdr, run, runFile, signal: options.signal, validateExistingPane: true, onCleanupError: options.onCleanupError });
 	let nextIndex = 0;
 	const runOne = async (directory: string): Promise<string> => {
 		const taskFile = join(directory, "task.json");
-		const task = await readJson(taskFile);
+		const task = await readTaskRecord(taskFile);
 		let paneId = "";
+		const reportFile = join(directory, "report.json");
 		try {
 			paneId = await paneAllocator.allocate(directory);
 			const agentName = liveAgentName(task.id, Number(task.attempt ?? 0) + 1);
 			const paneLabel = `${String(task.order).padStart(2, "0")} · ${task.name ?? task.agent}`;
 			await herdr.renamePane(paneId, paneLabel, options.signal);
-			Object.assign(task, { status: "running", tabId: run.tabId, paneId, paneLabel, agentName, attempt: Number(task.attempt ?? 0) + 1, startedAt: new Date().toISOString() });
+			applyTaskStatus(task, "running");
+			Object.assign(task, { tabId: run.tabId, paneId, paneLabel, agentName, attempt: Number(task.attempt ?? 0) + 1, startedAt: new Date().toISOString() });
 			await writeJsonAtomic(taskFile, task);
-			const { report } = await promptLiveAgent({ herdr, task: { ...task, id: task.id, sessionFile: task.sessionFile }, paneId, prompt: task.prompt, systemPromptFile: join(directory, "system-prompt.md"), agentName, signal: options.signal, stalledWarningMs: run.stalledWarningSeconds ? Number(run.stalledWarningSeconds) * 1000 : undefined, onStalled: () => options.onStalled?.(`${task.name ?? task.agent} appears stalled; it is still running.`) });
-			Object.assign(task, { status: report.status === "needs-input" ? "blocked" : report.status, completedAt: new Date().toISOString(), ...(report.error ? { error: report.error } : {}), ...(report.question ? { question: report.question } : {}) });
+			await options.onUpdate?.();
+			const report = (await promptLiveAgent({ herdr, task: { ...task, id: task.id, sessionFile: task.sessionFile }, paneId, prompt: task.prompt, systemPromptFile: join(directory, "system-prompt.md"), agentName, signal: options.signal, stalledWarningMs: run.stalledWarningSeconds ? Number(run.stalledWarningSeconds) * 1000 : undefined, onStalled: () => options.onStalled?.(`${task.name ?? task.agent} appears stalled; it is still running.`) })).report;
+			applyReport(task, report);
 		} catch (error) {
-			const cancelled = options.signal?.aborted === true;
-			Object.assign(task, { status: cancelled ? "cancelled" : "failed", completedAt: new Date().toISOString(), error: error instanceof Error ? error.message : String(error) });
-			if (!existsSync(join(directory, "report.json"))) await writeJsonAtomic(join(directory, "report.json"), { status: "failed", summary: `${task.name ?? task.agent} failed.`, documents: [], error: task.error, reportedAt: new Date().toISOString() });
+			await settleAttemptFailure(task, reportFile, {
+				cancelled: isAbortError(error, options.signal),
+				error: error instanceof Error ? error.message : String(error),
+				name: String(task.name ?? task.agent ?? "Task"),
+			});
 		}
 		await writeJsonAtomic(taskFile, task);
+		await options.onUpdate?.();
 		return task.status;
 	};
 	const worker = async () => {
@@ -59,18 +72,16 @@ export async function continueQueuedRun(runDirectory: string, herdr: HerdrAutoma
 	if (options.signal?.aborted) {
 		for (const directory of taskDirectories) {
 			const taskFile = join(directory, "task.json");
-			const task = await readJson(taskFile);
+			const task = await readTaskRecord(taskFile);
 			if (task.status !== "queued") continue;
-			Object.assign(task, { status: "cancelled", completedAt: new Date().toISOString(), error: "Parent Pi session closed." });
+			applyTaskStatus(task, "cancelled", { error: "Parent Pi session closed." });
 			await writeJsonAtomic(taskFile, task);
 		}
 	}
-	const statuses = await Promise.all(taskDirectories.map(async (directory) => (await readJson(join(directory, "task.json"))).status as string));
-	run.status = options.signal?.aborted ? "cancelled" : aggregateTaskStatus(statuses);
-	if (run.status === "blocked") run.updatedAt = new Date().toISOString();
-	else run.completedAt = new Date().toISOString();
+	const statuses = await Promise.all(taskDirectories.map(async (directory) => (await readTaskRecord(join(directory, "task.json"))).status));
+	applyRunStatus(run, options.signal?.aborted ? "cancelled" : aggregateTaskStatus(statuses));
 	await writeJsonAtomic(runFile, run);
 	if (options.cleanup !== false && run.status !== "blocked" && run.tabId) {
-		await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, signal: options.signal, onError: options.onCleanupError });
+		await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, signal: options.signal, onError: options.onCleanupError, failureStatus: "failed" });
 	}
 }

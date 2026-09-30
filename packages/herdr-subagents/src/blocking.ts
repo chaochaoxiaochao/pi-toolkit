@@ -1,17 +1,21 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { existsSync, readdirSync } from "node:fs";
+import { mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
-import { CliHerdrAutomation, retryBeforePrompt, type HerdrAutomation } from "./herdr.ts";
+import { CliHerdrAutomation, type HerdrAutomation } from "./herdr.ts";
 import { continueQueuedRun } from "./continue-run.ts";
 import { liveAgentName, promptLiveAgent } from "./live-agent.ts";
 import { writeJsonAtomic, writeTextAtomic } from "./state.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
 import type { OwnerIdentity } from "./ownership.ts";
 import { ownerRecord } from "./ownership.ts";
-import { aggregateTaskStatus } from "./run-status.ts";
+import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
+import { applyReport, applyTaskStatus, isActiveStatus, persistFailureReport, readReport, readRunRecord, readTaskRecord, readTurnRecord, settleAttemptFailure, type PersistedDocument, type PersistedReport, type RunRecord, type TaskRecord, type TaskStatus, type TurnRecord } from "./records.ts";
+import { isAbortError } from "./errors.ts";
+import { continuationSystemPrompt } from "./protocol.ts";
+import { RunPaneAllocator } from "./run-pane-allocator.ts";
+import { findRunDirectory } from "./run-locator.ts";
 
-async function readJson(path: string): Promise<Record<string, any>> { return JSON.parse(await readFile(path, "utf8")) as Record<string, any>; }
-export interface RespondToBlockedTaskOptions { herdr?: HerdrAutomation; taskNumber?: number; signal?: AbortSignal; owner?: OwnerIdentity; onCleanupError?: (message: string) => void; }
+export interface RespondToBlockedTaskOptions { herdr?: HerdrAutomation; taskNumber?: number; signal?: AbortSignal; owner?: OwnerIdentity; onCleanupError?: (message: string) => void; onWarning?: (message: string) => void; onStalled?: (message: string) => void; onUpdate?: (result: ResumeBlockedResult) => void; }
 export interface ResumeBlockedResult {
 	ok: boolean;
 	runId: string;
@@ -19,131 +23,152 @@ export interface ResumeBlockedResult {
 	status: "blocked" | "completed" | "partial" | "failed" | "cancelled";
 	summary: string;
 	question?: string;
-	documents: Array<{ path: string; description: string }>;
+	documents: PersistedDocument[];
 	recordDirectory: string;
 	requestedConcurrency: number;
 	effectiveConcurrency: number;
-	tasks?: Array<{ index: number; name: string; status: string; summary: string; documents: Array<{ path: string; description: string }>; error?: string; question?: string; paneId: string; recordDirectory: string; sessionFile: string }>;
-	activity?: Array<{ index: number; name: string; status: string; paneId?: string }>;
+	tasks?: Array<{ index: number; name: string; status: TaskStatus; summary: string; documents: PersistedDocument[]; error?: string; question?: string; paneId: string; recordDirectory: string; sessionFile: string }>;
+	activity?: Array<{ index: number; name: string; status: TaskStatus; paneId?: string }>;
 	tabId?: string;
+}
+
+async function emitProgress(options: RespondToBlockedTaskOptions, runDirectory: string, run: RunRecord, taskDirectories: string[], summary: string): Promise<void> {
+	if (!options.onUpdate) return;
+	const tasks = await Promise.all(taskDirectories.map((directory) => readTaskRecord(join(directory, "task.json"))));
+	options.onUpdate({
+		ok: false,
+		runId: run.id,
+		label: run.label,
+		status: "blocked",
+		summary,
+		documents: [],
+		recordDirectory: runDirectory,
+		requestedConcurrency: Number(run.requestedConcurrency ?? 1),
+		effectiveConcurrency: Number(run.effectiveConcurrency ?? 1),
+		activity: tasks.map((entry, index) => ({ index, name: String(entry.name ?? entry.agent ?? `Task ${index + 1}`), status: entry.status, ...(entry.paneId ? { paneId: entry.paneId } : {}) })),
+		...(run.tabId ? { tabId: run.tabId } : {}),
+	});
+}
+
+async function projectSettledRun(runDirectory: string, runFile: string, run: RunRecord, taskDirectories: string[], herdr: HerdrAutomation, onCleanupError?: (message: string) => void): Promise<ResumeBlockedResult> {
+	const finalTasks = await Promise.all(taskDirectories.map((directory) => readTaskRecord(join(directory, "task.json"))));
+	const finalReports = await Promise.all(taskDirectories.map(async (directory, index) => {
+		const reportFile = join(directory, "report.json");
+		if (!existsSync(reportFile) && (finalTasks[index].status === "queued" || finalTasks[index].status === "cancelled")) return { status: "failed" as const, summary: finalTasks[index].error ?? (finalTasks[index].status === "queued" ? "Task is still queued." : "Task was cancelled."), documents: [] };
+		try { return await readReport(reportFile); }
+		catch (error) {
+			const detail = error instanceof Error ? error.message : String(error);
+			const failedReport = { status: "failed" as const, summary: `Could not read task report: ${detail}`, documents: [], error: detail };
+			applyReport(finalTasks[index], failedReport);
+			await Promise.all([writeJsonAtomic(join(directory, "task.json"), finalTasks[index]), persistFailureReport(reportFile, failedReport)]);
+			return failedReport;
+		}
+	}));
+	const aggregateStatus = aggregateTaskStatus(finalTasks.map((entry) => entry.status));
+	const runStatus = aggregateStatus === "running" ? "blocked" : aggregateStatus;
+	const blockedIndex = finalTasks.findIndex((entry) => entry.status === "blocked");
+	const blockedReport = blockedIndex >= 0 ? finalReports[blockedIndex] : undefined;
+	applyRunStatus(run, runStatus, { question: blockedReport?.question });
+	await writeJsonAtomic(runFile, run);
+	if (runStatus !== "blocked" && run.tabId) await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, onError: onCleanupError, failureStatus: "failed" });
+	const summary = runStatus === "completed" ? "All tasks completed after the answer." : runStatus === "blocked" ? `${finalTasks[blockedIndex]?.name ?? "Task"} needs input: ${blockedReport?.question ?? "Input required."}` : finalReports.map((entry, index) => `${finalTasks[index].name}: ${entry.summary}`).join("\n");
+	const activity = finalTasks.map((entry, index) => ({ index, name: String(entry.name ?? entry.agent ?? `Task ${index + 1}`), status: entry.status, ...(entry.paneId ? { paneId: String(entry.paneId) } : {}) }));
+	const tasks = finalTasks.map((entry, index) => ({ index, name: activity[index].name, status: entry.status, summary: String(finalReports[index].summary ?? "Task has no report."), documents: finalReports[index].documents ?? [], ...(entry.error ? { error: String(entry.error) } : {}), ...(entry.question ? { question: String(entry.question) } : {}), paneId: String(entry.paneId ?? ""), recordDirectory: taskDirectories[index], sessionFile: String(entry.sessionFile ?? "") }));
+	return { ok: runStatus === "completed", runId: run.id, label: String(run.label ?? "batch"), status: runStatus, summary, ...(blockedReport?.question ? { question: blockedReport.question } : {}), documents: finalReports.flatMap((entry) => entry.documents ?? []), recordDirectory: runDirectory, requestedConcurrency: Number(run.requestedConcurrency ?? run.effectiveConcurrency ?? 1), effectiveConcurrency: Number(run.effectiveConcurrency ?? 1), tasks, activity, ...(run.tabId ? { tabId: String(run.tabId) } : {}) };
 }
 
 export async function respondToBlockedTask(cwd: string, runId: string, answer: string, options: RespondToBlockedTaskOptions = {}): Promise<ResumeBlockedResult> {
 	const herdr = options.herdr ?? new CliHerdrAutomation();
 	const { taskNumber, signal, onCleanupError } = options;
 	const runsDirectory = join(cwd, ".pi", "herdr-subagents", "runs");
-	const runDirectory = readdirSync(runsDirectory).map((entry) => join(runsDirectory, entry)).find((directory) => {
-		try { return JSON.parse(readFileSync(join(directory, "run.json"), "utf8")).id === runId; } catch { return false; }
-	});
+	const runDirectory = await findRunDirectory(runsDirectory, runId);
 	if (!runDirectory) throw new Error(`Unknown Subagent run '${runId}'.`);
 	const runFile = join(runDirectory, "run.json");
-	const run = await readJson(runFile);
+	const run = await readRunRecord(runFile);
 	const taskDirectories = readdirSync(join(runDirectory, "tasks")).sort().map((entry) => join(runDirectory, "tasks", entry));
 	let taskDirectory: string | undefined;
-	let task: Record<string, any> | undefined;
+	let task: TaskRecord | undefined;
 	for (const directory of taskDirectories) {
-		const candidate = await readJson(join(directory, "task.json"));
+		const candidate = await readTaskRecord(join(directory, "task.json"));
 		if (candidate.status === "blocked" && (!taskNumber || candidate.order === taskNumber)) { taskDirectory = directory; task = candidate; break; }
 	}
 	if (!taskDirectory || !task) throw new Error(`Run '${runId}' has no blocked task.`);
 	Object.assign(run, ownerRecord(options.owner));
-	const previousReport = await readJson(join(taskDirectory, "report.json"));
+	const previousReport = await readReport(join(taskDirectory, "report.json"));
 	const turnsDirectory = join(taskDirectory, "turns");
 	await mkdir(turnsDirectory, { recursive: true, mode: 0o700 });
-	const turnFile = String(task.currentTurnFile ?? join(turnsDirectory, `${String(Number(task.attempt ?? 1)).padStart(2, "0")}.json`));
-	let turn: Record<string, any>;
-	try { turn = await readJson(turnFile); }
-	catch { turn = { attempt: Number(task.attempt ?? 1), prompt: task.prompt, status: "blocked", summary: previousReport.summary, question: previousReport.question, documents: previousReport.documents ?? [], sessionFile: task.sessionFile, startedAt: task.startedAt }; }
-	turn.events = [...(Array.isArray(turn.events) ? turn.events : []), { type: "answer", text: answer, at: new Date().toISOString() }];
-	task.currentTurnFile = turnFile;
 	const resumePrompt = join(taskDirectory, "resume-system-prompt.md");
-	await writeTextAtomic(resumePrompt, "This is a resumed turn. When this turn is finished, call subagent_report exactly once for this turn, even if an earlier turn already used it.\n");
+	await writeTextAtomic(resumePrompt, `${continuationSystemPrompt(task.systemPrompt, "Continue from the supplied answer.", "resumed")}\n`);
 	let paneId = String(task.paneId ?? "");
 	let agentName = String(task.agentName ?? liveAgentName(task.id));
 	let live = Boolean(paneId) && await herdr.paneExists(paneId, signal) && await herdr.isTaskRunning(paneId, signal);
 	if (!live) {
-		paneId = "";
-		const env = { PI_HERDR_SUBAGENTS_CHILD: "1", PI_HERDR_SUBAGENTS_TASK_DIR: taskDirectory };
-		const anchorPane = Array.isArray(run.paneIds) ? run.paneIds.at(-1) : undefined;
-		const anchorExists = Boolean(run.tabId && anchorPane && await herdr.paneExists(anchorPane, signal));
-		if (anchorExists) {
-			try {
-				const split = await retryBeforePrompt(() => herdr.splitPane({ paneId: anchorPane, cwd: run.cwd ?? cwd, direction: "right", focus: false, env, signal }));
-				paneId = split.paneId;
-				run.paneIds.push(paneId);
-			} catch { paneId = ""; }
-		}
-		if (!paneId) {
-			const staleTabId = run.tabId;
-			const tab = await retryBeforePrompt(() => herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID ?? "", cwd: run.cwd ?? cwd, label: `SA · ${run.label}`, env, focus: false, signal }));
-			run.tabId = tab.tabId;
-			paneId = tab.paneId;
-			run.paneIds = [paneId];
-			if (staleTabId) await herdr.closeTab(staleTabId).catch(() => undefined);
-		}
+		const paneAllocator = new RunPaneAllocator({ herdr, run, runFile, signal, validateExistingPane: true, onCleanupError });
+		paneId = await paneAllocator.allocate(taskDirectory);
 		agentName = liveAgentName(task.id, Number(task.attempt ?? 1) + 1);
 		task.attempt = Number(task.attempt ?? 1) + 1;
 		await herdr.renamePane(paneId, `${String(task.order).padStart(2, "0")} · ${task.name ?? task.agent}`, signal);
 	}
-	Object.assign(task, { status: "running", tabId: run.tabId, paneId, agentName, updatedAt: new Date().toISOString() });
-	await Promise.all([writeJsonAtomic(join(taskDirectory, "task.json"), task), writeJsonAtomic(runFile, run), writeJsonAtomic(turnFile, turn)]);
-	let report: Record<string, any>;
-	try {
-		({ report } = await promptLiveAgent({ herdr, task: { ...task, id: task.id, sessionFile: task.sessionFile }, paneId, prompt: answer, systemPromptFile: resumePrompt, agentName, start: !live, signal }));
-	} catch (error) {
-		const cancelled = signal?.aborted === true;
-		const message = error instanceof Error ? error.message : String(error);
-		const status = cancelled ? "cancelled" : "failed";
-		Object.assign(task, { status, completedAt: new Date().toISOString(), error: message });
-		Object.assign(run, { status, completedAt: new Date().toISOString(), error: message });
-		Object.assign(turn, { status, error: message, completedAt: new Date().toISOString() });
-		for (const siblingDirectory of taskDirectories) {
-			if (siblingDirectory === taskDirectory) continue;
-			const siblingFile = join(siblingDirectory, "task.json");
-			const sibling = await readJson(siblingFile);
-			if (!["starting", "running", "queued", "blocked"].includes(sibling.status)) continue;
-			Object.assign(sibling, { status: "cancelled", completedAt: new Date().toISOString(), error: `Run ended because ${task.name ?? task.agent} could not continue.` });
-			await writeJsonAtomic(siblingFile, sibling);
+	const attempt = Number(task.attempt ?? 1);
+	const turnFile = live && task.currentTurnFile ? String(task.currentTurnFile) : join(turnsDirectory, `${String(attempt).padStart(2, "0")}.json`);
+	let turn: TurnRecord = { attempt, prompt: task.prompt, status: "blocked", summary: previousReport.summary, question: previousReport.question, documents: previousReport.documents ?? [], sessionFile: task.sessionFile, startedAt: task.startedAt };
+	if (existsSync(turnFile)) {
+		try { turn = await readTurnRecord(turnFile); }
+		catch (error) {
+			const archivedPath = `${turnFile}.invalid-${Date.now()}`;
+			await rename(turnFile, archivedPath);
+			options.onWarning?.(`Archived invalid durable turn ${turnFile} at ${archivedPath}: ${error instanceof Error ? error.message : String(error)}`);
 		}
-		await Promise.all([writeJsonAtomic(join(taskDirectory, "task.json"), task), writeJsonAtomic(runFile, run), writeJsonAtomic(turnFile, turn)]);
-		if (run.tabId) await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, onError: onCleanupError }).catch(() => undefined);
-		return { ok: false, runId, label: String(run.label ?? "batch"), status, summary: cancelled ? "Subagent response cancelled." : `Subagent response failed: ${message}`, documents: [], recordDirectory: runDirectory, requestedConcurrency: Number(run.requestedConcurrency ?? 1), effectiveConcurrency: Number(run.effectiveConcurrency ?? 1), ...(run.tabId ? { tabId: String(run.tabId) } : {}) };
 	}
-	const status = report.status === "needs-input" ? "blocked" : report.status;
+	turn.events = [...(Array.isArray(turn.events) ? turn.events : []), { type: "answer", text: answer, at: new Date().toISOString() }];
+	task.currentTurnFile = turnFile;
+	applyTaskStatus(task, "running");
+	Object.assign(task, { tabId: run.tabId, paneId, agentName });
+	await Promise.all([writeJsonAtomic(join(taskDirectory, "task.json"), task), writeJsonAtomic(runFile, run), writeJsonAtomic(turnFile, turn)]);
+	await emitProgress(options, runDirectory, run, taskDirectories, `${task.name ?? task.agent} is continuing after input.`);
+	let report: PersistedReport;
+	let status: "blocked" | "completed" | "failed" | "cancelled";
+	let attemptError: unknown;
+	try {
+		report = (await promptLiveAgent({ herdr, task: { ...task, id: task.id, sessionFile: task.sessionFile }, paneId, prompt: answer, systemPromptFile: resumePrompt, agentName, start: !live, signal, stalledWarningMs: run.stalledWarningSeconds ? Number(run.stalledWarningSeconds) * 1000 : undefined, onStalled: () => options.onStalled?.(`${task.name ?? task.agent} appears stalled; it is still running.`) })).report;
+		status = applyReport(task, report);
+	} catch (error) {
+		attemptError = error;
+		const settled = await settleAttemptFailure(task, join(taskDirectory, "report.json"), {
+			cancelled: isAbortError(error, signal),
+			error: error instanceof Error ? error.message : String(error),
+			name: `${task.name ?? task.agent} response`,
+			replaceReport: true,
+		});
+		report = settled.report;
+		status = settled.status;
+	}
+	if (attemptError && isAbortError(attemptError, signal)) {
+		const message = attemptError instanceof Error ? attemptError.message : String(attemptError);
+			applyTaskStatus(task, "cancelled", { error: message });
+			applyRunStatus(run, "cancelled", { error: message });
+			applyTaskStatus(turn, "cancelled", { error: message });
+			for (const siblingDirectory of taskDirectories) {
+				if (siblingDirectory === taskDirectory) continue;
+				const siblingFile = join(siblingDirectory, "task.json");
+				const sibling = await readTaskRecord(siblingFile);
+				if (!isActiveStatus(sibling.status)) continue;
+				applyTaskStatus(sibling, "cancelled", { error: "Parent Pi session closed." });
+				await writeJsonAtomic(siblingFile, sibling);
+			}
+			await Promise.all([writeJsonAtomic(join(taskDirectory, "task.json"), task), writeJsonAtomic(runFile, run), writeJsonAtomic(turnFile, turn)]);
+			if (run.tabId) await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, signal, onError: onCleanupError, failureStatus: "failed" });
+			return { ok: false, runId, label: String(run.label ?? "batch"), status: "cancelled", summary: "Subagent response cancelled.", documents: [], recordDirectory: runDirectory, requestedConcurrency: Number(run.requestedConcurrency ?? 1), effectiveConcurrency: Number(run.effectiveConcurrency ?? 1), ...(run.tabId ? { tabId: String(run.tabId) } : {}) };
+	}
 	turn.events.push({ type: "report", status, summary: report.summary, question: report.question, error: report.error, at: new Date().toISOString() });
-	Object.assign(turn, { status, summary: report.summary, documents: report.documents ?? [], ...(report.question ? { question: report.question } : {}), ...(report.error ? { error: report.error } : {}), completedAt: new Date().toISOString() });
-	Object.assign(task, { status, completedAt: new Date().toISOString(), ...(report.error ? { error: report.error } : {}), ...(report.question ? { question: report.question } : {}) });
+	Object.assign(turn, { summary: report.summary, documents: report.documents ?? [] });
+	applyReport(turn, report);
 	await Promise.all([writeJsonAtomic(join(taskDirectory, "task.json"), task), writeJsonAtomic(turnFile, turn)]);
+	await emitProgress(options, runDirectory, run, taskDirectories, `${task.name ?? task.agent} ${status}.`);
 	if (status !== "blocked") {
-		Object.assign(run, { status: "queued", updatedAt: new Date().toISOString() });
+		applyRunStatus(run, "queued");
 		await writeJsonAtomic(runFile, run);
-		await continueQueuedRun(runDirectory, herdr, { cleanup: false, signal });
+		await continueQueuedRun(runDirectory, herdr, { cleanup: false, signal, onStalled: options.onStalled, onCleanupError, onUpdate: () => emitProgress(options, runDirectory, run, taskDirectories, "Queued tasks are continuing.") });
 	}
-	const finalTasks = await Promise.all(taskDirectories.map((directory) => readJson(join(directory, "task.json"))));
-	const finalReports = await Promise.all(taskDirectories.map(async (directory) => { try { return await readJson(join(directory, "report.json")); } catch { return { summary: "Task has no report.", documents: [] }; } }));
-	const statuses = finalTasks.map((entry) => entry.status);
-	const aggregateStatus = aggregateTaskStatus(statuses);
-	const runStatus = aggregateStatus === "running" ? "blocked" : aggregateStatus;
-	const blockedIndex = finalTasks.findIndex((entry) => entry.status === "blocked");
-	const blockedReport = blockedIndex >= 0 ? finalReports[blockedIndex] : undefined;
-	Object.assign(run, { status: runStatus, ...(runStatus === "blocked" ? { question: blockedReport?.question, updatedAt: new Date().toISOString() } : { completedAt: new Date().toISOString() }) });
-	await writeJsonAtomic(runFile, run);
-	if (runStatus !== "blocked" && run.tabId) {
-		await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, onError: onCleanupError });
-	}
-	const summary = runStatus === "completed" ? "All tasks completed after the answer." : runStatus === "blocked" ? `${finalTasks[blockedIndex]?.name ?? "Task"} needs input: ${blockedReport?.question ?? "Input required."}` : finalReports.map((entry, index) => `${finalTasks[index].name}: ${entry.summary}`).join("\n");
-	const activity = finalTasks.map((entry, index) => ({ index, name: String(entry.name ?? entry.agent ?? `Task ${index + 1}`), status: String(entry.status), ...(entry.paneId ? { paneId: String(entry.paneId) } : {}) }));
-	const tasks = finalTasks.map((entry, index) => ({
-		index,
-		name: activity[index].name,
-		status: String(entry.status),
-		summary: String(finalReports[index].summary ?? "Task has no report."),
-		documents: finalReports[index].documents ?? [],
-		...(entry.error ? { error: String(entry.error) } : {}),
-		...(entry.question ? { question: String(entry.question) } : {}),
-		paneId: String(entry.paneId ?? ""),
-		recordDirectory: taskDirectories[index],
-		sessionFile: String(entry.sessionFile ?? ""),
-	}));
-	return { ok: runStatus === "completed", runId, label: String(run.label ?? "batch"), status: runStatus, summary, ...(blockedReport?.question ? { question: blockedReport.question } : {}), documents: finalReports.flatMap((entry) => entry.documents ?? []), recordDirectory: runDirectory, requestedConcurrency: Number(run.requestedConcurrency ?? run.effectiveConcurrency ?? 1), effectiveConcurrency: Number(run.effectiveConcurrency ?? 1), tasks, activity, ...(run.tabId ? { tabId: String(run.tabId) } : {}) };
+	return projectSettledRun(runDirectory, runFile, run, taskDirectories, herdr, onCleanupError);
 }

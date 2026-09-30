@@ -1,8 +1,9 @@
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { resultPathForAttempt } from "../src/result-path.ts";
 
 const ReportParams = Type.Object({
 	status: StringEnum(["completed", "needs-input", "failed"] as const, { description: "Current outcome for this task." }),
@@ -32,7 +33,11 @@ export default function (pi: ExtensionAPI) {
 			const taskDirectory = process.env.PI_HERDR_SUBAGENTS_TASK_DIR?.trim();
 			if (!taskDirectory) throw new Error("PI_HERDR_SUBAGENTS_TASK_DIR is not set");
 			mkdirSync(taskDirectory, { recursive: true, mode: 0o700 });
-			const resultPath = resolve(taskDirectory, "result.md");
+			let attempt = 1;
+			const task = JSON.parse(readFileSync(resolve(taskDirectory, "task.json"), "utf8")) as { attempt?: unknown };
+			if (Number.isInteger(task.attempt) && Number(task.attempt) > 1) attempt = Number(task.attempt);
+			const resultPath = resultPathForAttempt(taskDirectory, attempt);
+			if (attempt > 1) mkdirSync(resolve(taskDirectory, "turns"), { recursive: true, mode: 0o700 });
 			writeAtomic(resultPath, params.result);
 			const documents = (params.documents ?? []).map((document) => ({
 				path: resolve(process.cwd(), document.path),

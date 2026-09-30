@@ -1,9 +1,10 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { HerdrSubagentsToolParams } from "./tool.ts";
 import { isProcessAlive, ownerRecord, type OwnerIdentity } from "./ownership.ts";
 import { writeJsonAtomic } from "./state.ts";
+import { findRunDirectory } from "./run-locator.ts";
 
 export interface QueuedRunRecord { runId: string; cwd: string; ownerSessionId?: string; ownerProcessId?: number; params: HerdrSubagentsToolParams; queuedAt: string; }
 function queueDirectory(cwd: string): string { return join(cwd, ".pi", "herdr-subagents", "queue"); }
@@ -18,30 +19,38 @@ export async function removeQueuedRun(cwd: string, runId: string): Promise<void>
 	await rm(join(queueDirectory(cwd), `${runId}.json`), { force: true });
 }
 
-export async function loadQueuedRuns(cwd: string): Promise<QueuedRunRecord[]> {
+export async function loadQueuedRuns(cwd: string, onError?: (message: string) => void): Promise<QueuedRunRecord[]> {
 	const directory = queueDirectory(cwd);
 	if (!existsSync(directory)) return [];
 	const records: QueuedRunRecord[] = [];
 	for (const entry of readdirSync(directory).filter((name) => name.endsWith(".json")).sort()) {
-		try { records.push(JSON.parse(await readFile(join(directory, entry), "utf8")) as QueuedRunRecord); } catch {}
+		const path = join(directory, entry);
+		try { records.push(JSON.parse(await readFile(path, "utf8")) as QueuedRunRecord); }
+		catch (error) {
+			const message = `Could not read queued Subagent run ${path}: ${error instanceof Error ? error.message : String(error)}`;
+			if (!onError) throw new Error(message);
+			onError(message);
+		}
 	}
 	return records.sort((left, right) => left.queuedAt.localeCompare(right.queuedAt));
 }
 
-export interface CancelQueuedRunsOptions { reason?: string; owner?: OwnerIdentity; onlyOrphaned?: boolean; }
+export interface CancelQueuedRunsOptions { reason?: string; owner?: OwnerIdentity; onlyOrphaned?: boolean; onError?: (message: string) => void; }
 
 export async function cancelQueuedRuns(cwd: string, runIds: string[], options: CancelQueuedRunsOptions = {}): Promise<void> {
 	const reason = options.reason ?? "Parent Pi session closed.";
 	const selected = new Set(runIds);
-	for (const queued of await loadQueuedRuns(cwd)) {
+	for (const queued of await loadQueuedRuns(cwd, options.onError)) {
 		if (!selected.has(queued.runId)) continue;
-		if (options.owner?.sessionId && queued.ownerSessionId !== options.owner.sessionId) continue;
-		if (options.onlyOrphaned && isProcessAlive(queued.ownerProcessId)) continue;
+		if (!options.onlyOrphaned && options.owner?.sessionId && queued.ownerSessionId !== options.owner.sessionId) continue;
+		if (options.onlyOrphaned) {
+			const differentOwner = options.owner?.sessionId !== undefined && queued.ownerSessionId !== options.owner.sessionId;
+			if (!differentOwner) continue;
+			const ownedByAnotherLiveProcess = queued.ownerProcessId !== (options.owner?.processId ?? process.pid) && isProcessAlive(queued.ownerProcessId);
+			if (ownedByAnotherLiveProcess) continue;
+		}
 		const runsDirectory = join(cwd, ".pi", "herdr-subagents", "runs");
-		const alreadyPersisted = existsSync(runsDirectory) && readdirSync(runsDirectory).some((entry) => {
-			try { return JSON.parse(readFileSync(join(runsDirectory, entry, "run.json"), "utf8")).id === queued.runId; }
-			catch { return false; }
-		});
+		const alreadyPersisted = Boolean(await findRunDirectory(runsDirectory, queued.runId));
 		if (alreadyPersisted) { await removeQueuedRun(cwd, queued.runId); continue; }
 		const now = new Date().toISOString();
 		const runDirectory = join(cwd, ".pi", "herdr-subagents", "runs", `${now.replace(/[-:.]/g, "").replace("Z", "Z-")}${queued.runId.slice(0, 8)}`);

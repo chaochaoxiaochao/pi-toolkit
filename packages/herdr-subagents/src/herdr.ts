@@ -104,7 +104,10 @@ async function runCommand(binary: string, args: string[], signal?: AbortSignal):
 		child.once("error", (error) => {
 			spawnError = error;
 		});
+		const abort = () => child.kill("SIGTERM");
+		const removeAbortListener = () => signal?.removeEventListener("abort", abort);
 		child.once("close", (code) => {
+			removeAbortListener();
 			if (spawnError) {
 				reject(new HerdrCommandError(spawnError.message, args, 1, stderr));
 				return;
@@ -117,7 +120,6 @@ async function runCommand(binary: string, args: string[], signal?: AbortSignal):
 			resolve(stdout);
 		});
 
-		const abort = () => child.kill("SIGTERM");
 		if (signal?.aborted) abort();
 		else signal?.addEventListener("abort", abort, { once: true });
 	});
@@ -192,15 +194,20 @@ export class CliHerdrAutomation implements HerdrAutomation {
 	async waitForTabUnfocused(tabId: string, signal?: AbortSignal): Promise<void> {
 		while (await this.isTabFocused(tabId, signal)) {
 			await new Promise<void>((resolve, reject) => {
-				const timer = setTimeout(resolve, 500);
-				if (signal) signal.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
+				const onAbort = () => { clearTimeout(timer); reject(signal?.reason); };
+				const timer = setTimeout(() => { signal?.removeEventListener("abort", onAbort); resolve(); }, 500);
+				if (signal?.aborted) onAbort();
+				else signal?.addEventListener("abort", onAbort, { once: true });
 			});
 		}
 	}
 
 	async paneExists(paneId: string, signal?: AbortSignal): Promise<boolean> {
 		try { await runCommand(this.binary, ["pane", "get", paneId], signal); return true; }
-		catch { return false; }
+		catch (error) {
+			if (error instanceof HerdrCommandError && /pane[_ -]?not[_ -]?found|unknown pane/i.test(`${error.message}\n${error.stderr}`)) return false;
+			throw error;
+		}
 	}
 
 	async isTaskRunning(paneId: string, signal?: AbortSignal): Promise<boolean> {
@@ -216,9 +223,7 @@ export class CliHerdrAutomation implements HerdrAutomation {
 			});
 		} catch (error) {
 			if (error instanceof HerdrCommandError && /pane[_ -]?not[_ -]?found|unknown pane/i.test(`${error.message}\n${error.stderr}`)) return false;
-			// A transient control-plane failure must not cause reconciliation to
-			// mark a possibly-live child as interrupted.
-			return true;
+			throw error;
 		}
 	}
 

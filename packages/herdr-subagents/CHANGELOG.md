@@ -1,5 +1,15 @@
 ## Unreleased
 
+- Isolate malformed queue/history entries so healthy active runs and durable history remain recoverable, and share durable attempt settlement plus task projection contracts across execution modes.
+- Retain blocked Fleet and dispatcher ownership after stateless response errors, and include public test entrypoints in the published package.
+- Preserve every pending stale-tab cleanup across repeated pane migrations, retry all of them during startup reconciliation, and surface allocator cleanup failures through batch updates.
+- Keep persisted reports authoritative even when Herdr transport fails after submission, persist failure reports for historical follow-ups, reject resume attempts against active or cleanup-pending runs, recover terminal deferred cleanup on startup, preserve cancelled ownership on shutdown, keep recovered Agent attempts aligned with durable turns, archive malformed turns, remove rejected background queue entries, support Pi enhanced keyboard sequences and authoritative status rendering, centralize lifecycle metadata, surface control-plane and cleanup failures, merge deferred cleanup against current durable state, and force-close focused tabs when parent shutdown is already active.
+- Share strict report parsing across live and recovered paths, validate durable task ordering, surface unreadable queue/history records, reconcile prior sessions even within one Pi process, keep settled Fleet rows navigable, preserve surviving sibling panes during dead-pane recovery, and retain cleanup diagnostics.
+- Keep queued and blocked siblings alive when one blocked response fails, centralize authoritative run-status transitions, and bind focus-deferred tab cleanup to parent-session shutdown.
+- Retain dispatcher and Fleet ownership while a batch is blocked, centralize task/turn transitions, surface transient pane lookup failures, and notify deferred single-task cleanup failures.
+- Fail reconciliation when task records are unreadable, archive malformed child reports before replacing them with valid failure records, and keep durable history and saved-session follow-up usable.
+- Keep startup reconciliation moving past truncated child reports, resume dispatch after recovery errors, clear stale blocked fields after authoritative follow-ups, and surface deferred cleanup failures.
+- Stream Fleet row and pane updates while a blocked answer resumes work and releases queued siblings.
 - Keep the active Fleet widget stable when another background run is queued, refresh rows and pane navigation after blocked responses, and cover the public extension UI/input wiring with injectable dependencies.
 - Centralize parent ownership, run-status aggregation, and serialized pane allocation across initial, continued, recovered, and historical runs.
 - Run every initial task, blocked response, recovered task, and historical follow-up as a visible interactive Pi Agent through Herdr Agent start/prompt; remove print mode, pane shell injection, completion markers, and marker polling.

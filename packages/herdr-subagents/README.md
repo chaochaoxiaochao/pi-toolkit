@@ -16,9 +16,17 @@ Run Pi inside Herdr, then install the package:
 pi install npm:@maxiaochao/pi-herdr-subagents
 ```
 
+Update an existing standalone installation with:
+
+```bash
+pi update npm:@maxiaochao/pi-herdr-subagents
+```
+
 The full `@maxiaochao/pi-toolkit` package also bundles this extension. Install the full toolkit or this standalone child package, not both.
 
 The package registers one tool, `herdr_subagents`. Calls outside a Herdr workspace fail without starting a child.
+
+The design replaces hidden print-mode subprocesses with ordinary interactive Pi Agents managed through Herdr, so delegated work stays visible, inspectable, resumable, and durably recorded.
 
 ## Usage
 
@@ -69,7 +77,7 @@ Continue a saved conversation in a new Herdr tab with `herdr_subagents({ action:
 
 Read-only tasks start FIFO up to the configured concurrency limit. A pane is created only when its task starts, belongs exclusively to that task, and is never reused. Completed panes remain inspectable while another task in the batch is unsettled. Results remain in input order, and one failed task does not cancel its siblings. Any batch containing a write-capable persona is forced to concurrency one.
 
-The widget shows one row per queued, running, blocked, failed, or completed task. Completed rows remain selectable until the whole batch settles. `/herdr-subagents active` shows the same compact state. Native labels stay short: `SA · <batch>` for the tab and `<order> · <task>` for each pane. When all tasks settle, the tab closes immediately if unfocused or after the user leaves it.
+The widget shows one row per queued, running, blocked, failed, or completed task. Answering a blocked task refreshes rows and pane IDs as that task resumes and queued siblings start. Completed rows remain selectable until the whole batch settles. `/herdr-subagents active` shows the same compact state. Native labels stay short: `SA · <batch>` for the tab and `<order> · <task>` for each pane. When all tasks settle, the tab closes immediately if unfocused or after the user leaves it; a deferred close failure is persisted and shown as a warning.
 
 Foreground calls block until all children report completion, failure, or a request for input. Every child is started with Herdr's Agent lifecycle as a normal Pi TUI and prompted with wait semantics; no print-mode command or completion marker is injected into the pane.
 
@@ -136,7 +144,7 @@ Project values override global values recursively. Model resolution is: task ove
 
 ## Recovery and failures
 
-Queued background submissions are persisted before dispatch. Closing the parent Pi session cancels queued, running, and blocked work, records `cancelled`, and closes the owned run tab. On the next Pi start, stale active records left by an ungraceful exit are reconciled to `cancelled` and leaked tabs are cleaned up when possible.
+Queued background submissions are persisted before dispatch. Closing the parent Pi session cancels queued, running, and blocked work, records `cancelled`, and closes the owned run tab. On the next Pi start, stale active records and queued submissions from a prior parent session are reconciled to a terminal state, including when Pi reused the same process, and leaked tabs are cleaned up when possible. Missing, truncated, or structurally invalid child reports become explicit failures or cancellation diagnostics; recovery errors are reported without leaving new submissions paused.
 
 Tab, pane, and child startup failures are retried at most twice before a prompt is submitted. A failure after submission is preserved and never automatically rerun. `stalledWarningSeconds` emits a warning without killing long-running work. Run/task/report snapshots use atomic replacement so interruption cannot expose half-written JSON.
 

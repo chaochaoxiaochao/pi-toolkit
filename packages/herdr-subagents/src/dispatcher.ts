@@ -15,6 +15,7 @@ export class RunDispatcher {
 	private readonly queue: QueuedRun<unknown>[] = [];
 	private readonly onChange?: (snapshot: DispatcherSnapshot) => void;
 	private paused = false;
+	private retainedRunId?: string;
 
 	constructor(onChange?: (snapshot: DispatcherSnapshot) => void) { this.onChange = onChange; }
 
@@ -31,6 +32,19 @@ export class RunDispatcher {
 
 	pause(): void { this.paused = true; this.changed(); }
 	resume(): void { this.paused = false; this.changed(); void this.drain(); }
+	retain(id: string): void {
+		if (this.activeRunId !== id) throw new Error(`Cannot retain inactive run '${id}'.`);
+		this.retainedRunId = id;
+		this.changed();
+	}
+	release(id: string): boolean {
+		if (this.activeRunId !== id || this.retainedRunId !== id) return false;
+		this.retainedRunId = undefined;
+		this.activeRunId = undefined;
+		this.changed();
+		void this.drain();
+		return true;
+	}
 	cancelQueued(reason: Error): string[] {
 		const cancelled = this.queue.splice(0);
 		for (const run of cancelled) run.reject(reason);
@@ -48,6 +62,12 @@ export class RunDispatcher {
 		this.changed();
 		try { run.resolve(await run.execute()); }
 		catch (error) { run.reject(error); }
-		finally { this.activeRunId = undefined; this.changed(); void this.drain(); }
+		finally {
+			if (this.retainedRunId !== run.id) {
+				this.activeRunId = undefined;
+				this.changed();
+				void this.drain();
+			}
+		}
 	}
 }
