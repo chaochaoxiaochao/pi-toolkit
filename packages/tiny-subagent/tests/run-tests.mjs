@@ -5,6 +5,7 @@ import { discoverPackageAgents, parseAgentMarkdown } from "../src/personas.ts";
 import { loadSubagentConfiguration } from "../src/config.ts";
 import { runTinySubagent } from "../src/runner.ts";
 import { executeTinySubagent } from "../src/tool.ts";
+import { activityCounts, focusActiveTask } from "../src/monitor.ts";
 
 let passed = 0;
 let failed = 0;
@@ -87,6 +88,9 @@ function fakeHerdr(mode = "completed") {
 		},
 		async renamePane(paneId, label) { calls.push(["renamePane", { paneId, label }]); },
 		async renameTab(tabId, label) { calls.push(["renameTab", { tabId, label }]); },
+		async focusPane(paneId) { calls.push(["focusPane", { paneId }]); },
+		async isTabFocused(tabId) { calls.push(["isTabFocused", { tabId }]); return mode === "focused"; },
+		async waitForTabUnfocused(tabId) { calls.push(["waitForTabUnfocused", { tabId }]); },
 		async closeTab(tabId) {
 			calls.push(["closeTab", { tabId }]);
 			if (mode === "close-failed") throw new Error("tab still busy");
@@ -194,20 +198,35 @@ try {
 	check("configured persona uses displayed effective values", !configuredRun.isError && configuredStart.args.includes("task/model") && configuredStart.args.includes("high") && configuredStart.args.includes("--skill") && configuredStart.args.includes("project-skill"));
 
 	const batchHerdr = fakeHerdr();
+	const batchUpdates = [];
 	const batch = await executeTinySubagent({ label: "reviews", concurrency: 2, tasks: [
 		{ name: "one", prompt: "one slow", agent: "explorer" },
 		{ name: "two", prompt: "two", agent: "reviewer" },
 		{ name: "three", prompt: "three FAIL", agent: "explorer" },
 		{ name: "four", prompt: "four", agent: "reviewer" },
-	] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: batchHerdr });
+	] }, undefined, (update) => batchUpdates.push(update.details), { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: batchHerdr });
 	const batchDetails = batch.details;
 	const batchRuns = batchHerdr.calls.filter(([name]) => name === "runTask:start").map(([, request]) => request);
 	check("read-only batch uses bounded concurrency", batchDetails.effectiveConcurrency === 2 && batchHerdr.maxActive === 2 && batchHerdr.calls.filter(([name]) => name === "splitPane").length === 1);
 	check("batch is FIFO and reuses bounded panes", batchRuns.map((request) => request.prompt).join(",") === "one slow,two,three FAIL,four" && new Set(batchRuns.map((request) => request.paneId)).size === 2);
 	check("failed sibling does not cancel batch", batch.isError && batchDetails.status === "partial" && batchDetails.tasks.map((task) => task.name).join(",") === "one,two,three,four" && batchDetails.tasks[2].status === "failed" && batchDetails.tasks[3].status === "completed");
+	const activeUpdate = batchUpdates.find((update) => update.activity?.some((task) => task.status === "running"));
+	const counts = activityCounts(activeUpdate);
+	const focusHerdr = fakeHerdr();
+	const runningTask = activeUpdate.activity.find((task) => task.status === "running");
+	const focused = await focusActiveTask(activeUpdate, runningTask.index + 1, focusHerdr);
+	check("active progress exposes widget counts and exact pane navigation", counts.running > 0 && counts.queued > 0 && focused && focusHerdr.calls.at(-1)[0] === "focusPane" && focusHerdr.calls.at(-1)[1].paneId === runningTask.paneId);
+	const tabLabels = batchHerdr.calls.filter(([name]) => name === "renameTab").map(([, request]) => request.label);
+	const paneLabels = batchHerdr.calls.filter(([name]) => name === "renamePane").map(([, request]) => request.label);
+	check("tab and reused panes keep stable progress labels", tabLabels.join(",") === "SA · reviews · 1/4,SA · reviews · 2/4,SA · reviews · 3/4,SA · reviews · 4/4" && paneLabels.includes("1. one") && paneLabels.includes("4. four"));
 	const writerHerdr = fakeHerdr();
 	const writerBatch = await executeTinySubagent({ concurrency: 3, tasks: [{ name: "write-one", prompt: "write one" }, { name: "write-two", prompt: "write two" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: writerHerdr });
 	check("write-capable batch is forced serial", writerBatch.details.effectiveConcurrency === 1 && writerHerdr.maxActive === 1 && writerHerdr.calls.filter(([name]) => name === "splitPane").length === 0);
+	const focusedHerdr = fakeHerdr("focused");
+	await executeTinySubagent({ tasks: [{ name: "inspect", prompt: "inspect", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: focusedHerdr });
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	const focusedCalls = focusedHerdr.calls.map(([name]) => name);
+	check("focused completed tab defers cleanup until focus leaves", focusedCalls.indexOf("waitForTabUnfocused") >= 0 && focusedCalls.indexOf("closeTab") > focusedCalls.indexOf("waitForTabUnfocused"));
 } finally {
 	restoreEnv();
 	rmSync(root, { recursive: true, force: true });

@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Show active run counts in a persistent widget, expose compact `/subagents active` and pane focus navigation, update progress labels, and defer cleanup while a completed tab is focused.
 - Execute ordered read-only batches with FIFO bounded concurrency, reusable Herdr panes, stable result order, and sibling failure isolation; force write-capable runs to serial execution.
 - Add built-in worker, explorer, and reviewer personas with project/global/package discovery precedence.
 - Add merged global and project model, thinking, skill, and concurrency settings plus `/subagents` discovery commands.

@@ -49,6 +49,7 @@ export interface BatchResult {
 	requestedConcurrency: number;
 	effectiveConcurrency: number;
 	tasks: BatchTaskResult[];
+	activity: Array<{ index: number; name: string; status: "queued" | "running" | "completed" | "failed"; paneId?: string }>;
 	summary: string;
 	documents: TinySubagentDocument[];
 	recordDirectory: string;
@@ -81,7 +82,8 @@ export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOpt
 	const herdr = options.herdr ?? new CliHerdrAutomation();
 	let tabId: string | undefined;
 	const results = new Array<BatchTaskResult>(tasks.length);
-	const emit = (status: BatchResult["status"], summary: string) => options.onUpdate?.({ ok: false, status, runId, label: options.label, requestedConcurrency, effectiveConcurrency, tasks: results.filter(Boolean), summary, documents: [], recordDirectory: runDirectory, tabId });
+	const activity: BatchResult["activity"] = tasks.map((task, index) => ({ index, name: task.name, status: "queued" }));
+	const emit = (status: BatchResult["status"], summary: string) => options.onUpdate?.({ ok: false, status, runId, label: options.label, requestedConcurrency, effectiveConcurrency, tasks: results.filter(Boolean), activity: activity.map((task) => ({ ...task })), summary, documents: [], recordDirectory: runDirectory, tabId });
 	emit("starting", `Creating ${effectiveConcurrency} Herdr worker slot${effectiveConcurrency === 1 ? "" : "s"}...`);
 	try {
 		const tab = await herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID, cwd: options.cwd, label: `SA · ${options.label} · 0/${tasks.length}`, env: { PI_SUBAGENT_CHILD: "1" }, focus: false, signal: options.signal });
@@ -109,7 +111,9 @@ export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOpt
 			await writeFile(systemPromptFile, systemPrompt, { encoding: "utf8", mode: 0o600 });
 			const taskRecord: Record<string, unknown> = { id: taskId, runId, order: index + 1, name: task.name, status: "running", prompt: task.prompt, agent: task.agent, access: task.access, model: task.model, thinking: task.thinking, tools: task.tools, skills: task.skills, systemPrompt, sessionFile, paneId, startedAt: timestamp() };
 			await writeJson(taskFile, taskRecord);
+			activity[index] = { index, name: task.name, status: "running", paneId };
 			await herdr.renamePane(paneId, `${index + 1}. ${task.name}`, options.signal);
+			emit("running", `${settled}/${tasks.length} tasks settled.`);
 			const args = [process.env.PI_TINY_SUBAGENT_PI_BINARY?.trim() || "pi", "--approve", "--print", "--session", sessionFile, "--name", `Subagent: ${task.name}`, "--no-extensions", "--extension", fileURLToPath(new URL("../extensions/subagent-report.ts", import.meta.url)), "--no-skills", "--append-system-prompt", systemPromptFile];
 			if (task.model) args.push("--model", task.model);
 			if (task.thinking) args.push("--thinking", task.thinking);
@@ -130,6 +134,7 @@ export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOpt
 			Object.assign(taskRecord, { status: report.status, completedAt: timestamp(), ...(report.error ? { error: report.error } : {}) });
 			await writeJson(taskFile, taskRecord);
 			results[index] = { index, name: task.name, status: report.status, summary: report.summary, documents: report.documents, ...(report.error ? { error: report.error } : {}), paneId, recordDirectory: taskDirectory, sessionFile };
+			activity[index] = { index, name: task.name, status: report.status, paneId };
 			settled += 1;
 			await herdr.renameTab(tabId as string, `SA · ${options.label} · ${settled}/${tasks.length}`, options.signal);
 			emit("running", `${settled}/${tasks.length} tasks settled.`);
@@ -141,8 +146,13 @@ export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOpt
 		Object.assign(runRecord, { status, completedAt: timestamp() });
 		await writeJson(runFile, runRecord);
 		const documents = results.flatMap((result) => result.documents);
-		return { ok: failed === 0, status, runId, label: options.label, requestedConcurrency, effectiveConcurrency, tasks: results, summary: failed ? `${tasks.length - failed}/${tasks.length} tasks completed; ${failed} failed.` : `${tasks.length}/${tasks.length} tasks completed.`, documents, recordDirectory: runDirectory, tabId };
+		return { ok: failed === 0, status, runId, label: options.label, requestedConcurrency, effectiveConcurrency, tasks: results, activity, summary: failed ? `${tasks.length - failed}/${tasks.length} tasks completed; ${failed} failed.` : `${tasks.length}/${tasks.length} tasks completed.`, documents, recordDirectory: runDirectory, tabId };
 	} finally {
-		if (tabId) await herdr.closeTab(tabId, options.signal?.aborted ? undefined : options.signal);
+		if (tabId) {
+			const cleanupSignal = options.signal?.aborted ? undefined : options.signal;
+			if (await herdr.isTabFocused(tabId, cleanupSignal)) {
+				void herdr.waitForTabUnfocused(tabId, cleanupSignal).then(() => herdr.closeTab(tabId as string, cleanupSignal)).catch(() => undefined);
+			} else await herdr.closeTab(tabId, cleanupSignal);
+		}
 	}
 }

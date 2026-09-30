@@ -48,12 +48,15 @@ export interface HerdrAutomation {
 	runTask(request: RunTaskRequest): Promise<void>;
 	renamePane(paneId: string, label: string, signal?: AbortSignal): Promise<void>;
 	renameTab(tabId: string, label: string, signal?: AbortSignal): Promise<void>;
+	focusPane(paneId: string, signal?: AbortSignal): Promise<void>;
+	isTabFocused(tabId: string, signal?: AbortSignal): Promise<boolean>;
+	waitForTabUnfocused(tabId: string, signal?: AbortSignal): Promise<void>;
 	closeTab(tabId: string, signal?: AbortSignal): Promise<void>;
 }
 
 interface HerdrResponse {
 	result?: {
-		tab?: { tab_id?: string };
+		tab?: { tab_id?: string; focused?: boolean };
 		root_pane?: { pane_id?: string };
 		pane?: { pane_id?: string };
 		agent?: { status?: string };
@@ -182,6 +185,24 @@ export class CliHerdrAutomation implements HerdrAutomation {
 
 	async renameTab(tabId: string, label: string, signal?: AbortSignal): Promise<void> {
 		await runCommand(this.binary, ["tab", "rename", tabId, label], signal);
+	}
+
+	async focusPane(paneId: string, signal?: AbortSignal): Promise<void> {
+		await runCommand(this.binary, ["agent", "focus", paneId], signal);
+	}
+
+	async isTabFocused(tabId: string, signal?: AbortSignal): Promise<boolean> {
+		const response = parseResponse(await runCommand(this.binary, ["tab", "get", tabId], signal), "herdr tab get");
+		return response.result?.tab?.focused === true;
+	}
+
+	async waitForTabUnfocused(tabId: string, signal?: AbortSignal): Promise<void> {
+		while (await this.isTabFocused(tabId, signal)) {
+			await new Promise<void>((resolve, reject) => {
+				const timer = setTimeout(resolve, 500);
+				if (signal) signal.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
+			});
+		}
 	}
 
 	async closeTab(tabId: string, signal?: AbortSignal): Promise<void> {

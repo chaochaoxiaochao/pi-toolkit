@@ -4,6 +4,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { loadSubagentConfiguration } from "../src/config.ts";
+import { CliHerdrAutomation } from "../src/herdr.ts";
+import { activeRunText, activityCounts, focusActiveTask } from "../src/monitor.ts";
 import { executeTinySubagent, type TinySubagentBatchDetails, type TinySubagentDetails, type TinySubagentToolParams } from "../src/tool.ts";
 
 const ACTIONS = ["list"] as const;
@@ -33,6 +35,8 @@ const packageAgentsDir = fileURLToPath(new URL("../agents/", import.meta.url));
 
 export default function (pi: ExtensionAPI) {
 	if (process.env.PI_SUBAGENT_CHILD === "1") return;
+	let activeBatch: TinySubagentBatchDetails | undefined;
+	const herdr = new CliHerdrAutomation();
 
 	pi.registerTool({
 		name: "tiny_subagents",
@@ -43,7 +47,20 @@ export default function (pi: ExtensionAPI) {
 		parameters: TinySubagentParams,
 
 		async execute(_toolCallId, params: TinySubagentToolParams, signal, onUpdate, ctx) {
-			return await executeTinySubagent(params, signal, onUpdate, ctx, { agentsDirectory: packageAgentsDir });
+			const result = await executeTinySubagent(params, signal, (update) => {
+				const details = update.details as TinySubagentBatchDetails | undefined;
+				if (details?.activity) {
+					activeBatch = details;
+					const counts = activityCounts(details);
+					ctx.ui.setWidget("tiny-subagents", [`Subagents · ${details.label}`, `running ${counts.running} · queued ${counts.queued} · blocked ${counts.blocked} · failed ${counts.failed} · completed ${counts.completed}`]);
+				}
+				onUpdate?.(update);
+			}, ctx, { agentsDirectory: packageAgentsDir });
+			if (params.tasks) {
+				activeBatch = undefined;
+				ctx.ui.setWidget("tiny-subagents", undefined);
+			}
+			return result;
 		},
 
 		renderCall(args, theme) {
@@ -87,9 +104,19 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("subagents", {
 		description: "Inspect effective subagent agents, models, and settings",
-		getArgumentCompletions: (prefix) => ["agents", "models", "settings"].filter((value) => value.startsWith(prefix)).map((value) => ({ value, label: value })),
+		getArgumentCompletions: (prefix) => ["active", "agents", "models", "settings", "focus "].filter((value) => value.startsWith(prefix)).map((value) => ({ value, label: value })),
 		handler: async (args, ctx) => {
-			const section = args.trim() || "agents";
+			const section = args.trim() || "active";
+			if (section === "active") {
+				if (!activeBatch) { ctx.ui.notify("No active Subagent run.", "info"); return; }
+				ctx.ui.notify(activeRunText(activeBatch), "info");
+				return;
+			}
+			if (section.startsWith("focus ")) {
+				const focused = await focusActiveTask(activeBatch, Number(section.slice(6).trim()), herdr);
+				if (!focused) ctx.ui.notify("That task is not active in a Herdr pane.", "warning");
+				return;
+			}
 			if (section === "models") {
 				await ctx.modelRegistry.refresh();
 				const lines = ctx.modelRegistry.getAvailable().map((model) => `${model.provider}/${model.id}`).sort();
@@ -110,7 +137,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(lines.join("\n"), "info");
 				return;
 			}
-			ctx.ui.notify("Usage: /subagents agents|models|settings", "warning");
+			ctx.ui.notify("Usage: /subagents active|focus <task-number>|agents|models|settings", "warning");
 		},
 	});
 }
