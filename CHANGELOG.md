@@ -1,6 +1,6 @@
-## Unreleased
+## 2026-09-30 - v0.9.2
 
-- show contiguous queue positions in the persistent todo widget while keeping stable task IDs in tool output and `/todos`
+- show contiguous queue positions in the todo widget while retaining stable internal task IDs
 
 ## 2026-09-30 - v0.9.1
 
