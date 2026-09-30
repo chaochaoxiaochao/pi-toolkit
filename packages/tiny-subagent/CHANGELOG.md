@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Execute ordered read-only batches with FIFO bounded concurrency, reusable Herdr panes, stable result order, and sibling failure isolation; force write-capable runs to serial execution.
 - Add built-in worker, explorer, and reviewer personas with project/global/package discovery precedence.
 - Add merged global and project model, thinking, skill, and concurrency settings plus `/subagents` discovery commands.
 - Run one synchronous subagent in a dedicated, unfocused Herdr tab and close it after completion.

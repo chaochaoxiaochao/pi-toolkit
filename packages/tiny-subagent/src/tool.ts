@@ -1,6 +1,9 @@
 import type { HerdrAutomation } from "./herdr.ts";
 import { loadSubagentConfiguration, type ConfigurationPaths, type SubagentConfiguration } from "./config.ts";
 import { runTinySubagent, type TinySubagentResult } from "./runner.ts";
+import { runTinySubagentBatch, type BatchResult, type BatchTask } from "./batch-runner.ts";
+
+export interface TinySubagentTaskParams { name: string; prompt: string; agent?: string; model?: string; }
 
 export interface TinySubagentToolParams {
 	action?: "list";
@@ -8,6 +11,8 @@ export interface TinySubagentToolParams {
 	agent?: string;
 	label?: string;
 	model?: string;
+	tasks?: TinySubagentTaskParams[];
+	concurrency?: number;
 }
 
 export interface TinySubagentToolContext {
@@ -28,6 +33,8 @@ export type TinySubagentDetails = TinySubagentResult & {
 	prompt: string;
 	personaPath: string;
 };
+
+export type TinySubagentBatchDetails = BatchResult & { prompts: string[] };
 
 type ToolResponse = {
 	content: Array<{ type: "text"; text: string }>;
@@ -75,6 +82,40 @@ export async function executeTinySubagent(
 			content: [{ type: "text", text: listText(discovery) }],
 			details: { action: "list", agents: discovery.personas, diagnostics: discovery.diagnostics, settings: discovery.settings },
 		};
+	}
+
+	if (params.tasks) {
+		if (params.tasks.length === 0) {
+			const text = "tasks must contain at least one task.";
+			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
+		}
+		const resolved: BatchTask[] = [];
+		for (const task of params.tasks) {
+			const personaName = task.agent?.trim() || "worker";
+			const persona = discovery.personas.find((candidate) => candidate.name === personaName);
+			if (!persona) {
+				const text = `Unknown persona '${personaName}'.\n\n${listText(discovery)}`;
+				return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
+			}
+			resolved.push({ name: task.name, prompt: task.prompt, agent: persona.name, access: persona.access, model: task.model?.trim() || persona.model, thinking: persona.thinking ?? (persona.modelSource === "parent session" && !task.model ? ctx.thinkingLevel : undefined), tools: persona.tools, skills: persona.skills, systemPrompt: persona.systemPrompt });
+		}
+		try {
+			const result = await runTinySubagentBatch(resolved, {
+				label: params.label?.trim() || "batch",
+				concurrency: params.concurrency ?? discovery.settings.defaultConcurrency,
+				maxConcurrency: discovery.settings.maxConcurrency,
+				cwd: ctx.cwd,
+				signal,
+				herdr: dependencies.herdr,
+				onUpdate: (partial) => onUpdate?.({ content: [{ type: "text", text: partial.summary }], details: { ...partial, prompts: params.tasks?.map((task) => task.prompt) ?? [] } }),
+			});
+			const lines = [result.summary, ...result.tasks.map((task) => `- ${task.name}: ${task.status} — ${task.summary}`)];
+			if (result.documents.length) lines.push("", "Documents:", ...result.documents.map((document) => `- ${document.description}: ${document.path}`));
+			return { content: [{ type: "text", text: lines.join("\n") }], details: { ...result, prompts: params.tasks.map((task) => task.prompt) }, ...(result.ok ? {} : { isError: true }) };
+		} catch (error) {
+			const text = error instanceof Error ? error.message : String(error);
+			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
+		}
 	}
 
 	if (!params.prompt?.trim()) {

@@ -30,7 +30,22 @@ tiny_subagents({
 })
 ```
 
-The call blocks until the child reports completion or failure. It creates an unfocused Herdr tab in the current workspace, starts Pi in that tab, submits the prompt, and closes the tab after the report is received. Batch execution, background execution, recovery, and history UI are not provided.
+Or submit an ordered synchronous batch:
+
+```text
+tiny_subagents({
+  label: "security-review",
+  concurrency: 3,
+  tasks: [
+    { name: "auth", agent: "reviewer", prompt: "Review authentication" },
+    { name: "sessions", agent: "explorer", prompt: "Trace session storage" }
+  ]
+})
+```
+
+Read-only tasks start FIFO up to the configured concurrency limit. Worker panes are reused as tasks settle, results remain in input order, and one failed task does not cancel its siblings. Any batch containing a write-capable persona is forced to concurrency one.
+
+The call blocks until all children report completion or failure. It creates one unfocused Herdr tab in the current workspace, starts visible Pi tasks in a bounded number of reusable panes, and closes the tab after the run settles. Background execution, recovery, and history UI are not yet provided.
 
 ## Reports and records
 

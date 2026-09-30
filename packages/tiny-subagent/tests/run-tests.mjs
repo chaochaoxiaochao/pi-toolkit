@@ -32,8 +32,12 @@ function restoreEnv() {
 function fakeHerdr(mode = "completed") {
 	const calls = [];
 	let taskDirectory;
+	let paneSequence = 2;
+	let active = 0;
+	let maxActive = 0;
 	return {
 		calls,
+		get maxActive() { return maxActive; },
 		async createTab(request) {
 			calls.push(["createTab", request]);
 			taskDirectory = request.env.PI_TINY_SUBAGENT_TASK_DIR;
@@ -63,6 +67,26 @@ function fakeHerdr(mode = "completed") {
 			}
 			return { status: mode === "failed" ? "done" : "idle" };
 		},
+		async splitPane(request) {
+			calls.push(["splitPane", request]);
+			paneSequence += 1;
+			return { paneId: `w1:p${paneSequence}` };
+		},
+		async runTask(request) {
+			calls.push(["runTask:start", request]);
+			active += 1;
+			maxActive = Math.max(maxActive, active);
+			await new Promise((resolve) => setTimeout(resolve, request.prompt.includes("slow") ? 15 : 2));
+			const directory = request.env.PI_TINY_SUBAGENT_TASK_DIR;
+			writeFileSync(join(directory, "session.jsonl"), `${JSON.stringify({ type: "session", version: 3, id: request.marker, cwd: root })}\n`);
+			const failed = request.prompt.includes("FAIL");
+			writeFileSync(join(directory, "result.md"), `FULL ${request.prompt}`);
+			writeFileSync(join(directory, "report.json"), JSON.stringify({ status: failed ? "failed" : "completed", summary: failed ? `${request.prompt} failed.` : `${request.prompt} completed.`, ...(failed ? { error: "expected failure" } : {}), documents: [] }));
+			active -= 1;
+			calls.push(["runTask:end", request]);
+		},
+		async renamePane(paneId, label) { calls.push(["renamePane", { paneId, label }]); },
+		async renameTab(tabId, label) { calls.push(["renameTab", { tabId, label }]); },
 		async closeTab(tabId) {
 			calls.push(["closeTab", { tabId }]);
 			if (mode === "close-failed") throw new Error("tab still busy");
@@ -168,6 +192,22 @@ try {
 	const configuredRun = await executeTinySubagent({ agent: "worker", model: "task/model", prompt: "Use configured values" }, undefined, undefined, { cwd: configRoot, model: { provider: "parent", id: "model" }, thinkingLevel: "medium" }, { agentsDirectory: packageAgents, configurationPaths, herdr: configuredHerdr });
 	const configuredStart = configuredHerdr.calls.find(([name]) => name === "startAgent")[1];
 	check("configured persona uses displayed effective values", !configuredRun.isError && configuredStart.args.includes("task/model") && configuredStart.args.includes("high") && configuredStart.args.includes("--skill") && configuredStart.args.includes("project-skill"));
+
+	const batchHerdr = fakeHerdr();
+	const batch = await executeTinySubagent({ label: "reviews", concurrency: 2, tasks: [
+		{ name: "one", prompt: "one slow", agent: "explorer" },
+		{ name: "two", prompt: "two", agent: "reviewer" },
+		{ name: "three", prompt: "three FAIL", agent: "explorer" },
+		{ name: "four", prompt: "four", agent: "reviewer" },
+	] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: batchHerdr });
+	const batchDetails = batch.details;
+	const batchRuns = batchHerdr.calls.filter(([name]) => name === "runTask:start").map(([, request]) => request);
+	check("read-only batch uses bounded concurrency", batchDetails.effectiveConcurrency === 2 && batchHerdr.maxActive === 2 && batchHerdr.calls.filter(([name]) => name === "splitPane").length === 1);
+	check("batch is FIFO and reuses bounded panes", batchRuns.map((request) => request.prompt).join(",") === "one slow,two,three FAIL,four" && new Set(batchRuns.map((request) => request.paneId)).size === 2);
+	check("failed sibling does not cancel batch", batch.isError && batchDetails.status === "partial" && batchDetails.tasks.map((task) => task.name).join(",") === "one,two,three,four" && batchDetails.tasks[2].status === "failed" && batchDetails.tasks[3].status === "completed");
+	const writerHerdr = fakeHerdr();
+	const writerBatch = await executeTinySubagent({ concurrency: 3, tasks: [{ name: "write-one", prompt: "write one" }, { name: "write-two", prompt: "write two" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: writerHerdr });
+	check("write-capable batch is forced serial", writerBatch.details.effectiveConcurrency === 1 && writerHerdr.maxActive === 1 && writerHerdr.calls.filter(([name]) => name === "splitPane").length === 0);
 } finally {
 	restoreEnv();
 	rmSync(root, { recursive: true, force: true });
