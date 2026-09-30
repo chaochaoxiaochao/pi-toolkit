@@ -71,25 +71,36 @@ export default function (pi: ExtensionAPI) {
 		dispatcher.pause();
 		const reconciliation = await reconcileSubagentRuns(ctx.cwd, herdr);
 		const known = new Set([dispatcher.snapshot().activeRunId, ...dispatcher.snapshot().queuedRunIds].filter(Boolean));
+		const archived = new Set((await listSubagentHistory(ctx.cwd)).map((run) => run.id));
 		for (const queued of await loadQueuedRuns(ctx.cwd)) {
 			if (known.has(queued.runId)) continue;
+			if (archived.has(queued.runId)) { await removeQueuedRun(ctx.cwd, queued.runId); continue; }
 			void dispatcher.submit(queued.runId, async () => {
-				await removeQueuedRun(ctx.cwd, queued.runId);
 				const result = await executeTinySubagent(queued.params, undefined, undefined, ctx, { agentsDirectory: packageAgentsDir });
+				if ((result.details as { runId?: string }).runId === queued.runId) await removeQueuedRun(ctx.cwd, queued.runId);
 				notifyRun(queued.runId, result);
 				return result;
 			}).catch((error) => notifyRun(queued.runId, { details: { errorMessage: error instanceof Error ? error.message : String(error) } }));
 		}
 		const continuePersistedTasks = async () => {
-			for (const run of await listSubagentHistory(ctx.cwd)) if (run.status === "queued") await continueQueuedRun(run.recordDirectory, herdr);
+			for (const run of await listSubagentHistory(ctx.cwd)) {
+				if (run.status !== "queued") continue;
+				try {
+					await continueQueuedRun(run.recordDirectory, herdr);
+					const updated = (await listSubagentHistory(ctx.cwd)).find((candidate) => candidate.id === run.id);
+					notifyRun(run.id, { details: { status: updated?.status ?? "failed", summary: `Recovered Subagent run ${updated?.status ?? "failed"}.`, tasks: (updated?.tasks ?? []).map((task) => ({ name: task.name, summary: task.summary ?? task.status })), documents: [] } });
+				} catch (error) { notifyRun(run.id, { details: { errorMessage: error instanceof Error ? error.message : String(error) } }); }
+			}
 		};
 		if (reconciliation.liveTasks === 0) { await continuePersistedTasks(); dispatcher.resume(); }
 		else {
 			ctx.ui.notify(`${reconciliation.liveTasks} Subagent task(s) are still running in Herdr; queued dispatch remains paused.`, "info");
 			void (async () => {
-				while ((await reconcileSubagentRuns(ctx.cwd, herdr)).liveTasks > 0) await new Promise((resolve) => setTimeout(resolve, 1000));
-				await continuePersistedTasks();
-				dispatcher.resume();
+				try {
+					while ((await reconcileSubagentRuns(ctx.cwd, herdr)).liveTasks > 0) await new Promise((resolve) => setTimeout(resolve, 1000));
+					await continuePersistedTasks();
+				} catch (error) { ctx.ui.notify(`Subagent recovery failed: ${error instanceof Error ? error.message : String(error)}`, "error"); }
+				finally { dispatcher.resume(); }
 			})();
 		}
 	});
@@ -115,6 +126,8 @@ export default function (pi: ExtensionAPI) {
 					const counts = activityCounts(details);
 					ctx.ui.setWidget("tiny-subagents", [`Subagents · ${details.label}`, `running ${counts.running} · queued ${counts.queued} · blocked ${counts.blocked} · failed ${counts.failed} · completed ${counts.completed} · queued runs ${dispatcher.snapshot().queuedRunIds.length}`]);
 				}
+				const updateText = update.content.find((item) => item.type === "text")?.text;
+				if (params.background && updateText?.includes("appears stalled")) ctx.ui.notify(updateText, "warning");
 				if (!params.background) onUpdate?.(update);
 			}, ctx, { agentsDirectory: packageAgentsDir });
 			if (!params.tasks) {
@@ -126,8 +139,8 @@ export default function (pi: ExtensionAPI) {
 			params.runId = runId;
 			if (params.background) await persistQueuedRun(ctx.cwd, runId, params);
 			const promise = dispatcher.submit(runId, async () => {
-				if (params.background) await removeQueuedRun(ctx.cwd, runId);
 				const result = await executeRun();
+				if (params.background && (result.details as { runId?: string }).runId === runId) await removeQueuedRun(ctx.cwd, runId);
 				const details = result.details as TinySubagentBatchDetails;
 				activeBatch = details.status === "blocked" ? details : undefined;
 				if (activeBatch) {

@@ -77,29 +77,44 @@ export async function resumeHistoricalTask(cwd: string, runId: string, taskNumbe
 	await mkdir(followupDirectory, { recursive: true, mode: 0o700 });
 	const followupPrompt = join(followupDirectory, "system-prompt.md");
 	await writeTextAtomic(followupPrompt, "This is a new resumed task. When this turn is finished, call subagent_report exactly once for this turn, even if an earlier turn already used it.\n");
-	const tab = await herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID ?? "", cwd, label: `SA · resume · ${historical.name}`, env: { PI_SUBAGENT_CHILD: "1" }, focus: false });
-	const followupTask = { id: `followup-${Date.now()}`, runId, order: followupOrder, name: `${historical.name} follow-up`, status: "running", prompt, agent: "historical", access: historical.access, model: historical.model, thinking: historical.thinking, tools: historical.tools, skills: historical.skills, sessionFile: historical.sessionFile, paneId: tab.paneId, startedAt: new Date().toISOString() };
+	const followupTask: Record<string, any> = { id: `followup-${Date.now()}`, runId, order: followupOrder, name: `${historical.name} follow-up`, status: "starting", prompt, agent: "historical", access: historical.access, model: historical.model, thinking: historical.thinking, tools: historical.tools, skills: historical.skills, sessionFile: historical.sessionFile, startedAt: new Date().toISOString() };
 	await writeJsonAtomic(join(followupDirectory, "task.json"), followupTask);
 	const args = [process.env.PI_TINY_SUBAGENT_PI_BINARY?.trim() || "pi", "--approve", "--print", "--session", historical.sessionFile, "--name", `Subagent: ${historical.name}`, "--no-extensions", "--extension", fileURLToPath(new URL("../extensions/subagent-report.ts", import.meta.url)), "--no-skills", "--append-system-prompt", followupPrompt];
+	const originalSystemPrompt = join(historical.recordDirectory, "system-prompt.md");
+	if (existsSync(originalSystemPrompt)) args.push("--append-system-prompt", originalSystemPrompt);
 	if (historical.model) args.push("--model", historical.model);
 	if (historical.thinking) args.push("--thinking", historical.thinking);
 	if (historical.tools?.length) args.push("--tools", [...new Set([...historical.tools, "subagent_report"])].join(","));
 	for (const skill of historical.skills) args.push("--skill", skill);
+	let tab: { tabId: string; paneId: string } | undefined;
 	let report: Record<string, any>;
 	try {
+		tab = await retryBeforePrompt(() => herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID ?? "", cwd, label: `SA · resume · ${historical.name}`, env: { PI_SUBAGENT_CHILD: "1" }, focus: false }));
+		Object.assign(followupTask, { status: "running", paneId: tab.paneId });
+		await writeJsonAtomic(join(followupDirectory, "task.json"), followupTask);
 		await retryBeforePrompt(() => herdr.prepareTask(args));
 		await herdr.runTask({ paneId: tab.paneId, args, prompt, env: { PI_SUBAGENT_CHILD: "1", PI_TINY_SUBAGENT_TASK_DIR: followupDirectory }, marker: `PI_SUBAGENT_HISTORY_${Date.now()}` });
 		report = await readJson(join(followupDirectory, "report.json"));
 	} catch (error) {
-		await herdr.closeTab(tab.tabId).catch(() => undefined);
+		const message = error instanceof Error ? error.message : String(error);
+		Object.assign(followupTask, { status: "failed", completedAt: new Date().toISOString(), error: message });
+		await writeJsonAtomic(join(followupDirectory, "task.json"), followupTask);
+		await writeJsonAtomic(join(followupDirectory, "report.json"), { status: "failed", summary: `${historical.name} follow-up failed.`, documents: [], error: message, reportedAt: new Date().toISOString() });
+		const failedRun = await readJson(join(run.recordDirectory, "run.json"));
+		Object.assign(failedRun, { status: "partial", completedAt: new Date().toISOString(), error: message });
+		await writeJsonAtomic(join(run.recordDirectory, "run.json"), failedRun);
+		if (tab) await herdr.closeTab(tab.tabId).catch(() => undefined);
 		throw error;
 	}
+	if (!tab) throw new Error("Historical resume did not create a Herdr tab.");
 	await writeJsonAtomic(join(followupDirectory, "followup.json"), { prompt, sessionFile: historical.sessionFile, paneId: tab.paneId, reportedAt: new Date().toISOString() });
 	const status = report.status === "needs-input" ? "blocked" : report.status;
 	Object.assign(followupTask, { status, completedAt: new Date().toISOString(), ...(report.question ? { question: report.question } : {}), ...(report.error ? { error: report.error } : {}) });
 	await writeJsonAtomic(join(followupDirectory, "task.json"), followupTask);
 	const runRecord = await readJson(join(run.recordDirectory, "run.json"));
-	Object.assign(runRecord, { status, tabId: tab.tabId, paneIds: [tab.paneId], ...(status === "blocked" ? { question: report.question, updatedAt: new Date().toISOString() } : { completedAt: new Date().toISOString() }) });
+	const taskStatuses = (await listSubagentHistory(cwd)).find((candidate) => candidate.id === runId)?.tasks.map((task) => task.status) ?? [status];
+	const aggregateStatus = taskStatuses.some((value) => value === "blocked" || value === "queued" || value === "running") ? "blocked" : taskStatuses.some((value) => value === "failed" || value === "interrupted") ? (taskStatuses.some((value) => value === "completed") ? "partial" : "failed") : "completed";
+	Object.assign(runRecord, { status: aggregateStatus, tabId: tab.tabId, paneIds: [tab.paneId], ...(aggregateStatus === "blocked" ? { question: report.question, updatedAt: new Date().toISOString() } : { completedAt: new Date().toISOString() }) });
 	await writeJsonAtomic(join(run.recordDirectory, "run.json"), runRecord);
 	if (report.status !== "needs-input") {
 		if (await herdr.isTabFocused(tab.tabId)) void herdr.waitForTabUnfocused(tab.tabId).then(() => herdr.closeTab(tab.tabId)).catch(() => undefined);

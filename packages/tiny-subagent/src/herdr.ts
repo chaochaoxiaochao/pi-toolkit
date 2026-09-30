@@ -55,6 +55,7 @@ export interface HerdrAutomation {
 	isTabFocused(tabId: string, signal?: AbortSignal): Promise<boolean>;
 	waitForTabUnfocused(tabId: string, signal?: AbortSignal): Promise<void>;
 	paneExists(paneId: string, signal?: AbortSignal): Promise<boolean>;
+	isTaskRunning(paneId: string, signal?: AbortSignal): Promise<boolean>;
 	closeTab(tabId: string, signal?: AbortSignal): Promise<void>;
 }
 
@@ -64,6 +65,7 @@ interface HerdrResponse {
 		root_pane?: { pane_id?: string };
 		pane?: { pane_id?: string };
 		agent?: { status?: string };
+		process_info?: { foreground_processes?: Array<{ name?: string; argv?: string[] }> };
 	};
 }
 
@@ -188,7 +190,9 @@ export class CliHerdrAutomation implements HerdrAutomation {
 	async prepareTask(args: string[], signal?: AbortSignal): Promise<void> {
 		const [binary] = args;
 		if (!binary) throw new Error("Child Pi command is empty");
-		await runCommand(binary, ["--version"], signal);
+		const modelIndex = args.indexOf("--model");
+		const model = modelIndex >= 0 ? args[modelIndex + 1] : undefined;
+		await runCommand(binary, ["--list-models", ...(model ? [model] : []), "--offline"], signal);
 	}
 
 	async runTask(request: RunTaskRequest): Promise<void> {
@@ -243,6 +247,13 @@ export class CliHerdrAutomation implements HerdrAutomation {
 	async paneExists(paneId: string, signal?: AbortSignal): Promise<boolean> {
 		try { await runCommand(this.binary, ["pane", "get", paneId], signal); return true; }
 		catch { return false; }
+	}
+
+	async isTaskRunning(paneId: string, signal?: AbortSignal): Promise<boolean> {
+		try {
+			const response = parseResponse(await runCommand(this.binary, ["pane", "process-info", "--pane", paneId], signal), "herdr pane process-info");
+			return (response.result?.process_info?.foreground_processes ?? []).some((process) => process.name === "pi" || process.argv?.[0]?.endsWith("/pi") || process.argv?.[0] === "pi");
+		} catch { return false; }
 	}
 
 	async closeTab(tabId: string, signal?: AbortSignal): Promise<void> {

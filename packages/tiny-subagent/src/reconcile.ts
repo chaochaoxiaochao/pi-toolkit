@@ -36,7 +36,7 @@ export async function reconcileSubagentRuns(cwd: string, herdr: HerdrAutomation)
 					if (report.question) task.question = report.question;
 					await writeJsonAtomic(taskFile, task);
 					result.settledTasks += 1;
-				} else if (task.paneId && await herdr.paneExists(task.paneId)) { result.liveTasks += 1; runLiveTasks += 1; }
+				} else if (task.paneId && await herdr.isTaskRunning(task.paneId)) { result.liveTasks += 1; runLiveTasks += 1; }
 				else {
 					task.status = "interrupted";
 					task.error = "Child pane disappeared before a structured report was recorded.";

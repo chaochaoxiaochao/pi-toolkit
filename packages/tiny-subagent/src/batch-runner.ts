@@ -173,7 +173,15 @@ export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOpt
 		const summary = blocked ? `${blocked.name} needs input: ${blocked.question}` : failed ? `${tasks.length - failed}/${tasks.length} tasks completed; ${failed} failed.` : `${tasks.length}/${tasks.length} tasks completed.`;
 		return { ok: status === "completed", status, runId, label: options.label, requestedConcurrency, effectiveConcurrency, tasks: settledResults, activity, summary, documents, recordDirectory: runDirectory, tabId };
 	} catch (error) {
-		Object.assign(runRecord, { status: "failed", completedAt: timestamp(), error: error instanceof Error ? error.message : String(error) });
+		const message = error instanceof Error ? error.message : String(error);
+		for (const context of taskContexts) {
+			const taskRecord = context.taskRecord;
+			if (taskRecord.status !== "queued" && taskRecord.status !== "starting") continue;
+			Object.assign(taskRecord, { status: "failed", completedAt: timestamp(), error: message });
+			await writeJson(context.taskFile, taskRecord);
+			if (!existsSync(context.reportFile)) await writeJson(context.reportFile, { status: "failed", summary: `${taskRecord.name} failed before starting.`, documents: [], error: message, reportedAt: timestamp() });
+		}
+		Object.assign(runRecord, { status: "failed", completedAt: timestamp(), error: message });
 		await writeJson(runFile, runRecord);
 		throw error;
 	} finally {

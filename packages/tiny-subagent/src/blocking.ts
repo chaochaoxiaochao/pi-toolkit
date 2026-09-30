@@ -80,13 +80,21 @@ export async function respondToBlockedTask(cwd: string, runId: string, answer: s
 		}
 	}
 	const finalTasks = await Promise.all(taskDirectories.map((directory) => readJson(join(directory, "task.json"))));
+	const finalReports = await Promise.all(taskDirectories.map(async (directory) => {
+		try { return await readJson(join(directory, "report.json")); }
+		catch { return { status: "failed", summary: "Task failed without a structured report.", documents: [] }; }
+	}));
 	const statuses = finalTasks.map((entry) => entry.status);
 	const runStatus = statuses.some((value) => value === "blocked" || value === "queued" || value === "running") ? "blocked" : statuses.some((value) => value === "failed") ? (statuses.some((value) => value === "completed") ? "partial" : "failed") : "completed";
-	Object.assign(run, { status: runStatus, ...(runStatus === "blocked" ? { updatedAt: new Date().toISOString() } : { completedAt: new Date().toISOString() }) });
+	const blockedIndex = finalTasks.findIndex((entry) => entry.status === "blocked");
+	const currentBlockedReport = blockedIndex >= 0 ? finalReports[blockedIndex] : undefined;
+	Object.assign(run, { status: runStatus, ...(runStatus === "blocked" ? { question: currentBlockedReport?.question, updatedAt: new Date().toISOString() } : { completedAt: new Date().toISOString() }) });
 	await writeJson(runFile, run);
 	if (runStatus !== "blocked" && run.tabId) {
 		if (await herdr.isTabFocused(run.tabId)) void herdr.waitForTabUnfocused(run.tabId).then(() => herdr.closeTab(run.tabId)).catch(() => undefined);
 		else await herdr.closeTab(run.tabId);
 	}
-	return { runId, status: runStatus === "partial" ? "failed" : runStatus, summary: runStatus === "completed" ? "All tasks completed after the answer." : report.summary, ...(report.question ? { question: report.question } : {}), documents: report.documents, recordDirectory: taskDirectory };
+	const summary = runStatus === "completed" ? "All tasks completed after the answer." : runStatus === "blocked" ? `${finalTasks[blockedIndex]?.name ?? "Task"} needs input: ${currentBlockedReport?.question ?? "Input required."}` : finalReports.map((entry, index) => `${finalTasks[index].name}: ${entry.summary}`).join("\n");
+	const documents = finalReports.flatMap((entry) => entry.documents ?? []);
+	return { runId, status: runStatus === "partial" ? "failed" : runStatus, summary, ...(currentBlockedReport?.question ? { question: currentBlockedReport.question } : {}), documents, recordDirectory: taskDirectory };
 }
