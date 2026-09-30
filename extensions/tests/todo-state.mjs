@@ -1,11 +1,25 @@
 import assert from "node:assert/strict";
 import {
+	activeTodoRows,
 	activeTodos,
 	applyTodoAction,
 	restoreTodoState,
 } from "../todo-state.ts";
 
 const empty = { todos: [], nextId: 1 };
+
+assert.deepEqual(
+	activeTodoRows([
+		{ id: 8, text: "closed", status: "done" },
+		{ id: 9, text: "current", status: "doing" },
+		{ id: 11, text: "next", status: "todo" },
+	]).map(({ position, todo }) => ({ position, id: todo.id })),
+	[
+		{ position: 1, id: 9 },
+		{ position: 2, id: 11 },
+	],
+	"active rows expose contiguous queue positions independently of internal IDs",
+);
 
 const replaced = applyTodoAction(empty, {
 	action: "replace",

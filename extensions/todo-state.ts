@@ -19,6 +19,11 @@ export interface TodoState {
 	nextId: number;
 }
 
+export interface ActiveTodoRow {
+	position: number;
+	todo: Todo;
+}
+
 export interface TodoActionInput {
 	action: TodoAction;
 	text?: string;
@@ -71,6 +76,10 @@ export function countTodoStatuses(todos: Todo[]): TodoCounts {
 
 export function activeTodos(todos: Todo[]): Todo[] {
 	return todos.filter((todo) => todo.status === "doing" || todo.status === "todo");
+}
+
+export function activeTodoRows(todos: Todo[]): ActiveTodoRow[] {
+	return activeTodos(todos).map((todo, index) => ({ position: index + 1, todo }));
 }
 
 function cloneState(state: TodoState): TodoState {

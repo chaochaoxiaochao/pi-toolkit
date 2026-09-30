@@ -1,3 +1,7 @@
+## Unreleased
+
+- show contiguous queue positions in the persistent todo widget while keeping stable task IDs in tool output and `/todos`
+
 ## 2026-09-30 - v0.9.1
 
 - redesign the todo lifecycle with plan replacement, cancellation, automatic advancement, active-only widget rendering, concise model guidance, and deterministic state tests

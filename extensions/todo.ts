@@ -9,7 +9,7 @@ import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-c
 import { matchesKey, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
-	activeTodos,
+	activeTodoRows,
 	applyTodoAction,
 	countTodoStatuses,
 	normalizeTodo,
@@ -80,6 +80,11 @@ function renderTodoLine(theme: Theme, todo: Todo): string {
 	return `${icon} ${theme.fg("accent", `#${todo.id}`)} ${theme.fg("text", todo.text)}`;
 }
 
+function renderActiveTodoLine(theme: Theme, todo: Todo, position: number): string {
+	const icon = themedStatus(theme, todo.status, statusMarker(todo.status));
+	return `${icon} ${theme.fg("accent", `${position}.`)} ${theme.fg("text", todo.text)}`;
+}
+
 class TodoListComponent {
 	private cachedWidth?: number;
 	private cachedLines?: string[];
@@ -134,7 +139,7 @@ export default function (pi: ExtensionAPI) {
 
 	const refreshUI = (ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
-		const visible = activeTodos(state.todos);
+		const visible = activeTodoRows(state.todos);
 		if (visible.length === 0) {
 			ctx.ui.setWidget(WIDGET_KEY, undefined);
 			return;
@@ -146,7 +151,7 @@ export default function (pi: ExtensionAPI) {
 				render(width: number): string[] {
 					return [
 						truncateToWidth(`${theme.fg("accent", "●")} ${theme.fg("muted", taskSummary(state.todos))}`, width),
-						...sortedTodos(visible).map((todo) => truncateToWidth(`  ${renderTodoLine(theme, todo)}`, width)),
+						...visible.map(({ position, todo }) => truncateToWidth(`  ${renderActiveTodoLine(theme, todo, position)}`, width)),
 					];
 				},
 				invalidate() {},
