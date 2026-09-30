@@ -12,10 +12,10 @@ import { historyText, listSubagentHistory } from "../src/history.ts";
 import { loadQueuedRuns, persistQueuedRun, removeQueuedRun } from "../src/queued-runs.ts";
 import { reconcileSubagentRuns } from "../src/reconcile.ts";
 import { continueQueuedRun } from "../src/continue-run.ts";
-import { executeTinySubagent, type TinySubagentBatchDetails, type TinySubagentDetails, type TinySubagentToolParams } from "../src/tool.ts";
+import { executeHerdrSubagents, type HerdrSubagentsBatchDetails, type HerdrSubagentsDetails, type HerdrSubagentsToolParams } from "../src/tool.ts";
 
 const ACTIONS = ["list"] as const;
-const TinySubagentParams = Type.Union([
+const HerdrSubagentsParams = Type.Union([
 	Type.Object({
 		action: StringEnum(ACTIONS, { description: "Discover package-local personas before execution." }),
 	}),
@@ -50,33 +50,43 @@ const TinySubagentParams = Type.Union([
 const packageAgentsDir = fileURLToPath(new URL("../agents/", import.meta.url));
 
 export default function (pi: ExtensionAPI) {
-	if (process.env.PI_SUBAGENT_CHILD === "1") return;
-	let activeBatch: TinySubagentBatchDetails | undefined;
+	if (process.env.PI_HERDR_SUBAGENTS_CHILD === "1") return;
+	let activeBatch: HerdrSubagentsBatchDetails | undefined;
 	const herdr = new CliHerdrAutomation();
 	const dispatcher = new RunDispatcher();
 	const notifyRun = (runId: string, result: { details: unknown; content?: Array<{ type: string; text?: string }> }) => {
-		const details = result.details as Partial<TinySubagentBatchDetails> & { errorMessage?: string };
+		const details = result.details as Partial<HerdrSubagentsBatchDetails> & { errorMessage?: string };
 		if (!details.tasks || !details.documents || !details.status) {
 			const error = details.errorMessage ?? result.content?.find((item) => item.type === "text")?.text ?? "Unknown Subagent failure.";
-			pi.sendMessage({ customType: "tiny-subagents-run", content: `Subagent run ${runId} failed: ${error}`, display: true, details: { runId, status: "failed" } }, { triggerTurn: true, deliverAs: "followUp" });
+			pi.sendMessage({ customType: "herdr-subagents-run", content: `Subagent run ${runId} failed: ${error}`, display: true, details: { runId, status: "failed" } }, { triggerTurn: true, deliverAs: "followUp" });
 			return;
 		}
 		const lines = [`Subagent run ${runId} ${details.status}: ${details.summary}`, ...details.tasks.map((task) => `- ${task.name}: ${task.summary}`)];
 		if (details.documents.length) lines.push("Documents:", ...details.documents.map((document) => `- ${document.description}: ${document.path}`));
-		pi.sendMessage({ customType: "tiny-subagents-run", content: lines.join("\n"), display: true, details: { runId, status: details.status } }, { triggerTurn: true, deliverAs: "followUp" });
+		pi.sendMessage({ customType: "herdr-subagents-run", content: lines.join("\n"), display: true, details: { runId, status: details.status } }, { triggerTurn: true, deliverAs: "followUp" });
 	};
 
 	pi.on("session_shutdown", () => { dispatcher.pause(); });
 	pi.on("session_start", async (_event, ctx) => {
 		dispatcher.pause();
-		const reconciliation = await reconcileSubagentRuns(ctx.cwd, herdr);
+		let reconciliation;
+		try { reconciliation = await reconcileSubagentRuns(ctx.cwd, herdr); }
+		catch (error) { ctx.ui.notify(`Subagent recovery could not inspect Herdr: ${error instanceof Error ? error.message : String(error)}`, "error"); return; }
 		const known = new Set([dispatcher.snapshot().activeRunId, ...dispatcher.snapshot().queuedRunIds].filter(Boolean));
-		const archived = new Set((await listSubagentHistory(ctx.cwd)).map((run) => run.id));
+		const archivedRuns = await listSubagentHistory(ctx.cwd);
+		const archived = new Map(archivedRuns.map((run) => [run.id, run]));
 		for (const queued of await loadQueuedRuns(ctx.cwd)) {
 			if (known.has(queued.runId)) continue;
-			if (archived.has(queued.runId)) { await removeQueuedRun(ctx.cwd, queued.runId); continue; }
+			const archivedRun = archived.get(queued.runId);
+			if (archivedRun) {
+				if (["completed", "partial", "failed", "blocked", "interrupted"].includes(archivedRun.status)) {
+					notifyRun(archivedRun.id, { details: { status: archivedRun.status, summary: `Recovered Subagent run ${archivedRun.status}.`, tasks: archivedRun.tasks.map((task) => ({ name: task.name, summary: task.summary ?? task.status })), documents: archivedRun.tasks.flatMap((task) => task.documents) } });
+					await removeQueuedRun(ctx.cwd, queued.runId);
+				}
+				continue;
+			}
 			void dispatcher.submit(queued.runId, async () => {
-				const result = await executeTinySubagent(queued.params, undefined, undefined, ctx, { agentsDirectory: packageAgentsDir });
+				const result = await executeHerdrSubagents(queued.params, undefined, undefined, ctx, { agentsDirectory: packageAgentsDir });
 				if ((result.details as { runId?: string }).runId === queued.runId) await removeQueuedRun(ctx.cwd, queued.runId);
 				notifyRun(queued.runId, result);
 				return result;
@@ -86,10 +96,18 @@ export default function (pi: ExtensionAPI) {
 			for (const run of await listSubagentHistory(ctx.cwd)) {
 				if (run.status !== "queued") continue;
 				try {
-					await continueQueuedRun(run.recordDirectory, herdr);
+					await continueQueuedRun(run.recordDirectory, herdr, { onStalled: (message) => ctx.ui.notify(message, "warning") });
 					const updated = (await listSubagentHistory(ctx.cwd)).find((candidate) => candidate.id === run.id);
-					notifyRun(run.id, { details: { status: updated?.status ?? "failed", summary: `Recovered Subagent run ${updated?.status ?? "failed"}.`, tasks: (updated?.tasks ?? []).map((task) => ({ name: task.name, summary: task.summary ?? task.status })), documents: [] } });
+					notifyRun(run.id, { details: { status: updated?.status ?? "failed", summary: `Recovered Subagent run ${updated?.status ?? "failed"}.`, tasks: (updated?.tasks ?? []).map((task) => ({ name: task.name, summary: task.summary ?? task.status })), documents: (updated?.tasks ?? []).flatMap((task) => task.documents) } });
+					await removeQueuedRun(ctx.cwd, run.id);
 				} catch (error) { notifyRun(run.id, { details: { errorMessage: error instanceof Error ? error.message : String(error) } }); }
+			}
+			const latestRuns = new Map((await listSubagentHistory(ctx.cwd)).map((run) => [run.id, run]));
+			for (const queued of await loadQueuedRuns(ctx.cwd)) {
+				const run = latestRuns.get(queued.runId);
+				if (!run || !["completed", "partial", "failed", "blocked", "interrupted"].includes(run.status)) continue;
+				notifyRun(run.id, { details: { status: run.status, summary: `Recovered Subagent run ${run.status}.`, tasks: run.tasks.map((task) => ({ name: task.name, summary: task.summary ?? task.status })), documents: run.tasks.flatMap((task) => task.documents) } });
+				await removeQueuedRun(ctx.cwd, run.id);
 			}
 		};
 		if (reconciliation.liveTasks === 0) { await continuePersistedTasks(); dispatcher.resume(); }
@@ -106,25 +124,25 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
-		name: "tiny_subagents",
-		label: "Tiny Subagent",
+		name: "herdr_subagents",
+		label: "Herdr Subagents",
 		description: "Run one focused task or an ordered bounded-concurrency batch synchronously in a visible Herdr tab. Returns compact reports while complete results and Pi sessions stay in project-local records.",
 		promptSnippet: "Run focused work in visible Herdr subagents",
 		promptGuidelines: ["Call action=list once before the first execution. Submit one prompt or an ordered tasks list; use concurrency only for independent read-only tasks. Foreground calls block until the run settles; background calls return a run ID immediately."],
-		parameters: TinySubagentParams,
+		parameters: HerdrSubagentsParams,
 
-		async execute(_toolCallId, params: TinySubagentToolParams, signal, onUpdate, ctx) {
+		async execute(_toolCallId, params: HerdrSubagentsToolParams, signal, onUpdate, ctx) {
 			if (!params.action && params.prompt && !params.tasks) {
 				params.tasks = [{ name: params.label?.trim() || params.agent?.trim() || "task", prompt: params.prompt, agent: params.agent, model: params.model }];
 				params.label ??= params.agent?.trim() || "task";
 			}
 			const runSignal = params.background ? undefined : signal;
-			const executeRun = async () => await executeTinySubagent(params, runSignal, (update) => {
-				const details = update.details as TinySubagentBatchDetails | undefined;
+			const executeRun = async () => await executeHerdrSubagents(params, runSignal, (update) => {
+				const details = update.details as HerdrSubagentsBatchDetails | undefined;
 				if (details?.activity) {
 					activeBatch = details;
 					const counts = activityCounts(details);
-					ctx.ui.setWidget("tiny-subagents", [`Subagents · ${details.label}`, `running ${counts.running} · queued ${counts.queued} · blocked ${counts.blocked} · failed ${counts.failed} · completed ${counts.completed} · queued runs ${dispatcher.snapshot().queuedRunIds.length}`]);
+					ctx.ui.setWidget("herdr-subagents", [`Subagents · ${details.label}`, `running ${counts.running} · queued ${counts.queued} · blocked ${counts.blocked} · failed ${counts.failed} · completed ${counts.completed} · queued runs ${dispatcher.snapshot().queuedRunIds.length}`]);
 				}
 				const updateText = update.content.find((item) => item.type === "text")?.text;
 				if (params.background && updateText?.includes("appears stalled")) ctx.ui.notify(updateText, "warning");
@@ -132,7 +150,7 @@ export default function (pi: ExtensionAPI) {
 			}, ctx, { agentsDirectory: packageAgentsDir });
 			if (!params.tasks) {
 				const result = await executeRun();
-				if (params.action === "respond" && (result.details as { status?: string }).status !== "blocked") { activeBatch = undefined; ctx.ui.setWidget("tiny-subagents", undefined); }
+				if (params.action === "respond" && (result.details as { status?: string }).status !== "blocked") { activeBatch = undefined; ctx.ui.setWidget("herdr-subagents", undefined); }
 				return result;
 			}
 			const runId = randomUUID();
@@ -141,42 +159,42 @@ export default function (pi: ExtensionAPI) {
 			const promise = dispatcher.submit(runId, async () => {
 				const result = await executeRun();
 				if (params.background && (result.details as { runId?: string }).runId === runId) await removeQueuedRun(ctx.cwd, runId);
-				const details = result.details as TinySubagentBatchDetails;
+				const details = result.details as HerdrSubagentsBatchDetails;
 				activeBatch = details.status === "blocked" ? details : undefined;
 				if (activeBatch) {
 					const counts = activityCounts(activeBatch);
-					ctx.ui.setWidget("tiny-subagents", [`Subagents · ${activeBatch.label}`, `running ${counts.running} · queued ${counts.queued} · blocked ${counts.blocked} · failed ${counts.failed} · completed ${counts.completed}`]);
+					ctx.ui.setWidget("herdr-subagents", [`Subagents · ${activeBatch.label}`, `running ${counts.running} · queued ${counts.queued} · blocked ${counts.blocked} · failed ${counts.failed} · completed ${counts.completed}`]);
 				}
 				return result;
 			});
 			if (params.background) {
-				ctx.ui.setWidget("tiny-subagents", [`Subagent run ${runId.slice(0, 8)} queued`, `queued runs ${dispatcher.snapshot().queuedRunIds.length}`]);
+				ctx.ui.setWidget("herdr-subagents", [`Subagent run ${runId.slice(0, 8)} queued`, `queued runs ${dispatcher.snapshot().queuedRunIds.length}`]);
 				void promise.then((result) => {
 					notifyRun(runId, result);
-					if (!activeBatch && !dispatcher.snapshot().activeRunId && dispatcher.snapshot().queuedRunIds.length === 0) ctx.ui.setWidget("tiny-subagents", undefined);
+					if (!activeBatch && !dispatcher.snapshot().activeRunId && dispatcher.snapshot().queuedRunIds.length === 0) ctx.ui.setWidget("herdr-subagents", undefined);
 				}).catch((error) => {
-					pi.sendMessage({ customType: "tiny-subagents-run", content: `Subagent run ${runId} failed: ${error instanceof Error ? error.message : String(error)}`, display: true, details: { runId, status: "failed" } }, { triggerTurn: true, deliverAs: "followUp" });
+					pi.sendMessage({ customType: "herdr-subagents-run", content: `Subagent run ${runId} failed: ${error instanceof Error ? error.message : String(error)}`, display: true, details: { runId, status: "failed" } }, { triggerTurn: true, deliverAs: "followUp" });
 				});
 				return { content: [{ type: "text" as const, text: `Subagent run queued: ${runId}` }], details: { runId, status: "queued", background: true } };
 			}
 			const result = await promise;
-			if (!activeBatch && !dispatcher.snapshot().activeRunId && dispatcher.snapshot().queuedRunIds.length === 0) ctx.ui.setWidget("tiny-subagents", undefined);
+			if (!activeBatch && !dispatcher.snapshot().activeRunId && dispatcher.snapshot().queuedRunIds.length === 0) ctx.ui.setWidget("herdr-subagents", undefined);
 			return result;
 		},
 
 		renderCall(args, theme) {
-			if (args.action === "list") return new Text(theme.fg("toolTitle", theme.bold("tiny_subagents list")), 0, 0);
-			if (args.action === "respond") return new Text(`${theme.fg("toolTitle", theme.bold("tiny_subagents respond"))} ${theme.fg("muted", String(args.runId))}`, 0, 0);
-			if (args.tasks) return new Text(`${theme.fg("toolTitle", theme.bold("tiny_subagents"))} ${theme.fg("accent", `${args.tasks.length} tasks`)}${theme.fg("muted", ` · concurrency ${args.concurrency ?? "default"}`)}`, 0, 0);
+			if (args.action === "list") return new Text(theme.fg("toolTitle", theme.bold("herdr_subagents list")), 0, 0);
+			if (args.action === "respond") return new Text(`${theme.fg("toolTitle", theme.bold("herdr_subagents respond"))} ${theme.fg("muted", String(args.runId))}`, 0, 0);
+			if (args.tasks) return new Text(`${theme.fg("toolTitle", theme.bold("herdr_subagents"))} ${theme.fg("accent", `${args.tasks.length} tasks`)}${theme.fg("muted", ` · concurrency ${args.concurrency ?? "default"}`)}`, 0, 0);
 			const agent = args.agent || "worker";
 			const label = args.label ? ` · ${String(args.label)}` : "";
 			const prompt = args.prompt ? String(args.prompt).replace(/\s+/g, " ") : "...";
 			const preview = prompt.length > 80 ? `${prompt.slice(0, 80)}...` : prompt;
-			return new Text(`${theme.fg("toolTitle", theme.bold("tiny_subagents"))} ${theme.fg("accent", agent)}${theme.fg("muted", label)}\n  ${theme.fg("dim", preview)}`, 0, 0);
+			return new Text(`${theme.fg("toolTitle", theme.bold("herdr_subagents"))} ${theme.fg("accent", agent)}${theme.fg("muted", label)}\n  ${theme.fg("dim", preview)}`, 0, 0);
 		},
 
 		renderResult(result, { isPartial }, theme) {
-			const batch = result.details as TinySubagentBatchDetails | undefined;
+			const batch = result.details as HerdrSubagentsBatchDetails | undefined;
 			if (batch?.tasks && "effectiveConcurrency" in batch) {
 				const container = new Container();
 				const color = isPartial ? "warning" : batch.ok ? "success" : "error";
@@ -184,7 +202,7 @@ export default function (pi: ExtensionAPI) {
 				for (const task of batch.tasks) container.addChild(new Text(`${task.status === "completed" ? "✓" : "✗"} ${task.name}: ${task.summary}`, 0, 0));
 				return container;
 			}
-			const details = result.details as TinySubagentDetails | undefined;
+			const details = result.details as HerdrSubagentsDetails | undefined;
 			if (!details?.agent) {
 				const content = result.content[0];
 				return new Text(content?.type === "text" ? content.text : "(no output)", 0, 0);
@@ -204,7 +222,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerCommand("subagents", {
+	pi.registerCommand("herdr-subagents", {
 		description: "Inspect effective subagent agents, models, and settings",
 		getArgumentCompletions: (prefix) => ["active", "history", "agents", "models", "settings", "focus "].filter((value) => value.startsWith(prefix)).map((value) => ({ value, label: value })),
 		handler: async (args, ctx) => {
@@ -243,7 +261,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(lines.join("\n"), "info");
 				return;
 			}
-			ctx.ui.notify("Usage: /subagents active|history|focus <task-number>|agents|models|settings", "warning");
+			ctx.ui.notify("Usage: /herdr-subagents active|history|focus <task-number>|agents|models|settings", "warning");
 		},
 	});
 }

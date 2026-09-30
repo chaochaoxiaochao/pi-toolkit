@@ -1,13 +1,13 @@
 import { existsSync, readdirSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import type { TinySubagentToolParams } from "./tool.ts";
+import type { HerdrSubagentsToolParams } from "./tool.ts";
 import { writeJsonAtomic } from "./state.ts";
 
-export interface QueuedRunRecord { runId: string; cwd: string; params: TinySubagentToolParams; queuedAt: string; }
+export interface QueuedRunRecord { runId: string; cwd: string; params: HerdrSubagentsToolParams; queuedAt: string; }
 function queueDirectory(cwd: string): string { return join(cwd, ".pi", "herdr-subagents", "queue"); }
 
-export async function persistQueuedRun(cwd: string, runId: string, params: TinySubagentToolParams): Promise<void> {
+export async function persistQueuedRun(cwd: string, runId: string, params: HerdrSubagentsToolParams): Promise<void> {
 	const directory = queueDirectory(cwd);
 	await mkdir(directory, { recursive: true, mode: 0o700 });
 	await writeJsonAtomic(join(directory, `${runId}.json`), { runId, cwd, params: { ...params, runId, background: true }, queuedAt: new Date().toISOString() });

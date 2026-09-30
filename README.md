@@ -95,22 +95,22 @@ The bundled `tapd` skill documents the third-party `tapd` CLI ([studyzy/tapd-ai-
 
 The bundled `calldiff` skill (copied verbatim from [tanishqkancharla/calldiff](https://github.com/tanishqkancharla/calldiff), MIT, pinned to a `main` commit because upstream has no release tags) teaches call-stack diffs across git commits: `diff` shows which callees appeared, disappeared, or moved under an entrypoint, `tree` prints one call tree, and `reach` finds call paths between two symbols, all with `--entry`/`--file` entrypoint selection, `--locs` source locations, and `--format json` for agents.
 
-## Tiny Subagent
+## Herdr Subagents
 
-The tiny subagent is a separate npm package. Install it independently when you want the `tiny_subagents` tool:
+Herdr Subagents is a separate npm package. Install it independently when you want the `herdr_subagents` tool:
 
 ```bash
-pi install npm:@maxiaochao/pi-tiny-subagent
+pi install npm:@maxiaochao/pi-herdr-subagents
 ```
 
 It is not included in the root package's `pi.extensions` list. The two packages have independent versions, release tags, and update commands:
 
 ```bash
 pi update npm:@maxiaochao/pi-toolkit
-pi update npm:@maxiaochao/pi-tiny-subagent
+pi update npm:@maxiaochao/pi-herdr-subagents
 ```
 
-See [packages/tiny-subagent/README.md](packages/tiny-subagent/README.md) for configurable worker/explorer/reviewer personas, bounded foreground/background Herdr batches, blocking and resume, compact history, and interruption recovery.
+See [packages/herdr-subagents/README.md](packages/herdr-subagents/README.md) for configurable worker/explorer/reviewer personas, bounded foreground/background Herdr batches, blocking and resume, compact history, and interruption recovery.
 
 ## Codex Edit (apply_patch)
 

@@ -1,9 +1,9 @@
-name: publish tiny subagent
+name: publish herdr subagents
 
 on:
   push:
     tags:
-      - "tiny-subagent-v*"
+      - "herdr-subagents-v*"
 
 jobs:
   publish:
@@ -19,12 +19,12 @@ jobs:
           scope: ""
       - name: Verify tag matches package version
         run: |
-          PACKAGE_VERSION=$(node -p "require('./packages/tiny-subagent/package.json').version")
-          test "$GITHUB_REF_NAME" = "tiny-subagent-v$PACKAGE_VERSION"
-      - name: Run tiny subagent tests
-        run: npm test --prefix packages/tiny-subagent
-      - name: Publish tiny subagent to npm
-        working-directory: packages/tiny-subagent
+          PACKAGE_VERSION=$(node -p "require('./packages/herdr-subagents/package.json').version")
+          test "$GITHUB_REF_NAME" = "herdr-subagents-v$PACKAGE_VERSION"
+      - name: Run Herdr Subagents tests
+        run: npm test --prefix packages/herdr-subagents
+      - name: Publish Herdr Subagents to npm
+        working-directory: packages/herdr-subagents
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

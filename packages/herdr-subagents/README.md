@@ -1,4 +1,4 @@
-# @maxiaochao/pi-tiny-subagent
+# @maxiaochao/pi-herdr-subagents
 
 A Pi extension that runs focused synchronous or background subagent batches in visible Herdr tabs. Children have fresh Pi contexts; full answers and sessions stay in project-local records while the parent receives only concise summaries and document paths.
 
@@ -7,23 +7,23 @@ A Pi extension that runs focused synchronous or background subagent batches in v
 Run Pi inside Herdr, then install the package:
 
 ```bash
-pi install npm:@maxiaochao/pi-tiny-subagent
+pi install npm:@maxiaochao/pi-herdr-subagents
 ```
 
-The package registers one tool, `tiny_subagents`. Calls outside a Herdr workspace fail without starting a child.
+The package registers one tool, `herdr_subagents`. Calls outside a Herdr workspace fail without starting a child.
 
 ## Usage
 
 Discover the effective personas first:
 
 ```text
-tiny_subagents({ action: "list" })
+herdr_subagents({ action: "list" })
 ```
 
 Then run one self-contained task:
 
 ```text
-tiny_subagents({
+herdr_subagents({
   agent: "worker",
   label: "auth-review",
   prompt: "Inspect the authentication flow and summarize the risks"
@@ -33,7 +33,7 @@ tiny_subagents({
 Or submit an ordered synchronous batch:
 
 ```text
-tiny_subagents({
+herdr_subagents({
   label: "security-review",
   concurrency: 3,
   tasks: [
@@ -48,20 +48,20 @@ Set `background: true` to return a stable run ID immediately while the queue con
 A child missing required information reports `needs-input` with an exact question. The run becomes blocked, keeps its Herdr tab, pane, partial report, and Pi session, and returns control to the parent. Answer through the same tool to continue the original session:
 
 ```text
-tiny_subagents({ action: "respond", runId: "<run-id>", answer: "Use the main branch." })
+herdr_subagents({ action: "respond", runId: "<run-id>", answer: "Use the main branch." })
 ```
 
-`/subagents focus <task-number>` can also open the blocked pane for direct manual interaction.
+`/herdr-subagents focus <task-number>` can also open the blocked pane for direct manual interaction.
 
 ## History
 
-Run `/subagents history` or `tiny_subagents({ action: "history" })` to list compact project-local run and task reports after Herdr tabs close. Full results, described documents, artifacts, and persistent Pi sessions remain separate on disk and are not loaded into parent context.
+Run `/herdr-subagents history` or `herdr_subagents({ action: "history" })` to list compact project-local run and task reports after Herdr tabs close. Full results, described documents, artifacts, and persistent Pi sessions remain separate on disk and are not loaded into parent context.
 
-Continue a saved conversation in a new Herdr tab with `tiny_subagents({ action: "resume", runId: "<run-id>", task: 1, prompt: "Follow up..." })`. Remove only a selected archive with `tiny_subagents({ action: "cleanup", runId: "<run-id>" })`. History has no automatic count-based eviction. The extension adds the runtime path to local Git excludes when available (and otherwise uses `.pi/.gitignore`) without overwriting unrelated rules.
+Continue a saved conversation in a new Herdr tab with `herdr_subagents({ action: "resume", runId: "<run-id>", task: 1, prompt: "Follow up..." })`. Remove only a selected archive with `herdr_subagents({ action: "cleanup", runId: "<run-id>" })`. History has no automatic count-based eviction. The extension adds the runtime path to local Git excludes when available (and otherwise uses `.pi/.gitignore`) without overwriting unrelated rules.
 
 Read-only tasks start FIFO up to the configured concurrency limit. Worker panes are reused as tasks settle, results remain in input order, and one failed task does not cancel its siblings. Any batch containing a write-capable persona is forced to concurrency one.
 
-While a run is active, the parent widget shows running, queued, blocked, failed, and completed counts. `/subagents active` shows the compact task list, and `/subagents focus <task-number>` jumps to the exact active Herdr pane without copying its transcript into Pi. Tab and pane labels track progress and stable task order. Completed tabs close immediately when unfocused; a tab being inspected waits until focus leaves.
+While a run is active, the parent widget shows running, queued, blocked, failed, and completed counts. `/herdr-subagents active` shows the compact task list, and `/herdr-subagents focus <task-number>` jumps to the exact active Herdr pane without copying its transcript into Pi. Tab and pane labels track progress and stable task order. Completed tabs close immediately when unfocused; a tab being inspected waits until focus leaves.
 
 Foreground calls block until all children report completion, failure, or a request for input. Each run creates one unfocused Herdr tab in the current workspace, starts visible Pi tasks in a bounded number of reusable panes, and closes the tab after the run settles unless it is focused or blocked.
 
@@ -86,8 +86,8 @@ The task directory contains the full result, structured report, task metadata, s
 
 The package includes `worker` (write access), `explorer` (read access), and `reviewer` (read access). Persona definitions are discovered in this order, with the first available higher-precedence definition replacing the lower one:
 
-1. `.pi/subagents/agents/*.md` in the project
-2. `~/.pi/agent/subagents/agents/*.md` globally
+1. `.pi/herdr-subagents/agents/*.md` in the project
+2. `~/.pi/agent/herdr-subagents/agents/*.md` globally
 3. this package's `agents/*.md`
 
 A custom persona without `access` is treated as write-capable. Definitions may set `access`, `model`, `thinking`, `tools`, and `skills` in frontmatter.
@@ -112,7 +112,7 @@ Supported frontmatter:
 - `access` is `read` or `write`; omitted custom values default to `write`.
 - `thinking` and `skills` provide persona defaults.
 
-Global settings live at `~/.pi/agent/subagents.json`; project overrides live at `.pi/subagents.json`. Both support `defaultConcurrency`, `maxConcurrency`, `stalledWarningSeconds`, `defaultModel`, and a `personas` object whose entries can override `model`, `thinking`, and `skills`.
+Global settings live at `~/.pi/agent/herdr-subagents.json`; project overrides live at `.pi/herdr-subagents.json`. Both support `defaultConcurrency`, `maxConcurrency`, `stalledWarningSeconds`, `defaultModel`, and a `personas` object whose entries can override `model`, `thinking`, and `skills`.
 
 ```json
 {
@@ -124,7 +124,7 @@ Global settings live at `~/.pi/agent/subagents.json`; project overrides live at 
 }
 ```
 
-Project values override global values recursively. Model resolution is: task override, project persona setting, global persona setting, persona frontmatter, global/project default model, then parent model. Run `/subagents agents`, `/subagents models`, or `/subagents settings` to inspect effective values and their sources.
+Project values override global values recursively. Model resolution is: task override, project persona setting, global persona setting, persona frontmatter, global/project default model, then parent model. Run `/herdr-subagents agents`, `/herdr-subagents models`, or `/herdr-subagents settings` to inspect effective values and their sources.
 
 ## Recovery and failures
 

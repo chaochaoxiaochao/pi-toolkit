@@ -150,7 +150,7 @@ function shellQuote(value: string): string {
 export class CliHerdrAutomation implements HerdrAutomation {
 	private readonly binary: string;
 
-	constructor(binary = process.env.PI_TINY_SUBAGENT_HERDR_BINARY?.trim() || "herdr") {
+	constructor(binary = process.env.PI_HERDR_SUBAGENTS_HERDR_BINARY?.trim() || "herdr") {
 		this.binary = binary;
 	}
 
@@ -252,8 +252,20 @@ export class CliHerdrAutomation implements HerdrAutomation {
 	async isTaskRunning(paneId: string, signal?: AbortSignal): Promise<boolean> {
 		try {
 			const response = parseResponse(await runCommand(this.binary, ["pane", "process-info", "--pane", paneId], signal), "herdr pane process-info");
-			return (response.result?.process_info?.foreground_processes ?? []).some((process) => process.name === "pi" || process.argv?.[0]?.endsWith("/pi") || process.argv?.[0] === "pi");
-		} catch { return false; }
+			return (response.result?.process_info?.foreground_processes ?? []).some((process) => {
+				if (process.name === "pi") return true;
+				return (process.argv ?? []).some((argument) => {
+					const normalized = argument.replaceAll("\\", "/");
+					const file = normalized.split("/").at(-1);
+					return file === "pi" || (/pi-coding-agent/.test(normalized) && /(?:^|\/)cli\.js$/.test(normalized)) || /pi-coding-agent\/dist\/bundle\//.test(normalized);
+				});
+			});
+		} catch (error) {
+			if (error instanceof HerdrCommandError && /pane[_ -]?not[_ -]?found|unknown pane/i.test(`${error.message}\n${error.stderr}`)) return false;
+			// A transient control-plane failure must not cause reconciliation to
+			// mark a possibly-live child as interrupted.
+			return true;
+		}
 	}
 
 	async closeTab(tabId: string, signal?: AbortSignal): Promise<void> {

@@ -7,24 +7,24 @@ import { CliHerdrAutomation, retryBeforePrompt, type HerdrAutomation } from "./h
 import { ensureRuntimeIgnored } from "./history.ts";
 import { writeJsonAtomic } from "./state.ts";
 
-const CHILD_ENV = "PI_SUBAGENT_CHILD";
-const TASK_DIRECTORY_ENV = "PI_TINY_SUBAGENT_TASK_DIR";
+const CHILD_ENV = "PI_HERDR_SUBAGENTS_CHILD";
+const TASK_DIRECTORY_ENV = "PI_HERDR_SUBAGENTS_TASK_DIR";
 
-export interface TinySubagentDocument {
+export interface HerdrSubagentsDocument {
 	path: string;
 	description: string;
 }
 
-export interface TinySubagentReport {
+export interface HerdrSubagentsReport {
 	status: "completed" | "needs-input" | "failed";
 	summary: string;
-	documents: TinySubagentDocument[];
+	documents: HerdrSubagentsDocument[];
 	error?: string;
 	question?: string;
 	reportedAt?: string;
 }
 
-export interface TinySubagentOptions {
+export interface HerdrSubagentsOptions {
 	agent?: string;
 	label?: string;
 	model?: string;
@@ -36,14 +36,14 @@ export interface TinySubagentOptions {
 	cwd?: string;
 	signal?: AbortSignal;
 	herdr?: HerdrAutomation;
-	onUpdate?: (result: TinySubagentResult) => void;
+	onUpdate?: (result: HerdrSubagentsResult) => void;
 }
 
-export interface TinySubagentResult {
+export interface HerdrSubagentsResult {
 	ok: boolean;
 	status: "starting" | "running" | "blocked" | "completed" | "failed";
 	summary: string;
-	documents: TinySubagentDocument[];
+	documents: HerdrSubagentsDocument[];
 	output: string;
 	errorMessage?: string;
 	runId?: string;
@@ -90,7 +90,7 @@ interface TaskRecord {
 	error?: string;
 }
 
-function compactText(report: TinySubagentReport): string {
+function compactText(report: HerdrSubagentsReport): string {
 	const lines = [report.summary];
 	if (report.documents.length > 0) {
 		lines.push("", "Documents:", ...report.documents.map((document) => `- ${document.description}: ${document.path}`));
@@ -99,13 +99,13 @@ function compactText(report: TinySubagentReport): string {
 	return lines.join("\n");
 }
 
-function failure(cwd: string, startedAt: number, errorMessage: string, fields: Partial<TinySubagentResult> = {}): TinySubagentResult {
+function failure(cwd: string, startedAt: number, errorMessage: string, fields: Partial<HerdrSubagentsResult> = {}): HerdrSubagentsResult {
 	return {
 		ok: false,
 		status: "failed",
-		summary: "Tiny subagent failed.",
+		summary: "Herdr Subagents failed.",
 		documents: [],
-		output: `Tiny subagent failed.\nError: ${errorMessage}`,
+		output: `Herdr Subagents failed.\nError: ${errorMessage}`,
 		errorMessage,
 		cwd,
 		durationMs: Date.now() - startedAt,
@@ -117,7 +117,7 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 	await writeJsonAtomic(path, value);
 }
 
-function validReport(value: unknown): value is TinySubagentReport {
+function validReport(value: unknown): value is HerdrSubagentsReport {
 	if (!value || typeof value !== "object") return false;
 	const report = value as Record<string, unknown>;
 	if (report.status !== "completed" && report.status !== "needs-input" && report.status !== "failed") return false;
@@ -130,7 +130,7 @@ function validReport(value: unknown): value is TinySubagentReport {
 	});
 }
 
-async function readReport(path: string): Promise<TinySubagentReport | undefined> {
+async function readReport(path: string): Promise<HerdrSubagentsReport | undefined> {
 	if (!existsSync(path)) return undefined;
 	try {
 		const value = JSON.parse(await readFile(path, "utf8")) as unknown;
@@ -150,11 +150,11 @@ function protocolPrompt(systemPrompt: string): string {
 	].join("\n").trim();
 }
 
-export async function runTinySubagent(prompt: string, options: TinySubagentOptions = {}): Promise<TinySubagentResult> {
+export async function runHerdrSubagents(prompt: string, options: HerdrSubagentsOptions = {}): Promise<HerdrSubagentsResult> {
 	const startedAt = Date.now();
 	const cwd = options.cwd ?? process.cwd();
 	if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_WORKSPACE_ID) {
-		return failure(cwd, startedAt, "Tiny subagents must run from a Pi session inside Herdr.");
+		return failure(cwd, startedAt, "Herdr Subagents must run from a Pi session inside Herdr.");
 	}
 
 	const runId = randomUUID();
@@ -202,8 +202,8 @@ export async function runTinySubagent(prompt: string, options: TinySubagentOptio
 	const herdr = options.herdr ?? new CliHerdrAutomation();
 	let tabId: string | undefined;
 	let paneId: string | undefined;
-	let result: TinySubagentResult | undefined;
-	const common = (): Partial<TinySubagentResult> => ({
+	let result: HerdrSubagentsResult | undefined;
+	const common = (): Partial<HerdrSubagentsResult> => ({
 		runId,
 		taskId,
 		...(tabId ? { tabId } : {}),
@@ -212,7 +212,7 @@ export async function runTinySubagent(prompt: string, options: TinySubagentOptio
 		recordDirectory: taskDirectory,
 		...(options.model ? { model: options.model } : {}),
 	});
-	const update = (status: TinySubagentResult["status"], summary: string) => {
+	const update = (status: HerdrSubagentsResult["status"], summary: string) => {
 		options.onUpdate?.({
 			ok: false,
 			status,
@@ -300,7 +300,7 @@ export async function runTinySubagent(prompt: string, options: TinySubagentOptio
 		Object.assign(taskRecord, { status: "failed", completedAt, error: errorMessage });
 		await Promise.all([writeJson(runFile, runRecord), writeJson(taskFile, taskRecord)]);
 		if (!existsSync(reportFile)) {
-			await writeJson(reportFile, { status: "failed", summary: "Tiny subagent failed.", documents: [], error: errorMessage, reportedAt: completedAt });
+			await writeJson(reportFile, { status: "failed", summary: "Herdr Subagents failed.", documents: [], error: errorMessage, reportedAt: completedAt });
 		}
 		result = failure(cwd, startedAt, errorMessage, common());
 	} finally {
@@ -323,5 +323,5 @@ export async function runTinySubagent(prompt: string, options: TinySubagentOptio
 		}
 	}
 
-	return result ?? failure(cwd, startedAt, "Tiny subagent ended without a result.", common());
+	return result ?? failure(cwd, startedAt, "Herdr Subagents ended without a result.", common());
 }

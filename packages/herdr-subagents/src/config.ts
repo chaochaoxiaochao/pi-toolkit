@@ -72,8 +72,20 @@ function mergeConfig(base: SubagentConfig, input: ConfigFile, source: string, so
 		if (!input.personas || typeof input.personas !== "object" || Array.isArray(input.personas)) diagnostics.push(`${source} personas must be an object`);
 		else for (const [name, raw] of Object.entries(input.personas)) {
 			if (!raw || typeof raw !== "object" || Array.isArray(raw)) { diagnostics.push(`${source} persona '${name}' must be an object`); continue; }
-			result.personas[name] = { ...(result.personas[name] ?? {}), ...raw };
-			for (const field of Object.keys(raw)) sources[`personas.${name}.${field}`] = source;
+			const valid: PersonaConfig = {};
+			for (const field of ["model", "thinking"] as const) {
+				const value = raw[field];
+				if (value === undefined) continue;
+				if (typeof value === "string" && value.trim()) valid[field] = value.trim();
+				else diagnostics.push(`${source} persona '${name}' ${field} must be a non-empty string`);
+			}
+			if (raw.skills !== undefined) {
+				if (Array.isArray(raw.skills) && raw.skills.every((value) => typeof value === "string" && value.trim())) valid.skills = raw.skills.map((value) => value.trim());
+				else diagnostics.push(`${source} persona '${name}' skills must be an array of non-empty strings`);
+			}
+			input.personas[name] = valid;
+			result.personas[name] = { ...(result.personas[name] ?? {}), ...valid };
+			for (const field of Object.keys(valid)) sources[`personas.${name}.${field}`] = source;
 		}
 	}
 	return result;
@@ -81,10 +93,10 @@ function mergeConfig(base: SubagentConfig, input: ConfigFile, source: string, so
 
 export function loadSubagentConfiguration(cwd: string, packageAgentsDirectory: string, parentModel?: string, paths: ConfigurationPaths = {}): SubagentConfiguration {
 	const diagnostics: string[] = [];
-	const globalConfigPath = paths.globalConfig ?? join(homedir(), ".pi", "agent", "subagents.json");
-	const projectConfigPath = paths.projectConfig ?? join(cwd, ".pi", "subagents.json");
-	const globalAgentsDirectory = paths.globalAgents ?? join(dirname(globalConfigPath), "subagents", "agents");
-	const projectAgentsDirectory = paths.projectAgents ?? join(cwd, ".pi", "subagents", "agents");
+	const globalConfigPath = paths.globalConfig ?? join(homedir(), ".pi", "agent", "herdr-subagents.json");
+	const projectConfigPath = paths.projectConfig ?? join(cwd, ".pi", "herdr-subagents.json");
+	const globalAgentsDirectory = paths.globalAgents ?? join(dirname(globalConfigPath), "herdr-subagents", "agents");
+	const projectAgentsDirectory = paths.projectAgents ?? join(cwd, ".pi", "herdr-subagents", "agents");
 	const settingSources: Record<string, string> = { defaultConcurrency: "built-in", maxConcurrency: "built-in", stalledWarningSeconds: "built-in" };
 	const globalInput = readConfig(globalConfigPath, "global", diagnostics);
 	const projectInput = readConfig(projectConfigPath, "project", diagnostics);

@@ -29,8 +29,8 @@ export default function (pi: ExtensionAPI) {
 		description: "Finish this delegated task by saving its complete result and returning only a compact structured report to the parent.",
 		parameters: ReportParams,
 		async execute(_toolCallId, params) {
-			const taskDirectory = process.env.PI_TINY_SUBAGENT_TASK_DIR?.trim();
-			if (!taskDirectory) throw new Error("PI_TINY_SUBAGENT_TASK_DIR is not set");
+			const taskDirectory = process.env.PI_HERDR_SUBAGENTS_TASK_DIR?.trim();
+			if (!taskDirectory) throw new Error("PI_HERDR_SUBAGENTS_TASK_DIR is not set");
 			mkdirSync(taskDirectory, { recursive: true, mode: 0o700 });
 			const resultPath = resolve(taskDirectory, "result.md");
 			writeAtomic(resultPath, params.result);

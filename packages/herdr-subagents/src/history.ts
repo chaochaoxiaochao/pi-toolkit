@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { CliHerdrAutomation, retryBeforePrompt, type HerdrAutomation } from "./herdr.ts";
 import { writeJsonAtomic, writeTextAtomic } from "./state.ts";
 
-export interface HistoricalTask { order: number; id: string; name: string; status: string; summary?: string; question?: string; recordDirectory: string; sessionFile: string; model?: string; thinking?: string; tools?: string[]; skills: string[]; access?: string; }
+export interface HistoricalTask { order: number; id: string; name: string; agent: string; status: string; summary?: string; question?: string; documents: Array<{ path: string; description: string }>; recordDirectory: string; sessionFile: string; model?: string; thinking?: string; tools?: string[]; skills: string[]; access?: string; }
 export interface HistoricalRun { id: string; label: string; status: string; startedAt: string; completedAt?: string; effectiveConcurrency?: number; tasks: HistoricalTask[]; recordDirectory: string; }
 
 async function readJson(path: string): Promise<Record<string, any>> { return JSON.parse(await readFile(path, "utf8")) as Record<string, any>; }
@@ -15,7 +15,7 @@ export async function ensureRuntimeIgnored(cwd: string): Promise<void> {
 	await mkdir(piDirectory, { recursive: true, mode: 0o700 });
 	const dotGit = join(cwd, ".git");
 	let ignoreFile = join(piDirectory, ".gitignore");
-	let line = "herdr-subagents/";
+	let line = "herdr-subagents/runs/";
 	if (existsSync(dotGit)) {
 		let gitDirectory = dotGit;
 		if (!statSync(dotGit).isDirectory()) {
@@ -25,7 +25,7 @@ export async function ensureRuntimeIgnored(cwd: string): Promise<void> {
 		const commonDirectoryFile = join(gitDirectory, "commondir");
 		const commonDirectory = existsSync(commonDirectoryFile) ? join(gitDirectory, readFileSync(commonDirectoryFile, "utf8").trim()) : gitDirectory;
 		ignoreFile = join(commonDirectory, "info", "exclude");
-		line = "/.pi/herdr-subagents/";
+		line = "/.pi/herdr-subagents/runs/";
 		await mkdir(join(commonDirectory, "info"), { recursive: true });
 	}
 	const current = existsSync(ignoreFile) ? await readFile(ignoreFile, "utf8") : "";
@@ -48,7 +48,7 @@ export async function listSubagentHistory(cwd: string): Promise<HistoricalRun[]>
 				const task = await readJson(join(taskDirectory, "task.json"));
 				let report: Record<string, any> = {};
 				try { report = await readJson(join(taskDirectory, "report.json")); } catch {}
-				tasks.push({ order: task.order ?? tasks.length + 1, id: task.id, name: task.name ?? task.agent, status: task.status, summary: report.summary, question: report.question, recordDirectory: taskDirectory, sessionFile: task.sessionFile, model: task.model, thinking: task.thinking, tools: task.tools, skills: task.skills ?? [], access: task.access });
+				tasks.push({ order: task.order ?? tasks.length + 1, id: task.id, name: task.name ?? task.agent ?? "worker", agent: task.agent ?? "worker", status: task.status, summary: report.summary, question: report.question, documents: report.documents ?? [], recordDirectory: taskDirectory, sessionFile: task.sessionFile, model: task.model, thinking: task.thinking, tools: task.tools, skills: task.skills ?? [], access: task.access });
 			}
 			history.push({ id: run.id, label: run.label, status: run.status, startedAt: run.startedAt, completedAt: run.completedAt, effectiveConcurrency: run.effectiveConcurrency, tasks, recordDirectory: directory });
 		} catch {}
@@ -77,9 +77,9 @@ export async function resumeHistoricalTask(cwd: string, runId: string, taskNumbe
 	await mkdir(followupDirectory, { recursive: true, mode: 0o700 });
 	const followupPrompt = join(followupDirectory, "system-prompt.md");
 	await writeTextAtomic(followupPrompt, "This is a new resumed task. When this turn is finished, call subagent_report exactly once for this turn, even if an earlier turn already used it.\n");
-	const followupTask: Record<string, any> = { id: `followup-${Date.now()}`, runId, order: followupOrder, name: `${historical.name} follow-up`, status: "starting", prompt, agent: "historical", access: historical.access, model: historical.model, thinking: historical.thinking, tools: historical.tools, skills: historical.skills, sessionFile: historical.sessionFile, startedAt: new Date().toISOString() };
+	const followupTask: Record<string, any> = { id: `followup-${Date.now()}`, runId, order: followupOrder, name: `${historical.name} follow-up`, status: "starting", prompt, agent: historical.agent, access: historical.access, model: historical.model, thinking: historical.thinking, tools: historical.tools, skills: historical.skills, sessionFile: historical.sessionFile, startedAt: new Date().toISOString() };
 	await writeJsonAtomic(join(followupDirectory, "task.json"), followupTask);
-	const args = [process.env.PI_TINY_SUBAGENT_PI_BINARY?.trim() || "pi", "--approve", "--print", "--session", historical.sessionFile, "--name", `Subagent: ${historical.name}`, "--no-extensions", "--extension", fileURLToPath(new URL("../extensions/subagent-report.ts", import.meta.url)), "--no-skills", "--append-system-prompt", followupPrompt];
+	const args = [process.env.PI_HERDR_SUBAGENTS_PI_BINARY?.trim() || "pi", "--approve", "--print", "--session", historical.sessionFile, "--name", `Subagent: ${historical.name}`, "--no-extensions", "--extension", fileURLToPath(new URL("../extensions/subagent-report.ts", import.meta.url)), "--no-skills", "--append-system-prompt", followupPrompt];
 	const originalSystemPrompt = join(historical.recordDirectory, "system-prompt.md");
 	if (existsSync(originalSystemPrompt)) args.push("--append-system-prompt", originalSystemPrompt);
 	if (historical.model) args.push("--model", historical.model);
@@ -89,11 +89,11 @@ export async function resumeHistoricalTask(cwd: string, runId: string, taskNumbe
 	let tab: { tabId: string; paneId: string } | undefined;
 	let report: Record<string, any>;
 	try {
-		tab = await retryBeforePrompt(() => herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID ?? "", cwd, label: `SA · resume · ${historical.name}`, env: { PI_SUBAGENT_CHILD: "1" }, focus: false }));
+		tab = await retryBeforePrompt(() => herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID ?? "", cwd, label: `SA · resume · ${historical.name}`, env: { PI_HERDR_SUBAGENTS_CHILD: "1" }, focus: false }));
 		Object.assign(followupTask, { status: "running", paneId: tab.paneId });
 		await writeJsonAtomic(join(followupDirectory, "task.json"), followupTask);
 		await retryBeforePrompt(() => herdr.prepareTask(args));
-		await herdr.runTask({ paneId: tab.paneId, args, prompt, env: { PI_SUBAGENT_CHILD: "1", PI_TINY_SUBAGENT_TASK_DIR: followupDirectory }, marker: `PI_SUBAGENT_HISTORY_${Date.now()}` });
+		await herdr.runTask({ paneId: tab.paneId, args, prompt, env: { PI_HERDR_SUBAGENTS_CHILD: "1", PI_HERDR_SUBAGENTS_TASK_DIR: followupDirectory }, marker: `PI_HERDR_SUBAGENTS_HISTORY_${Date.now()}` });
 		report = await readJson(join(followupDirectory, "report.json"));
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);

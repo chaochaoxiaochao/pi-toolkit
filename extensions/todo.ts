@@ -131,7 +131,7 @@ class TodoListComponent {
 }
 
 export default function (pi: ExtensionAPI) {
-	if (process.env.PI_SUBAGENT_CHILD === "1") return;
+	if (process.env.PI_HERDR_SUBAGENTS_CHILD === "1") return;
 
 	let state: TodoState = { todos: [], nextId: 1 };
 

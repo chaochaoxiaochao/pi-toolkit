@@ -48,17 +48,17 @@ pi-toolkit/
 ├── bin/                   # 独立 shell 命令（postinstall 拷到 ~/.local/bin）
 │   ├── pi-worktree        # worktree 创建/进入/合并/清理一条龙包装
 │   └── pi-worktree-completion.bash  # bash 补全（装到 ~/.local/share/bash-completion）
-├── packages/tiny-subagent/  # 独立 npm 包：tiny_subagents Pi 扩展
+├── packages/herdr-subagents/ # 独立 npm 包：herdr_subagents Pi 扩展
 ├── packages/codex-edit/     # 独立 npm 包：GPT/Codex apply_patch Pi 扩展 + docs
 ├── scripts/release.sh      # 根包一键发布（测试→版本→tag→推→publish）
-├── scripts/release-tiny-subagent.sh # tiny 包独立发布
+├── scripts/release-herdr-subagents.sh # Herdr Subagents 包独立发布
 ├── scripts/release-codex-edit.sh # codex-edit 包独立发布
 └── .github/workflows/      # 三个包各自的 npm 发布 workflow
 ```
 
 ## 开发规则
 
-- **改扩展逻辑**：根扩展改完必须跑 `npm test`（根包确定性测试），再做 `npm run load-test`；tiny 包改完必须跑 `npm --prefix packages/tiny-subagent test`，再加载 `packages/tiny-subagent/extensions/tiny-subagent.ts`；涉及 Herdr 调度、导航、恢复时还要在 Herdr 内做只读并发批次、pane 聚焦、tab 清理和历史 session 恢复冒烟，配置与运行状态分别使用 `.pi/subagents.json` 和 `.pi/herdr-subagents/`；codex-edit 的权威实现位于 `packages/codex-edit`，改完必须跑 `npm --prefix packages/codex-edit test`、`npm pack --dry-run`，再分别加载独立入口和 `extensions/codex-edit/index.ts` 根包入口。
+- **改扩展逻辑**：根扩展改完必须跑 `npm test`（根包确定性测试），再做 `npm run load-test`；Herdr Subagents 包改完必须跑 `npm --prefix packages/herdr-subagents test`，再加载 `packages/herdr-subagents/extensions/herdr-subagents.ts`；涉及 Herdr 调度、导航、恢复时还要在 Herdr 内做只读并发批次、pane 聚焦、tab 清理和历史 session 恢复冒烟，配置与运行状态分别使用 `.pi/herdr-subagents.json` 和 `.pi/herdr-subagents/`；codex-edit 的权威实现位于 `packages/codex-edit`，改完必须跑 `npm --prefix packages/codex-edit test`、`npm pack --dry-run`，再分别加载独立入口和 `extensions/codex-edit/index.ts` 根包入口。
 - **文档同步**：新增或变更用户可见功能时，必须同步检查 `README.md`、根 `AGENTS.md`、`CHANGELOG.md` 和 `package.json` manifest；提交前用 `rg` 搜索旧的功能清单、目录说明和版本信息，确认没有过时描述。
 - **改 skill**：先按目标 skill 的 `SKILL.md` 验证脚本；`web-browser` 至少要检查全部 `scripts/*.js` 语法、实际启动隔离浏览器、完成一次导航/求值，并用 `npm pack --dry-run` 确认 skill 文件进入 tarball。WSL 下应验证 Windows Chrome 自动发现和 PowerShell 启动路径。
 - **skill 运行依赖**：第三方依赖统一声明在根 `package.json` 的 `dependencies`，不要提交 skill 内的 `node_modules`；Pi 从 npm/git 安装包时会执行 `npm install`。Pi 内置包仍按下条规则放 `peerDependencies`。
@@ -100,13 +100,13 @@ pi-toolkit/
 
 手动等价流程同样必须先更新版本和 CHANGELOG，再推送精确 tag；不要在本地执行 `npm publish`。
 
-### 独立 tiny subagent 包发布
+### 独立 Herdr Subagents 包发布
 
-`packages/tiny-subagent` 是完全独立的包；`packages/codex-edit` 既是 Codex Edit 的权威实现和独立子包，也由根包通过 `extensions/codex-edit/index.ts` 默认加载。三个包可分别安装和升级：
+`packages/herdr-subagents` 是完全独立的包；`packages/codex-edit` 既是 Codex Edit 的权威实现和独立子包，也由根包通过 `extensions/codex-edit/index.ts` 默认加载。三个包可分别安装和升级：
 
 ```bash
 pi install npm:@maxiaochao/pi-toolkit
-pi install npm:@maxiaochao/pi-tiny-subagent
+pi install npm:@maxiaochao/pi-herdr-subagents
 pi install npm:@maxiaochao/pi-codex-edit
 ```
 
@@ -115,22 +115,22 @@ pi install npm:@maxiaochao/pi-codex-edit
 | 包 | 版本来源 | 发布 tag | 发布 workflow |
 |---|---|---|---|
 | `@maxiaochao/pi-toolkit` | 根目录 `package.json` | `vX.Y.Z` | `.github/workflows/publish.yml` |
-| `@maxiaochao/pi-tiny-subagent` | `packages/tiny-subagent/package.json` | `tiny-subagent-vX.Y.Z` | `.github/workflows/publish-tiny-subagent.yml` |
+| `@maxiaochao/pi-herdr-subagents` | `packages/herdr-subagents/package.json` | `herdr-subagents-vX.Y.Z` | `.github/workflows/publish-herdr-subagents.yml` |
 | `@maxiaochao/pi-codex-edit` | `packages/codex-edit/package.json` | `codex-edit-vX.Y.Z` | `.github/workflows/publish-codex-edit.yml` |
 
-tiny 包首次发版（使用当前 `0.1.0` 版本）：
+Herdr Subagents 包首次发版（使用当前 `0.1.0` 版本）：
 ```bash
-./scripts/release-tiny-subagent.sh initial "initial release"
+./scripts/release-herdr-subagents.sh initial "initial release"
 ```
 
 后续发版：
 ```bash
-./scripts/release-tiny-subagent.sh <patch|minor|major> "<changelog note>"
+./scripts/release-herdr-subagents.sh <patch|minor|major> "<changelog note>"
 ```
 
-该脚本只运行 tiny 包测试和扩展加载检查，只修改 tiny 包版本及 CHANGELOG，并且只暂存 `packages/tiny-subagent`。它创建 `tiny-subagent-vX.Y.Z` tag 并推送；tag push 后由专用 GitHub Actions 校验版本、运行测试并执行 npm publish。不要用根目录 `scripts/release.sh` 发布 tiny 包，也不要在本地执行 `npm publish`。
+该脚本只运行 Herdr Subagents 包测试和扩展加载检查，只修改该包版本及 CHANGELOG，并且只暂存 `packages/herdr-subagents`。它创建 `herdr-subagents-vX.Y.Z` tag 并推送；tag push 后由专用 GitHub Actions 校验版本、运行测试并执行 npm publish。不要用根目录 `scripts/release.sh` 发布 Herdr Subagents 包，也不要在本地执行 `npm publish`。
 
-根包的 `vX.Y.Z`、tiny 包的 `tiny-subagent-vX.Y.Z` 和 codex-edit 包的 `codex-edit-vX.Y.Z` 互不触发彼此 workflow；三个包可以共用仓库和 `NPM_TOKEN`，但 npm 版本号、发布 tag 和 CI 发布步骤彼此独立。
+根包的 `vX.Y.Z`、Herdr Subagents 包的 `herdr-subagents-vX.Y.Z` 和 codex-edit 包的 `codex-edit-vX.Y.Z` 互不触发彼此 workflow；三个包可以共用仓库和 `NPM_TOKEN`，但 npm 版本号、发布 tag 和 CI 发布步骤彼此独立。
 
 ### 独立 codex-edit 包发布
 
@@ -151,7 +151,7 @@ tiny 包首次发版（使用当前 `0.1.0` 版本）：
 
 ```bash
 pi update npm:@maxiaochao/pi-toolkit      # 更新根包及其内置 Codex Edit
-pi update npm:@maxiaochao/pi-tiny-subagent # 更新 tiny 包
+pi update npm:@maxiaochao/pi-herdr-subagents # 更新 Herdr Subagents 包
 pi update npm:@maxiaochao/pi-codex-edit    # 仅更新独立 Codex Edit 子包
 ```
 

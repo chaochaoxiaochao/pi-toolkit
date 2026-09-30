@@ -1,5 +1,5 @@
 {
-  "name": "@maxiaochao/pi-tiny-subagent",
+  "name": "@maxiaochao/pi-herdr-subagents",
   "version": "0.1.0",
   "description": "Run inspectable synchronous or background Pi subagent batches in Herdr.",
   "type": "module",
@@ -8,10 +8,10 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/chaochaoxiaochao/pi-toolkit.git",
-    "directory": "packages/tiny-subagent"
+    "directory": "packages/herdr-subagents"
   },
   "pi": {
-    "extensions": ["./extensions/tiny-subagent.ts"]
+    "extensions": ["./extensions/herdr-subagents.ts"]
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
