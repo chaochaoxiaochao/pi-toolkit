@@ -1,3 +1,7 @@
+## 2026-09-30 - v0.9.3
+
+- refine global agent guidance and add repository issue, triage, and domain instructions
+
 ## 2026-09-30 - v0.9.2
 
 - show contiguous queue positions in the todo widget while retaining stable internal task IDs
