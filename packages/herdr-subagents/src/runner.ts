@@ -259,7 +259,7 @@ export async function runHerdrSubagents(prompt: string, options: HerdrSubagentsO
 			childArgs.push("--tools", [...new Set([...options.tools, "subagent_report"])].join(","));
 		}
 		for (const skill of options.skills ?? []) childArgs.push("--skill", skill);
-		const name = `tiny-${taskId.replace(/-/g, "").slice(0, 12)}`;
+		const name = `herdr-subagent-${taskId.replace(/-/g, "").slice(0, 12)}`;
 		update("starting", "Starting child Pi in Herdr...");
 		await retryBeforePrompt(() => herdr.startAgent({ name, kind: "pi", paneId, args: childArgs, signal: options.signal }));
 		update("running", "Child Pi is working...");

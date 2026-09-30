@@ -1,0 +1,41 @@
+name: publish child package
+
+on:
+  push:
+    tags:
+      - "todo-v*"
+      - "cache-export-v*"
+      - "codex-edit-v*"
+      - "herdr-subagents-v*"
+      - "worktree-v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org/
+          scope: ""
+      - name: Resolve and verify package
+        run: |
+          SLUG="${GITHUB_REF_NAME%-v*}"
+          PACKAGE_DIR="packages/$SLUG"
+          VERSION=$(node -p "require('./$PACKAGE_DIR/package.json').version")
+          test "$GITHUB_REF_NAME" = "$SLUG-v$VERSION"
+          echo "SLUG=$SLUG" >> "$GITHUB_ENV"
+          echo "PACKAGE_DIR=$PACKAGE_DIR" >> "$GITHUB_ENV"
+      - name: Run package tests
+        run: npm --prefix "$PACKAGE_DIR" test
+      - name: Verify package contents
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: npm pack --dry-run
+      - name: Publish package
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,9 +1,10 @@
 // postinstall hook: sync the bundled global AGENTS.md and seed the default theme
 // without overriding a theme the user has already selected.
-import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, chmodSync } from "node:fs";
-import { homedir, platform } from "node:os";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { installWorktree } from "../packages/worktree/scripts/install.mjs";
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -44,21 +45,10 @@ if (!existsSync(settingsTarget)) {
   }
 }
 
-// Install the pi-worktree CLI + bash completion on Unix-like systems.
-// Copy (not symlink) so the running command does not depend on the repo/node_modules layout.
-if (platform() !== "win32") {
-  try {
-    const binTarget = join(homedir(), ".local", "bin", "pi-worktree");
-    mkdirSync(dirname(binTarget), { recursive: true });
-    copyFileSync(join(packageRoot, "bin", "pi-worktree"), binTarget);
-    chmodSync(binTarget, 0o755);
-    console.log("[pi-toolkit] pi-worktree installed ->", binTarget);
-
-    const compTarget = join(homedir(), ".local", "share", "bash-completion", "completions", "pi-worktree");
-    mkdirSync(dirname(compTarget), { recursive: true });
-    copyFileSync(join(packageRoot, "bin", "pi-worktree-completion.bash"), compTarget);
-    console.log("[pi-toolkit] pi-worktree bash completion installed ->", compTarget);
-  } catch (error) {
-    console.warn("[pi-toolkit] could not install pi-worktree CLI:", error instanceof Error ? error.message : String(error));
+try {
+  for (const path of installWorktree({ root: join(packageRoot, "packages", "worktree") })) {
+    console.log("[pi-toolkit] pi-worktree installed ->", path);
   }
+} catch (error) {
+  console.warn("[pi-toolkit] could not install pi-worktree CLI:", error instanceof Error ? error.message : String(error));
 }

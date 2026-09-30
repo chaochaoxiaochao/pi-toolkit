@@ -1,6 +1,6 @@
 {
   "name": "@maxiaochao/pi-codex-edit",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Pi extension that exposes Codex-style apply_patch for GPT/Codex models with model-aware edit fallback.",
   "type": "module",
   "keywords": [
@@ -13,10 +13,12 @@
   "files": [
     "extensions",
     "src",
+    "docs",
     "config.json",
     "summary.md",
     "codex-edit-explainer.html",
     "README.md",
+    "TESTING.md",
     "CHANGELOG.md",
     "package.json"
   ],
@@ -37,7 +39,8 @@
     "typebox": "*"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test tests/*.test.mjs"
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "load-test": "pi -ne -e ./extensions/codex-edit.ts"
   },
   "publishConfig": {
     "access": "public"

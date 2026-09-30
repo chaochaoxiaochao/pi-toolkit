@@ -1,139 +1,75 @@
 # pi-toolkit
 
-Personal Pi toolkit with the `/todos`, `/btw`, `/cache_export`, and `apply_patch` extensions, bundled agent skills including Chrome/Chromium automation, the Night Owl theme, and the `pi-worktree` CLI.
+Personal Pi distribution that bundles focused extensions, agent skills, the Night Owl theme, global instructions, and the `pi-worktree` CLI.
 
 ## Install
 
-Install the root package to enable the toolkit extensions globally:
+Install the complete toolkit:
 
 ```bash
 pi install npm:@maxiaochao/pi-toolkit
 ```
 
-The package also provides the `/btw` side-chat extension, the `web-browser` and `chrome-cdp` skills for Chrome/Chromium CDP automation, and the `nightowl` theme. On npm installation, the postinstall hook selects `nightowl` only when no theme has been configured yet; an existing Pi theme setting is preserved.
-
-The package postinstall hook synchronizes the bundled global instructions to:
-
-```text
-~/.pi/agent/AGENTS.md
-```
-
-It also selects `nightowl` as the default theme only when `~/.pi/agent/settings.json` does not already contain a theme. To switch manually, use `/settings` or:
-
-```bash
-pi --use-theme nightowl
-```
-
-An installed package can expose a theme through `pi.themes`, but Pi has no package-manifest field for a default theme, so the guarded postinstall step is used for the npm install case.
-
-When `global/AGENTS.md` changes, publish a new `@maxiaochao/pi-toolkit` version and update installed copies:
+Update it:
 
 ```bash
 pi update npm:@maxiaochao/pi-toolkit
 ```
 
-To synchronize the file directly from a checkout instead:
+The root package embeds the child-package source snapshots listed below. Install the complete toolkit or selected standalone children, not both.
+
+## Child packages
+
+| Package | Capability | Install | Update |
+|---|---|---|---|
+| [pi-todo](packages/todo/README.md) | Session plans, automatic task advancement, `/todos` | `pi install npm:@maxiaochao/pi-todo` | `pi update npm:@maxiaochao/pi-todo` |
+| [pi-cache-export](packages/cache-export/README.md) | Tau-aligned interactive cache dashboard for Pi sessions | `pi install npm:@maxiaochao/pi-cache-export` | `pi update npm:@maxiaochao/pi-cache-export` |
+| [pi-codex-edit](packages/codex-edit/README.md) | Codex-harness `apply_patch` routing for selected GPT models | `pi install npm:@maxiaochao/pi-codex-edit` | `pi update npm:@maxiaochao/pi-codex-edit` |
+| [pi-herdr-subagents](packages/herdr-subagents/README.md) | Inspectable foreground/background Herdr batches with bounded concurrency and recovery | `pi install npm:@maxiaochao/pi-herdr-subagents` | `pi update npm:@maxiaochao/pi-herdr-subagents` |
+| [pi-worktree](packages/worktree/README.md) | Worktree CLI, completion, installer, and agent skill | `pi install npm:@maxiaochao/pi-worktree` | `pi update npm:@maxiaochao/pi-worktree` |
+
+Each child README owns its feature description, motivation or upstream alignment, examples, screenshots/demos, configuration, and test documentation.
+
+Multiple standalone children may be installed together. Do not install a child alongside the complete toolkit because that exposes the same resource twice.
+
+Root and child versions remain independent, but repository release tooling publishes a modified child and a new toolkit snapshot from the same commit. Run `pi update --extensions` to update all installed packages. Explicit version sources such as `npm:@maxiaochao/pi-toolkit@0.9.3` remain pinned.
+
+## Toolkit-only features
+
+### `/btw`
+
+`/btw` opens a separate side-chat session that can inspect the main conversation and repository without entering the main context. Closing it can optionally inject a summary. Use `Up` / `Down` for line scrolling and `PageUp` / `PageDown` for page scrolling.
+
+### Global instructions and theme
+
+The postinstall hook:
+
+- synchronizes `global/AGENTS.md` to `~/.pi/agent/AGENTS.md`;
+- selects `nightowl` only when no theme is configured;
+- installs the bundled worktree CLI and bash completion.
+
+Existing theme choices are preserved. To sync only the global instructions from a checkout:
 
 ```bash
 bash scripts/install.sh
 ```
 
-The `todo` tool maintains a session checklist for explicit plans and multi-step work. It automatically keeps one task active and advances the next queued task; `replace` starts a clean plan after a change of direction, while `cancelled` records obsolete work honestly. The persistent widget numbers active work by queue position; `/todos` shows active and closed tasks with their stable internal IDs.
+## Bundled skills
 
-The `/btw` side chat is a separate agent session. It can inspect the main conversation and repository, and its thread stays out of the main context until you close it and choose to inject a summary. Use `/btw` to open it or `/btw <question>` to ask directly. While the BTW overlay has focus, use `Up` / `Down` to scroll its transcript one line at a time and `PageUp` / `PageDown` to move by one transcript page.
+| Skill | Purpose |
+|---|---|
+| `web-browser` | Launch and automate an isolated Chrome/Chromium session through CDP |
+| `chrome-cdp` | Attach to an existing Chrome debugging session |
+| `show-me` | Explain the current topic with the smallest useful visual |
+| `html-artifact` | Build self-contained HTML explainers and diagrams |
+| `pdlog` | Decompress and inspect Pudu `.pdlog` files |
+| `herdr` | Control Herdr workspaces, tabs, panes, and agents |
+| `agent-team` | Run cross-vendor adversarial review through Herdr |
+| `tapd` | Use the TAPD CLI for requirements, defects, tasks, and wikis |
+| `calldiff` | Diff call stacks across commits |
 
-Use `/cache_export [path]` to write an interactive per-request cache dashboard. It defaults to the latest Context segment for current-state diagnosis, and the View selector can show any earlier segment or all session history. Compaction and model changes both break context charts into segments; cache-hit accumulation also resets at model changes, while TTL and other inferred interruptions remain diagnostic events rather than segment boundaries.
+Package-specific skills, such as `pi-worktree`, are documented by their child package.
 
-The bundled `nightowl` theme is available to Pi through the package manifest and is selected automatically on npm installation only when no theme is already configured.
+## Repository
 
-## pi-worktree CLI
-
-The package also ships a standalone shell command, `pi-worktree`, that wraps Git worktree creation and Pi launch into one step. On installation (Unix-like systems) the postinstall hook copies it to `~/.local/bin/pi-worktree` and installs bash completion to `~/.local/share/bash-completion/completions/pi-worktree` (no `.bashrc` edits needed).
-
-```bash
-pi-worktree start feat-ui  # create/reuse .worktrees/feat-ui, branch feat-ui, launch pi inside
-pi-worktree list           # list worktrees (main checkout marked "main checkout")
-pi-worktree info feat-ui   # base commit, ahead/behind main, unique commits
-pi-worktree out            # open a shell in the main checkout (for merging)
-pi-worktree remove feat-ui # remove the worktree (refuses unmerged branches)
-pi-worktree prune          # drop stale registrations for manually deleted dirs
-```
-
-Typical loop: `pi-worktree start <name>` to start (Tab completes existing worktree names), commit inside Pi, `pi-worktree out` + `git merge <name>` to land the work, `pi-worktree remove <name>` to clean up. New branches are created from the branch you're currently on (or `HEAD` when detached), and the base commit is recorded in `branch.<name>.base` config so `info` can always tell you where the branch came from. Bash completion covers subcommands and existing worktree names (`pi-worktree feat<Tab>`).
-
-The bundled `pi-worktree` skill documents the CLI for agents: the `start`/`list`/`info`/`out`/`remove`/`prune` commands, the isolation loop from creating a worktree to landing the merge, and which of those commands need an interactive terminal (so an agent uses `start <name> -p "<task>"` for a headless nested run).
-
-The bundled `web-browser` skill provides reusable scripts for starting Chrome/Chromium with remote debugging, navigating tabs, evaluating JavaScript, emulating devices, taking screenshots, dismissing cookie dialogs, and inspecting browser logs. It auto-detects common Chrome/Chromium installations on macOS and Linux, including Windows Chrome when Pi runs under WSL; set `BROWSER_BIN` when the binary is elsewhere.
-
-The browser skill can be loaded explicitly with `/skill:web-browser`. Its scripts are available relative to the skill directory, for example:
-
-```bash
-node skills/web-browser/scripts/start.js --headless
-node skills/web-browser/scripts/nav.js https://example.com
-```
-
-The bundled `chrome-cdp` skill (derived from [pasky/chrome-cdp-skill](https://github.com/pasky/chrome-cdp-skill), MIT) complements `web-browser`: instead of launching an isolated browser, it attaches to a Chrome session that already runs with remote debugging (port pre-allocated at launch, or the `chrome://inspect/#remote-debugging` toggle). It is a zero-dependency CLI (`scripts/cdp.mjs`, Node 22+) with per-tab daemons so Chrome's "Allow debugging" modal fires once:
-
-```bash
-export CDP_PORT_FILE="/mnt/c/Users/<you>/AppData/Local/Google/Chrome/CDP-Profile/DevToolsActivePort"
-node skills/chrome-cdp/scripts/cdp.mjs list          # list open tabs → target prefix
-node skills/chrome-cdp/scripts/cdp.mjs snap <target> # accessibility tree
-node skills/chrome-cdp/scripts/cdp.mjs eval <target> 'document.title'
-```
-
-Note: Chrome does not always write the `DevToolsActivePort` file (e.g. `--remote-debugging-port` launches on Chrome 152); in that case synthesize one from `GET http://127.0.0.1:<port>/json/version` — first line the port, second line the path of `webSocketDebuggerUrl`. WSL auto-discovery of Windows Chrome profiles is not built in; set `CDP_PORT_FILE` as above.
-
-The bundled `show-me` skill (derived from [humanlayer/skills](https://github.com/humanlayer/skills), MIT) explains the current topic with the smallest visual that makes the point — pseudocode, call trees, component or file trees, diffs, Mermaid, or one focused HTML artifact. It is hidden from automatic skill selection, so invoke it explicitly with `/skill:show-me`.
-
-The bundled `pdlog` skill decompresses and reads Pudu `.pdlog` proprietary log files, which are binary gibberish when opened directly. It ships a self-contained `ppmd` decompressor (`skills/pdlog/tools/ppmd`, Linux x86-64) and triggers automatically on `.pdlog` files, Pudu logs, ppmd decompression, or logs that open as binary gibberish.
-
-The bundled `herdr` skill (from [herdrdev/herdr](https://github.com/herdrdev/herdr) at tag `v0.9.1` with the skill name lowercased, Apache-2.0) drives Herdr, a terminal multiplexer for coding agents: inspecting workspaces, tabs, and panes, starting and prompting other agents, running commands in background panes without stealing focus, reading pane output, and waiting on agent lifecycle states. It activates only when you explicitly mention Herdr, and only when the agent itself runs inside a Herdr pane (`HERDR_ENV=1`); outside a pane it refuses to control the session and stops.
-
-The bundled `agent-team` skill runs cross-vendor adversarial review: the current session acts as manager, and the roster in `skills/agent-team/models.json` (one auditor, one replicator, one adversary on different vendors) is started as long-lived herdr panes that get re-prompted round after round until no pane can produce a new finding.
-
-The bundled `tapd` skill documents the third-party `tapd` CLI ([studyzy/tapd-ai-cli](https://github.com/studyzy/tapd-ai-cli)) for TAPD: requirements, defects, tasks, iterations, wikis, comments, attachments, timesheets, and workflow status maps, including the `--filter` advanced query syntax. It is the CLI's own command reference, so refresh the file with `tapd skill init` when the CLI changes.
-
-The bundled `calldiff` skill (copied verbatim from [tanishqkancharla/calldiff](https://github.com/tanishqkancharla/calldiff), MIT, pinned to a `main` commit because upstream has no release tags) teaches call-stack diffs across git commits: `diff` shows which callees appeared, disappeared, or moved under an entrypoint, `tree` prints one call tree, and `reach` finds call paths between two symbols, all with `--entry`/`--file` entrypoint selection, `--locs` source locations, and `--format json` for agents.
-
-## Herdr Subagents
-
-Herdr Subagents is a separate npm package. Install it independently when you want the `herdr_subagents` tool:
-
-```bash
-pi install npm:@maxiaochao/pi-herdr-subagents
-```
-
-It is not included in the root package's `pi.extensions` list. The two packages have independent versions, release tags, and update commands:
-
-```bash
-pi update npm:@maxiaochao/pi-toolkit
-pi update npm:@maxiaochao/pi-herdr-subagents
-```
-
-See [packages/herdr-subagents/README.md](packages/herdr-subagents/README.md) for configurable worker/explorer/reviewer personas, bounded foreground/background Herdr batches, blocking and resume, compact history, and interruption recovery.
-
-## Codex Edit (apply_patch)
-
-Codex Edit is bundled with `@maxiaochao/pi-toolkit` and loads automatically with the full toolkit. It activates Codex's freeform `apply_patch` protocol for GPT/Codex models while other models keep Pi's native `edit` tool.
-
-Installing or updating the full toolkit also installs or updates its bundled Codex Edit implementation:
-
-```bash
-pi install npm:@maxiaochao/pi-toolkit
-pi update npm:@maxiaochao/pi-toolkit
-```
-
-The update command follows the latest published toolkit version when the configured source has no explicit version. A pinned source such as `npm:@maxiaochao/pi-toolkit@0.9.3` remains pinned.
-
-It is also published as a child package for users who only want this extension:
-
-```bash
-pi install npm:@maxiaochao/pi-codex-edit
-pi update npm:@maxiaochao/pi-codex-edit
-```
-
-Install either the full toolkit or the standalone package; installing both is unnecessary and may register `apply_patch` twice. Both distributions use the canonical implementation under [packages/codex-edit](packages/codex-edit). A Codex Edit implementation or configuration change must be released in both packages before both update commands can receive it. See its [README](packages/codex-edit/README.md) for routing rules and [benchmark summary](packages/codex-edit/summary.md) for measured tradeoffs.
-
-## Development
-
-Repository development and release rules are documented in [AGENTS.md](AGENTS.md).
+This repository is an npm workspace. Child implementations live under `packages/*`; `extensions/` contains only the toolkit-only BTW module. Development, testing, media generation, and release rules are documented in [AGENTS.md](AGENTS.md).

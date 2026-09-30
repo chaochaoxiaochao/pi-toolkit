@@ -12,16 +12,11 @@
 - Require a structured child report and return only its summary and document paths to the parent.
 - Persist run/task metadata, the full result, and the child Pi session under `.pi/herdr-subagents/runs`.
 
+## 2026-09-30 - v0.1.1
+
+- Add standalone testing documentation and production-runner screenshot/demo media.
+- Align the package manifest and root bundle with the shared workspace source.
+
 ## 2026-09-01 - v0.1.0
 
 - initial release
-
-# Changelog
-
-## 0.1.0
-
-- Add the `herdr_subagents` Pi tool for one focused prompt in a fresh child Pi context.
-- Add package-local `worker.md` personas with model and built-in tool selection.
-- Return structured process, Pi protocol, stderr, stop-reason, exit, signal, and cancellation diagnostics.
-- Preserve oversized stdout, stderr, and final assistant output in private temporary artifacts.
-- Stream child event activity to the TUI and expose persona, prompt, and transcript details when expanded.

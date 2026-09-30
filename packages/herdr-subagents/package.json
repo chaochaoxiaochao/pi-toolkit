@@ -1,17 +1,32 @@
 {
   "name": "@maxiaochao/pi-herdr-subagents",
-  "version": "0.1.0",
-  "description": "Run inspectable synchronous or background Pi subagent batches in Herdr.",
+  "version": "0.1.1",
+  "description": "Run inspectable synchronous or background Pi subagent batches through Herdr.",
   "type": "module",
-  "keywords": ["pi-package", "pi-extension", "subagent"],
-  "files": ["extensions", "src", "agents", "README.md", "CHANGELOG.md", "package.json"],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "subagent"
+  ],
+  "files": [
+    "extensions",
+    "src",
+    "agents",
+    "docs",
+    "README.md",
+    "TESTING.md",
+    "CHANGELOG.md",
+    "package.json"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/chaochaoxiaochao/pi-toolkit.git",
     "directory": "packages/herdr-subagents"
   },
   "pi": {
-    "extensions": ["./extensions/herdr-subagents.ts"]
+    "extensions": [
+      "./extensions/herdr-subagents.ts"
+    ]
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
@@ -20,7 +35,8 @@
     "typebox": "*"
   },
   "scripts": {
-    "test": "node --experimental-strip-types tests/run-tests.mjs"
+    "test": "node --experimental-strip-types tests/run-tests.mjs",
+    "load-test": "pi -ne -ns --no-session -e ./extensions/herdr-subagents.ts"
   },
   "publishConfig": {
     "access": "public"
