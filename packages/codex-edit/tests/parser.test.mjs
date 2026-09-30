@@ -58,14 +58,111 @@ test("supports insertion chunks and EOF matching", () => {
   assert.equal(applyUpdate("", operations[0].chunks, "file.txt"), "first\n");
 });
 
-test("rejects ambiguous matches and workspace escapes", () => {
+test("uses the first matching region at or after the cursor", () => {
   const operations = parsePatch(`*** Begin Patch
 *** Update File: file.txt
 @@
 -value
 +changed
 *** End Patch`);
-  assert.throws(() => applyUpdate("value\nvalue\n", operations[0].chunks, "file.txt"), /Ambiguous/);
+  assert.equal(applyUpdate("value\nvalue\n", operations[0].chunks, "file.txt"), "changed\nvalue\n");
+});
+
+test("uses earlier hunks to advance the cursor through repeated HTML regions", () => {
+  const operations = parsePatch(`*** Begin Patch
+*** Update File: page.html
+@@
+-old
++new
+@@
+ </section>
++<section id="inserted"></section>
+ <section>
+*** End Patch`);
+  const before = `<header>
+old
+</header>
+<section>first</section>
+</section>
+<section>
+one
+</section>
+<section>
+two
+</section>
+`;
+  const after = `<header>
+new
+</header>
+<section>first</section>
+</section>
+<section id="inserted"></section>
+<section>
+one
+</section>
+<section>
+two
+</section>
+`;
+  assert.equal(applyUpdate(before, operations[0].chunks, "page.html"), after);
+});
+
+test("applies a hunk at the first repeated Markdown separator after its cursor", () => {
+  const operations = parsePatch(`*** Begin Patch
+*** Update File: SKILL.md
+@@
+-description: old
++description: new
+@@
+ ---
++Inserted after frontmatter.
+*** End Patch`);
+  const before = `---
+name: demo
+description: old
+---
+
+# Demo
+
+---
+Footer
+`;
+  const after = `---
+name: demo
+description: new
+---
+Inserted after frontmatter.
+
+# Demo
+
+---
+Footer
+`;
+  assert.equal(applyUpdate(before, operations[0].chunks, "SKILL.md"), after);
+});
+
+test("parses multiple file operations used by structural refactors", () => {
+  const operations = parsePatch(`*** Begin Patch
+*** Update File: extensions/tool.ts
+*** Move to: packages/tool/extensions/tool.ts
+@@
+-export const value = 1;
++export const value = 2;
+*** Add File: extensions/tool-wrapper.ts
++export { value } from "../packages/tool/extensions/tool.ts";
+*** Delete File: extensions/tool.test.ts
+*** End Patch`);
+  assert.deepEqual(
+    operations.map(({ action, path, moveTo }) => ({ action, path, moveTo })),
+    [
+      { action: "update", path: "extensions/tool.ts", moveTo: "packages/tool/extensions/tool.ts" },
+      { action: "add", path: "extensions/tool-wrapper.ts", moveTo: undefined },
+      { action: "delete", path: "extensions/tool.test.ts", moveTo: undefined },
+    ],
+  );
+});
+
+test("rejects workspace escapes", () => {
   assert.equal(resolveWorkspacePath("/tmp/project", "/tmp/project/src/a.js"), "/tmp/project/src/a.js");
   assert.throws(() => resolveWorkspacePath("/tmp/project", "/tmp/other/a.js"), /escapes/);
 });

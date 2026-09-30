@@ -1,166 +1,123 @@
 # Global Agent Notes
 
-## Agent skills
+Issues are tracked in GitHub Issues; see `docs/agents/issue-tracker.md`. Use the five default triage labels from `docs/agents/triage-labels.md`. Domain language lives in `docs/agents/domain.md`.
 
-### Issue tracker
+本仓库是 `pi-toolkit` npm workspace 的源码与发布工程。
 
-Issues are tracked in this repository's GitHub Issues. See `docs/agents/issue-tracker.md`.
+## 模块与目录
 
-### Triage labels
-
-Use the five default triage labels. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-This is a single-context repository. See `docs/agents/domain.md`.
-
-本仓库是个人 pi 扩展包 `pi-toolkit` 的**源码与发布工程**。任何改动请遵循以下规则。
-
-## 目录结构
-
-```
+```text
 pi-toolkit/
-├── package.json            # pi manifest：声明扩展、skills、themes 与运行依赖
-├── global/AGENTS.md        # ★ 全局个人指令的权威源（见下方“全局 AGENTS 安装”）
+├── package.json                 # 主组合包；workspaces = packages/*
 ├── extensions/
-│   ├── todo.ts             # todo 工具、活跃任务 widget 与 /todos 历史视图
-│   ├── todo-state.ts       # todo 状态机、迁移与自动推进纯逻辑
-│   ├── btw.ts              # /btw 独立侧聊会话
-│   ├── btw-scroll.ts       # BTW transcript 滚动边界与分页步长纯逻辑
-│   ├── tests/              # todo、BTW 等根扩展的轻量确定性测试
-│   ├── cache-export/       # /cache_export 交互式缓存仪表盘
-│   │   ├── index.ts        # 入口：注册命令、输出路径、WSL 打开
-│   │   ├── render.ts       # 聚合 + miss/streak 规则 + HTML 渲染（改逻辑在这里）
-│   │   ├── tau-assets.ts   # tau 原版 CSS/JS 资产（勿手改，重生成，见下）
-│   │   └── tests/          # 确定性测试（阈值边界、规则路径、退化输入）
-│   └── codex-edit/         # 根包加载入口，复用 packages/codex-edit 的实现
-├── skills/
-│   ├── html-artifact/     # 复杂说明的自包含 HTML artifact skill
-│   ├── web-browser/       # Chrome/Chromium CDP 自动化（含 WSL Windows Chrome 支持）
-│   ├── show-me/           # 用图/伪代码/HTML 直观解释当前话题（源自 humanlayer/skills，MIT）
-│   ├── pi-worktree/       # pi-worktree CLI 的 worktree 增删改查用法（隔离任务时用）
-│   ├── chrome-cdp/        # 附加到已开调试端口的 live Chrome（源自 pasky/chrome-cdp-skill，MIT）
-│   ├── pdlog/             # 解压和查看普渡 .pdlog 日志（自带 ppmd 解压二进制）
-│   ├── herdr/             # 控制 Herdr 终端复用器（拷贝自 herdrdev/herdr v0.9.1，仅小写化 skill 名，Apache-2.0）
-│   ├── tapd/              # TAPD CLI 用法（需求/缺陷/任务/Wiki 等，用 `tapd skill init` 重新生成）
-│   └── calldiff/          # 跨 commit 的调用栈 diff（逐字节拷贝自 tanishqkancharla/calldiff，MIT）
-├── themes/nightowl.json   # 随包发布的 Night Owl 主题
-├── bin/                   # 独立 shell 命令（postinstall 拷到 ~/.local/bin）
-│   ├── pi-worktree        # worktree 创建/进入/合并/清理一条龙包装
-│   └── pi-worktree-completion.bash  # bash 补全（装到 ~/.local/share/bash-completion）
-├── packages/tiny-subagent/  # 独立 npm 包：tiny_subagents Pi 扩展
-├── packages/codex-edit/     # 独立 npm 包：GPT/Codex apply_patch Pi 扩展 + docs
-├── scripts/release.sh      # 根包一键发布（测试→版本→tag→推→publish）
-├── scripts/release-tiny-subagent.sh # tiny 包独立发布
-├── scripts/release-codex-edit.sh # codex-edit 包独立发布
-└── .github/workflows/      # 三个包各自的 npm 发布 workflow
+│   └── btw/                     # 主包独有实现与测试
+├── packages/
+│   ├── todo/                    # @maxiaochao/pi-todo 权威源码
+│   ├── cache-export/            # @maxiaochao/pi-cache-export 权威源码
+│   ├── codex-edit/              # @maxiaochao/pi-codex-edit 权威源码
+│   ├── tiny-subagent/           # @maxiaochao/pi-tiny-subagent 权威源码
+│   └── worktree/                # @maxiaochao/pi-worktree：bin + completion + skill
+├── skills/                      # 主包独有的通用 skills
+├── themes/nightowl.json
+├── global/AGENTS.md             # 安装到 ~/.pi/agent/AGENTS.md 的权威源
+├── scripts/release.sh           # 主包发布
+├── scripts/release-package.sh   # 子包 + 主包同 commit 联动发布器
+└── .github/workflows/
+    ├── publish.yml              # vX.Y.Z → 主包
+    └── publish-package.yml      # <slug>-vX.Y.Z → 对应子包
 ```
 
-## 开发规则
+## 组织原则
 
-- **改扩展逻辑**：根扩展改完必须跑 `npm test`（根包确定性测试），再做 `npm run load-test`；tiny 包改完必须跑 `npm --prefix packages/tiny-subagent test`，再加载 `packages/tiny-subagent/extensions/tiny-subagent.ts`；codex-edit 的权威实现位于 `packages/codex-edit`，改完必须跑 `npm --prefix packages/codex-edit test`、`npm pack --dry-run`，再分别加载独立入口和 `extensions/codex-edit/index.ts` 根包入口。
-- **文档同步**：新增或变更用户可见功能时，必须同步检查 `README.md`、根 `AGENTS.md`、`CHANGELOG.md` 和 `package.json` manifest；提交前用 `rg` 搜索旧的功能清单、目录说明和版本信息，确认没有过时描述。
-- **改 skill**：先按目标 skill 的 `SKILL.md` 验证脚本；`web-browser` 至少要检查全部 `scripts/*.js` 语法、实际启动隔离浏览器、完成一次导航/求值，并用 `npm pack --dry-run` 确认 skill 文件进入 tarball。WSL 下应验证 Windows Chrome 自动发现和 PowerShell 启动路径。
-- **skill 运行依赖**：第三方依赖统一声明在根 `package.json` 的 `dependencies`，不要提交 skill 内的 `node_modules`；Pi 从 npm/git 安装包时会执行 `npm install`。Pi 内置包仍按下条规则放 `peerDependencies`。
-- **不改 `tau-assets.ts`**：该文件从 `huggingface/tau` 的 `src/tau_coding/session_usage.py` 提取（USAGE_STYLES / USAGE_SCRIPT），保证与上游逐字节一致。需要更新时用提取脚本重生成，不要手改。
-- **`skills/herdr/SKILL.md` 只在同步上游时动**：与 `LICENSE` 一起从 `herdrdev/herdr` 的稳定 tag 拷贝（来源与更新方式见 `skills/herdr/NOTICE`）。目前**唯一**的本地改动是把 description 与 H1 里的 `Herdr` 小写成 `herdr`，其余逐字节一致；同步新 tag 时先整体替换两个文件、改 NOTICE 里的 tag，再重放这处小写化，不要加别的改动。
-- **不改 `skills/calldiff/SKILL.md`**：与 `LICENSE` 一起从 `tanishqkancharla/calldiff` 的 main commit 逐字节拷贝（上游没有 release tag，来源与更新方式见 `skills/calldiff/NOTICE`）。需要更新时整体替换这两个文件并改 NOTICE 里的 commit，不要手改内容。
-- **`skills/tapd/SKILL.md` 由 `tapd skill init` 生成，但带一节本地补充**：`#### 安全下载附件`（临时 URL 续传与完整性校验流程）是手写的，重新生成会丢掉，重生成后必须重放这一节；其余内容保持生成原样。
-- **别用 `.mjs` 放扩展代码**：pi 的 `/reload` 走 jiti（moduleCache:false），只对 `.ts/.js` 生效；`.mjs` 走 Node 原生 ESM 缓存，reload 刷不掉，会导致“改了不生效”。
-- 扩展依赖 pi 内置包时写进 `peerDependencies`（`@earendil-works/pi-*`、`typebox`），不要实装。
+- `packages/*` 是子包功能实现的单一源码；根 manifest 直接加载这些路径，不设置 wrapper。`extensions/` 只放主包独有的 BTW。
+- 主包 tarball 直接包含子包运行源码，不依赖 npm 上的子包版本，因此主包与子包可以独立发版。
+- 用户在完整工具包和对应独立子包之间二选一；同时安装可能重复注册 extension、skill 或 bin。
+- BTW 保留在主包，不发布子包。
+- 每个子包必须包含 `package.json`、`README.md`、`TESTING.md`、`CHANGELOG.md`、确定性测试，以及适合该包的加载或集成检查。
+- 每个子包 README 必须说明功能、来源/设计动机、安装与更新、可复制示例，并引用 `docs/screenshot.png` 和 `docs/demo.gif`。媒体必须来自真实实现运行：执行 `node scripts/capture-package-media.mjs` 统一重生成并进入 tarball。
 
-**两层 AGENTS 的区别**
+## 开发与验证
 
-| 文件 | 作用范围 | 装载点 |
+- 修改子包时先运行 `npm --prefix packages/<slug> test`，再运行其 README/TESTING 指定的 load test 和 `npm pack ./packages/<slug> --dry-run`。
+- 运行 `node scripts/capture-package-media.mjs` 后通过 `docs/package-media-gallery.html` 检查全部真实截图与动画；完整验收结果记录在 `docs/verification.md`。
+- 修改根入口、BTW、主题、全局指令或组合清单时运行 `npm test`、`npm run load-test` 和根目录 `npm pack --dry-run`。
+- Codex Edit 必须加载 `packages/codex-edit/extensions/codex-edit.ts`；matcher 改动必须覆盖重复 HTML/Markdown 区域、多 hunk 和多文件 patch。
+- Cache Export 的发布验收要求确定性测试通过，并在有 Chrome 的环境中跑浏览器 E2E；skip 不算发布验收通过。
+- `packages/cache-export/src/tau-assets.ts` 来自 `huggingface/tau` 的 `session_usage.py`，只能重生成，不能手改。
+- Tiny Subagent 的实现可能存在并行工作；重构 package 接线时保留其未提交实现改动。
+- Worktree 包同时拥有 CLI、completion、postinstall 与 skill，不能只同步 skill。
+- 扩展依赖 Pi 内置包时放 `peerDependencies`（`@earendil-works/pi-*`、`typebox`），不要安装实体副本。
+- 不用 `.mjs` 写扩展入口；Pi `/reload` 对 `.ts/.js` 使用 jiti，Node 原生 `.mjs` 缓存不会刷新。
+
+## Skill 与文档约束
+
+- 用户可见行为变化必须同步检查根 `README.md`、本文件、根 `CHANGELOG.md`、相关子包 README/TESTING/CHANGELOG 和 manifest。
+- `skills/herdr/SKILL.md` 只在同步上游稳定 tag 时整体替换；唯一允许的本地差异是 description 与 H1 中的名称小写化，来源见 NOTICE。
+- `skills/calldiff/SKILL.md` 与上游指定 commit 逐字节一致，只能整体同步并更新 NOTICE。
+- `skills/tapd/SKILL.md` 由 `tapd skill init` 生成；重生成后必须重放手写的“安全下载附件”一节。
+- `web-browser` 改动后检查全部 `scripts/*.js` 语法、实际启动隔离浏览器并完成导航/求值，再检查 tarball。
+
+## 两层 AGENTS
+
+| 文件 | 范围 | 安装方式 |
 |---|---|---|
-| `global/AGENTS.md`（仓库内） | 所有项目（个人行为准则） | 拷到 `~/.pi/agent/AGENTS.md`，pi 启动自动加载 |
-| `AGENTS.md`（仓库根） | 仅本仓库（开发/发版规则） | pi 进本目录自动发现 |
+| `global/AGENTS.md` | 所有项目的个人行为准则 | 主包 postinstall 复制到 `~/.pi/agent/AGENTS.md` |
+| 根 `AGENTS.md` | 本仓库开发与发布 | Pi 在仓库中自动发现 |
 
-改 `global/AGENTS.md` 后重跑 `bash scripts/install.sh` 即可同步到全局（用拷贝而非软链，保持运行不依赖仓库目录）。
+修改 `global/AGENTS.md` 后可运行 `bash scripts/install.sh` 同步本机。
 
-## 打包发布
+## 安装模型
 
-### 前置条件（首次）
-
-1. GitHub 建仓并关联：
-   ```bash
-   gh auth login                     # 未登录时
-   gh repo create pi-toolkit --private --source . --remote origin --push
-   # 或旧方式： git remote add origin git@github.com:<你>/pi-toolkit.git && git push -u origin main
-   ```
-2. package.json 的 `repository.url` 改成真实地址（占位符 `<YOUR-GITHUB-USER>`）。
-3. 在 GitHub 仓库 Actions Secrets 中配置 `NPM_TOKEN`（见下文）。
-
-### 发布流程（每次发版）
-
-1. `./scripts/release.sh <patch|minor|major> "<changelog note>"`：本地跑测试 + 升版本（如 `v0.1.5`）＋写 CHANGELOG＋commit＋打 tag＋推 main 和 tag。
-2. tag push 自动触发 GitHub Actions（`.github/workflows/publish.yml`）发布到 npm，这是唯一发布通道。
-   - 前提：仓库 Secrets 里配好了 `NPM_TOKEN`（npm 的 granular access token + **Bypass 2FA**）。
-   - CI 会校验 tag 与 `package.json` 版本一致，再运行测试和 `npm publish`。
-
-手动等价流程同样必须先更新版本和 CHANGELOG，再推送精确 tag；不要在本地执行 `npm publish`。
-
-### 独立 tiny subagent 包发布
-
-`packages/tiny-subagent` 是完全独立的包；`packages/codex-edit` 既是 Codex Edit 的权威实现和独立子包，也由根包通过 `extensions/codex-edit/index.ts` 默认加载。三个包可分别安装和升级：
+完整安装：
 
 ```bash
 pi install npm:@maxiaochao/pi-toolkit
-pi install npm:@maxiaochao/pi-tiny-subagent
+```
+
+按需单独安装：
+
+```bash
+pi install npm:@maxiaochao/pi-todo
+pi install npm:@maxiaochao/pi-cache-export
 pi install npm:@maxiaochao/pi-codex-edit
+pi install npm:@maxiaochao/pi-tiny-subagent
+pi install npm:@maxiaochao/pi-worktree
 ```
 
-三个包使用独立版本号和 tag：
+## 发布
 
-| 包 | 版本来源 | 发布 tag | 发布 workflow |
-|---|---|---|---|
-| `@maxiaochao/pi-toolkit` | 根目录 `package.json` | `vX.Y.Z` | `.github/workflows/publish.yml` |
-| `@maxiaochao/pi-tiny-subagent` | `packages/tiny-subagent/package.json` | `tiny-subagent-vX.Y.Z` | `.github/workflows/publish-tiny-subagent.yml` |
-| `@maxiaochao/pi-codex-edit` | `packages/codex-edit/package.json` | `codex-edit-vX.Y.Z` | `.github/workflows/publish-codex-edit.yml` |
-
-tiny 包首次发版（使用当前 `0.1.0` 版本）：
-```bash
-./scripts/release-tiny-subagent.sh initial "initial release"
-```
-
-后续发版：
-```bash
-./scripts/release-tiny-subagent.sh <patch|minor|major> "<changelog note>"
-```
-
-该脚本只运行 tiny 包测试和扩展加载检查，只修改 tiny 包版本及 CHANGELOG，并且只暂存 `packages/tiny-subagent`。它创建 `tiny-subagent-vX.Y.Z` tag 并推送；tag push 后由专用 GitHub Actions 校验版本、运行测试并执行 npm publish。不要用根目录 `scripts/release.sh` 发布 tiny 包，也不要在本地执行 `npm publish`。
-
-根包的 `vX.Y.Z`、tiny 包的 `tiny-subagent-vX.Y.Z` 和 codex-edit 包的 `codex-edit-vX.Y.Z` 互不触发彼此 workflow；三个包可以共用仓库和 `NPM_TOKEN`，但 npm 版本号、发布 tag 和 CI 发布步骤彼此独立。
-
-### 独立 codex-edit 包发布
-
-`packages/codex-edit` 作为独立子包发布为 `@maxiaochao/pi-codex-edit`，同时也是根包内置 Codex Edit 的单一源码。后续发布使用：
+主包：
 
 ```bash
-./scripts/release-codex-edit.sh <patch|minor|major> "<changelog note>"
+./scripts/release.sh <patch|minor|major> "<note>"
 ```
 
-该脚本只测试、打包和发布独立子包，并创建 `codex-edit-vX.Y.Z` tag；它不会发布根包。`packages/codex-edit` 的实现或配置有改动时，必须再运行 `./scripts/release.sh <patch|minor|major> "<changelog note>"` 发布新的根包版本，根包用户执行 `pi update npm:@maxiaochao/pi-toolkit` 后才会收到更新。不要在本地执行 `npm publish`。用户应在完整工具包和独立子包之间二选一，避免重复注册 `apply_patch`。
-
-### 首次启用自动发布（一次性）
-
-1. npm 网页生成 token：`https://www.npmjs.com/settings/<你>/tokens` → Generate New Token → **Granular Access Token** → 勾 **Bypass 2FA** → 权限 Packages Read and write。
-2. 存进 GitHub 仓库 Secrets：Settings → Secrets and variables → Actions → New secret → 名字 `NPM_TOKEN`。
-
-### 更新已装机器的包
+子包修改统一使用联动发布：
 
 ```bash
-pi update npm:@maxiaochao/pi-toolkit      # 更新根包及其内置 Codex Edit
-pi update npm:@maxiaochao/pi-tiny-subagent # 更新 tiny 包
-pi update npm:@maxiaochao/pi-codex-edit    # 仅更新独立 Codex Edit 子包
+./scripts/release-package.sh <todo|cache-export|codex-edit|tiny-subagent|worktree> <initial|patch|minor|major> "<note>" [主包 patch|minor|major]
 ```
 
-## 回滚
+- 主包 tag 为 `vX.Y.Z`，由 `.github/workflows/publish.yml` 发布。
+- 子包 tag 为 `<slug>-vX.Y.Z`，统一由 `.github/workflows/publish-package.yml` 解析目录、校验版本、测试、打包并发布。
+- 子包联动发布会先完成全部测试与两个 tarball 检查，在同一个 commit 更新子包和主包的版本及 CHANGELOG，创建两个 tag，再通过 `git push --atomic` 一次推送；主包版本级别默认为 `patch`。
+- 发布只通过 tag 触发 CI；不要在本地执行 `npm publish`。
+- 不要只发布子包 tag：完整工具包内嵌子包源码，必须由上述联动脚本同时发布新的主包版本；`pi update npm:@maxiaochao/pi-toolkit` 只会获取已发布的新根包。
+- 所有包可共用 `NPM_TOKEN`，但版本和 tag 相互独立。
 
-- **npm 侧**：`npm unpublish pi-toolkit@<坏版本>`（24h 内）或 `npm deprecate pi-toolkit@<坏版本> "broken, use X"`。
-- **装包侧**：`pi install npm:@maxiaochao/pi-toolkit@<上一个好版本>` 或 `pi remove npm:@maxiaochao/pi-toolkit`。
+更新命令：
 
-## 迁移遗留的清理步骤（已装过旧版时）
+```bash
+pi update --extensions                    # 更新所有已安装包
+pi update npm:@maxiaochao/pi-toolkit
+pi update npm:@maxiaochao/pi-todo
+pi update npm:@maxiaochao/pi-cache-export
+pi update npm:@maxiaochao/pi-codex-edit
+pi update npm:@maxiaochao/pi-tiny-subagent
+pi update npm:@maxiaochao/pi-worktree
+```
 
-- 删除全局旧扩展文件：`rm ~/.pi/agent/extensions/todo.ts`（避免与新包双注册）。
-- 删除项目级旧包：把项目 `.pi/settings.json` 里 `"../pi-cache-dashboard"` 移除，删掉 `pi-cache-dashboard/` 目录。
+## 迁移遗留
+
+- 删除旧全局扩展 `~/.pi/agent/extensions/todo.ts`，避免重复注册。
+- 从项目 `.pi/settings.json` 移除旧的 `../pi-cache-dashboard` 并删除该目录。

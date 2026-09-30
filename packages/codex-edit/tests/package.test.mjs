@@ -18,7 +18,7 @@ test("package points Pi at the extension and config is reachable from it", async
 });
 
 test("matches allowed model IDs with globs independently of provider and grammar support", () => {
-  const settings = { enabled: true, models: ["gpt-5.6-*"] };
+  const settings = { enabled: true, models: ["gpt-5.6-*", "my-codex-model"] };
   const baseModel = {
     id: "gpt-5.6-terra",
     api: "openai-codex-responses",
@@ -36,5 +36,8 @@ test("matches allowed model IDs with globs independently of provider and grammar
   );
   assert.equal(modelIsAllowed({ ...baseModel, api: "openai-completions" }, settings), false);
   assert.equal(modelIsAllowed({ ...baseModel, id: "gpt-5.5" }, settings), false);
+  assert.equal(modelIsAllowed({ ...baseModel, id: "my-codex-model" }, settings), true);
+  assert.equal(modelIsAllowed({ ...baseModel, id: "my-codex-model-v2" }, settings), false);
+  assert.equal(modelIsAllowed({ ...baseModel, id: "GPT-5.6-terra" }, settings), false);
   assert.equal(modelIsAllowed(baseModel, { enabled: false, models: ["gpt-5.6-*"] }), false);
 });

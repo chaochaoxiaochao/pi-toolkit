@@ -1,19 +1,23 @@
 {
   "name": "@maxiaochao/pi-toolkit",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "Personal pi coding agent toolkit: /todos, /btw, /cache_export and apply_patch extensions, browser automation, and bundled theme/skills.",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "keywords": [
     "pi-package",
     "pi-extension"
   ],
   "files": [
     "extensions",
-    "packages/codex-edit/extensions",
-    "packages/codex-edit/src",
-    "packages/codex-edit/config.json",
+    "packages/todo",
+    "packages/cache-export",
+    "packages/codex-edit",
+    "packages/tiny-subagent",
+    "packages/worktree",
     "themes",
-    "bin",
     "README.md",
     "CHANGELOG.md",
     "global/AGENTS.md",
@@ -26,20 +30,22 @@
   },
   "pi": {
     "extensions": [
-      "./extensions/todo.ts",
-      "./extensions/cache-export/index.ts",
-      "./extensions/btw.ts",
-      "./extensions/codex-edit/index.ts"
+      "./packages/todo/extensions/todo.ts",
+      "./packages/cache-export/extensions/cache-export.ts",
+      "./extensions/btw/index.ts",
+      "./packages/codex-edit/extensions/codex-edit.ts",
+      "./packages/tiny-subagent/extensions/tiny-subagent.ts"
     ],
     "skills": [
-      "./skills"
+      "./skills",
+      "./packages/worktree/skills"
     ],
     "themes": [
       "./themes"
     ]
   },
   "bin": {
-    "pi-worktree": "bin/pi-worktree"
+    "pi-worktree": "packages/worktree/bin/pi-worktree"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
@@ -51,8 +57,8 @@
     "ws": "^8.19.0"
   },
   "scripts": {
-    "test": "npm --prefix packages/codex-edit test && cd extensions/cache-export && node --experimental-strip-types tests/run-tests.mjs && node --experimental-strip-types ../tests/btw-history.mjs && node --experimental-strip-types ../tests/todo-state.mjs && node tests/e2e-browser.mjs",
-    "load-test": "pi -ne -e ./extensions/todo.ts && pi -ne -e ./extensions/cache-export/index.ts && pi -ne -e ./extensions/btw.ts && pi -ne -e ./extensions/codex-edit/index.ts",
+    "test": "node tests/package-layout.mjs && npm --prefix packages/todo test && npm --prefix packages/cache-export test && npm --prefix packages/codex-edit test && npm --prefix packages/tiny-subagent test && npm --prefix packages/worktree test && node --experimental-strip-types extensions/btw/tests/history.mjs",
+    "load-test": "pi -ne -e ./packages/todo/extensions/todo.ts && pi -ne -e ./packages/cache-export/extensions/cache-export.ts && pi -ne -e ./extensions/btw/index.ts && pi -ne -e ./packages/codex-edit/extensions/codex-edit.ts && pi -ne -e ./packages/tiny-subagent/extensions/tiny-subagent.ts",
     "eval:agents": "node evaluations/agents-md/run.mjs",
     "eval:agents:test": "node evaluations/agents-md/tests/run-tests.mjs",
     "postinstall": "node scripts/install-agents.mjs"

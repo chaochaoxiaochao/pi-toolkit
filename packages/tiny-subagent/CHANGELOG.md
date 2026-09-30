@@ -1,10 +1,9 @@
+## 2026-09-30 - v0.1.1
+
+- Add standalone testing documentation and real production-runner screenshot/demo media.
+- Align the package manifest and root bundle with the shared workspace source.
+
 ## 2026-09-01 - v0.1.0
-
-- initial release
-
-# Changelog
-
-## 0.1.0
 
 - Add the `tiny_subagents` Pi tool for one focused prompt in a fresh child Pi context.
 - Add package-local `worker.md` personas with model and built-in tool selection.

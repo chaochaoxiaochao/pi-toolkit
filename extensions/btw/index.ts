@@ -24,7 +24,7 @@ import {
 	type OverlayHandle,
 	type TUI,
 } from "@earendil-works/pi-tui";
-import { clampBtwScrollTop, getBtwPageScrollSize } from "./btw-scroll.ts";
+import { clampBtwScrollTop, getBtwPageScrollSize } from "./scroll.ts";
 
 const BTW_ENTRY_TYPE = "btw-thread-entry";
 const BTW_RESET_TYPE = "btw-thread-reset";

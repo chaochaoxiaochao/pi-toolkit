@@ -8,14 +8,14 @@
 // test prints SKIP and exits 0 so CI without Chrome still passes; if a
 // browser IS found, failing assertions exit 1.
 //
-// Run: node tests/e2e-browser.mjs        (from extensions/cache-export)
+// Run: node tests/e2e-browser.mjs        (from packages/cache-export)
 
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseEntries, buildCacheExportHtml } from "../render.ts";
+import { parseEntries, buildCacheExportHtml } from "../src/render.ts";
 
 let pass = 0, fail = 0, skipped = 0;
 function check(name, cond, detail = "") {

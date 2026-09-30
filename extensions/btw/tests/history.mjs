@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { clampBtwScrollTop, getBtwPageScrollSize } from "../btw-scroll.ts";
+import { clampBtwScrollTop, getBtwPageScrollSize } from "../scroll.ts";
 
 assert.equal(getBtwPageScrollSize(18), 18, "page scrolling uses the transcript viewport height");
 assert.equal(getBtwPageScrollSize(8.9), 8, "page scrolling uses a whole number of lines");

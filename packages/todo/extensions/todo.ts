@@ -19,7 +19,7 @@ import {
 	type TodoAction,
 	type TodoState,
 	type TodoStatus,
-} from "./todo-state.ts";
+} from "../src/todo-state.ts";
 
 interface TodoDetails {
 	action: TodoAction;

@@ -115,8 +115,7 @@ function locate(lines, pattern, start, eof, label) {
   ];
   for (const compare of comparisons) {
     const candidates = findCandidates(lines, pattern, start, eof, compare);
-    if (candidates.length === 1) return candidates[0];
-    if (candidates.length > 1) throw new Error(`Ambiguous ${label || "patch"} match: ${candidates.length} regions found`);
+    if (candidates.length > 0) return candidates[0];
   }
   throw new Error(`Failed to find expected lines${label ? ` in ${label}` : ""}: ${pattern.join("\\n")}`);
 }

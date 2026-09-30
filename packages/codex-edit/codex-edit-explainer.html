@@ -135,20 +135,20 @@ footer { max-width: 1180px; margin: 0 auto; padding: 0 26px 54px; color: var(--m
   <div class="topbar-inner">
     <div class="brand">Pi <span>apply_patch</span> 方案说明</div>
     <nav class="nav" aria-label="页面导航">
-      <a href="#answer">结论</a><a href="#architecture">架构</a><a href="#config">配置</a><a href="#principle">原理</a><a href="#evidence">数据</a>
+      <a href="#answer">结论</a><a href="#install">安装</a><a href="#architecture">架构</a><a href="#config">配置</a><a href="#principle">原理</a><a href="#evidence">数据</a>
     </nav>
   </div>
 </header>
 <main>
   <section class="hero-grid" id="answer">
     <div>
-      <div class="eyebrow">GPT-5.6 / Pi / Codex-style editing</div>
+      <div class="eyebrow">GPT-5.6 / Pi / Codex harness apply_patch</div>
       <h1>它变好了，但改善主要在“第一次编辑能不能正确开始”。</h1>
-      <p class="lede">公平对照下，apply_patch 没有提升最终正确率，却把 GPT-5.6 的首次编辑成功率从 85% 提到 95%，并消除了观察到的编辑协议失败。它适合作为 GPT/Codex 模型的候选工具，不应无条件替代所有模型的 edit。</p>
+      <p class="lede">这个扩展让选中的 GPT 模型在 Pi 中使用与 Codex harness 相同的 apply_patch 协议；其他模型仍使用 Pi 原生 edit。公平对照下，GPT-5.6 的首次编辑成功率从 85% 提到 95%，并消除了观察到的编辑协议失败。</p>
     </div>
     <aside class="signal">
-      <strong>当前包状态：可安装，按模型路由</strong>
-      <p>这个 npm 包包含真正的 apply_patch extension。安装后，GPT/Codex 模型按配置使用 apply_patch，其他模型继续使用 edit。</p>
+      <strong>当前状态：根包内置，也可单独安装</strong>
+      <p><code>@maxiaochao/pi-toolkit</code> 默认包含本扩展；只需要 apply_patch 时可安装 <code>@maxiaochao/pi-codex-edit</code>。两种方式使用同一份实现。</p>
     </aside>
   </section>
 
@@ -158,6 +158,26 @@ footer { max-width: 1180px; margin: 0 auto; padding: 0 26px 54px; color: var(--m
       <div class="metric neutral"><div class="value">90% = 90%</div><div class="label">最终精确正确率</div></div>
       <div class="metric good"><div class="value">1 → 0</div><div class="label">编辑协议失败</div></div>
       <div class="metric warn"><div class="value">−4.5%</div><div class="label">中位端到端耗时</div></div>
+    </div>
+  </section>
+
+  <section class="section" id="install">
+    <div class="section-head"><div><div class="eyebrow">Distribution</div><h2>完整工具包与独立子包二选一</h2></div><p class="section-note">同时安装没有额外收益，还可能重复注册 <code>apply_patch</code>。</p></div>
+    <div class="explain">
+      <article class="panel">
+        <span class="badge green">完整工具包</span>
+        <h3 style="margin-top:16px">随 pi-toolkit 默认加载</h3>
+        <div class="code-wrap"><button class="copy" data-copy="toolkit-install">复制</button><pre id="toolkit-install">pi install npm:@maxiaochao/pi-toolkit
+pi update npm:@maxiaochao/pi-toolkit</pre></div>
+        <p>根 manifest 直接加载 <code>packages/codex-edit/extensions/codex-edit.ts</code>。只有发布了新的 toolkit 版本，根包用户才会收到 Codex Edit 更新。</p>
+      </article>
+      <article class="panel">
+        <span class="badge amber">独立子包</span>
+        <h3 style="margin-top:16px">只安装 Codex Edit</h3>
+        <div class="code-wrap"><button class="copy" data-copy="child-install">复制</button><pre id="child-install">pi install npm:@maxiaochao/pi-codex-edit
+pi update npm:@maxiaochao/pi-codex-edit</pre></div>
+        <p>子包拥有独立版本和发布流程。只发布子包不会更新已安装的 toolkit；实现或配置变更需要分别发布两个 npm 包。</p>
+      </article>
     </div>
   </section>
 
@@ -187,7 +207,7 @@ footer { max-width: 1180px; margin: 0 auto; padding: 0 26px 54px; color: var(--m
       <div class="arch-row">
         <div class="arch-node"><small>01 · Model state</small><strong>当前模型配置</strong><p>ctx.model.provider、api、id、compat 能力标记。</p></div>
         <div class="arch-arrow">→</div>
-        <div class="arch-node"><small>02 · Routing</small><strong>syncEditorTools()</strong><p>命中的 GPT/Codex 模型启用 apply_patch；其他模型启用 edit。</p></div>
+        <div class="arch-node"><small>02 · Routing</small><strong>syncEditorTools()</strong><p>ID glob 和 Responses API 均命中时启用 apply_patch；其他模型启用 Pi edit。</p></div>
         <div class="arch-arrow">→</div>
         <div class="arch-node"><small>03 · Provider</small><strong>Responses serializer</strong><p>Grammar 支持时序列化为 type=custom + Lark definition，否则回退为普通 function tool。</p></div>
         <div class="arch-arrow">→</div>
@@ -210,51 +230,52 @@ footer { max-width: 1180px; margin: 0 auto; padding: 0 26px 54px; color: var(--m
   </section>
 
   <section class="section" id="config">
-    <div class="section-head"><div><div class="eyebrow">Configuration</div><h2>当前配置与可选扩展</h2></div><p class="section-note">默认只为已稳定验证的 Sol High 启用；Luna 的性能结果存在长尾波动，需要显式 opt-in。</p></div>
+    <div class="section-head"><div><div class="eyebrow">Configuration</div><h2>当前模型路由</h2></div><p class="section-note">默认覆盖 Responses API 上的全部 <code>gpt-5.6-*</code> 变体；provider 不参与匹配。</p></div>
     <div class="tabs" role="tablist" aria-label="配置视图">
       <button class="tab" role="tab" aria-selected="true" aria-controls="config-current" id="tab-current">当前实际配置</button>
-      <button class="tab" role="tab" aria-selected="false" aria-controls="config-recommended" id="tab-recommended">Luna 显式启用</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="config-recommended" id="tab-recommended">添加模型</button>
       <button class="tab" role="tab" aria-selected="false" aria-controls="config-route" id="tab-route">路由规则</button>
     </div>
     <div class="tab-panel active" id="config-current" role="tabpanel" aria-labelledby="tab-current">
       <div class="code-wrap"><button class="copy" data-copy="current-config">复制</button><pre id="current-config">{
   "enabled": true,
   "models": [
-    { "provider": "pudu-openai-proxy", "model": "gpt-5.6-sol" }
+    "gpt-5.6-*"
   ]
 }</pre></div>
-      <div class="callout">models.json 中的 provider API key 不在页面展示。建议使用环境变量或 Pi auth 存储，并轮换已经出现在配置文件中的 key。</div>
+      <div class="callout">路由还要求 <code>model.api</code> 为 <code>openai-responses</code> 或 <code>openai-codex-responses</code>。grammar 不可用时 Pi 回退为普通 function tool。</div>
     </div>
     <div class="tab-panel" id="config-recommended" role="tabpanel" aria-labelledby="tab-recommended">
       <div class="code-wrap"><button class="copy" data-copy="recommended-config">复制</button><pre id="recommended-config">{
   "enabled": true,
   "models": [
-    { "provider": "pudu-openai-proxy", "model": "gpt-5.6-sol" },
-    { "provider": "pudu-openai-proxy", "model": "gpt-5.6-luna" }
+    "gpt-5.6-*",
+    "gpt-5.7-*",
+    "my-codex-model"
   ]
 }</pre></div>
-      <p>Luna High 的有效重测中，两组都 20/20 正常结束，最终正确率都是 18/20；首次编辑成功率为 edit 90%、apply_patch 100%。按 17 个两组都正确的配对样本，apply_patch 中位总耗时多 2.3s；按全部 20 个配对样本，中位多 1.2s，9 例更快、11 例更慢。因此 Luna 有协议适配收益，但没有稳定的总耗时优势，当前不默认启用。</p>
+      <p>每项按完整 <code>model.id</code> 做区分大小写的匹配，<code>*</code> 是通配符。精确 ID 也可以直接作为规则。添加规则只改变路由，不代表模型已经通过协议验证；未命中规则的模型继续使用 Pi 原生 <code>edit</code>。</p>
     </div>
     <div class="tab-panel" id="config-route" role="tabpanel" aria-labelledby="tab-route">
       <div class="code-wrap"><button class="copy" data-copy="route-rule">复制</button><pre id="route-rule">model = ctx.model
 
 if enabled
 and model.api in ["openai-responses", "openai-codex-responses"]
-and provider/model matches allowlist:
+and model.id matches any models glob:
     active = ["apply_patch"]
 else:
     active = ["edit"]
 
 # Preserve all unrelated active tools.
 # Register both tools permanently for session replay.</pre></div>
-      <p>切换发生在 <code>session_start</code> 和 <code>model_select</code>。不重新定义同名工具，只改变 active tool 集合。</p>
+      <p><code>provider</code> 不参与匹配；即使 ID 命中，其他 API 上的模型仍使用 Pi <code>edit</code>。切换发生在 <code>session_start</code> 和 <code>model_select</code>。独立包修改 <code>config.json</code>，完整 toolkit 修改 <code>packages/codex-edit/config.json</code>，但包更新可能覆盖本地配置。</p>
     </div>
   </section>
 
   <section class="section" id="principle">
     <div class="section-head"><div><div class="eyebrow">Design principles</div><h2>这个工具的三个核心原则</h2></div></div>
     <div class="principles">
-      <article class="principle"><h3>模型协议对齐</h3><p>GPT/Codex 模型不再被要求适应 Pi 自定义的 <code>oldText/newText</code> JSON；它看到原生的 <code>apply_patch</code> 名称和 patch grammar。</p></article>
+      <article class="principle"><h3>模型协议对齐</h3><p>选中的 GPT 模型不再被要求适应 Pi 自定义的 <code>oldText/newText</code> JSON；它看到与 Codex harness 相同的 <code>apply_patch</code> 名称和 patch grammar。</p></article>
       <article class="principle"><h3>执行端独立防护</h3><p>grammar 不是安全策略。执行端仍要做 workspace 边界、符号链接、目录、覆盖冲突、权限和取消检查。</p></article>
       <article class="principle"><h3>按能力选择，不靠 AGENTS 对抗</h3><p>不在 AGENTS 中要求模型“不要使用 apply_patch”。扩展只让模型看到适合自己的一个编辑工具，避免两套协议同时暴露。</p></article>
     </div>
@@ -276,7 +297,7 @@ else:
       </tbody>
     </table>
     <div class="panel" style="margin-top:18px">
-      <div class="status"><i></i>最终判断：候选实现保留，默认自动启用暂不打开</div>
+      <div class="status"><i></i>最终判断：已投入使用，但只对 allowlist 中的 GPT/Codex 模型路由 apply_patch</div>
       <p>本页的耗时比较优先使用同一 fixture 的配对差值，避免两组成功样本构成不同造成中位数偏差。runner 的 180s 进程上限是删失边界，不是 API timeout；本次有效 Luna 重测没有触发该上限。</p>
     </div>
   </section>
@@ -286,7 +307,7 @@ else:
     <div class="panel">
       <p><code>packages/codex-edit/extensions/codex-edit.ts</code>：工具注册、执行、防护、renderer 和模型路由。</p>
       <p><code>packages/codex-edit/src/parser.ts</code>：patch grammar 对应的 parser、hunk matcher 和 workspace path resolver。</p>
-      <p><code>packages/codex-edit/tests/parser.test.mjs</code>：6 个纯函数/文件操作测试，当前全部通过。</p>
+      <p><code>packages/codex-edit/tests/parser.test.mjs</code>：12 个 parser、matcher、路径与结构重构测试，当前全部通过。</p>
       <p><code>/home/maxiaochao/.pi/agent/evaluations/gpt-edit-benchmark/report-final.md</code>：最终 benchmark 报告。</p>
     </div>
   </section>

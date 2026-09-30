@@ -1,3 +1,8 @@
+## 2026-09-30 - v0.1.7
+
+- match Codex `apply_patch` semantics by selecting the first matching region at or after the current hunk cursor
+- add standalone package testing documentation and real parser-generated screenshot/demo media
+
 ## 2026-09-30 - v0.1.6
 
 - route apply_patch by API plus model-ID glob instead of requiring grammar-tool support

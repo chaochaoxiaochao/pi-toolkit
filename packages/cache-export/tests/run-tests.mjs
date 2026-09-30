@@ -3,8 +3,8 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import registerCacheExport from "../index.ts";
-import { parseEntries, analyzeStreaks, analyzeMisses, buildContextSegments, lineChartForTest, renderDashboard, chartEvents } from "../render.ts";
+import registerCacheExport from "../extensions/cache-export.ts";
+import { parseEntries, analyzeStreaks, analyzeMisses, buildContextSegments, lineChartForTest, renderDashboard, chartEvents } from "../src/render.ts";
 
 let pass = 0, fail = 0;
 function check(name, cond, detail = "") {

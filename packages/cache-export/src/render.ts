@@ -1,6 +1,6 @@
 // tau-style usage/cache dashboard renderer.
 // Logic ported from huggingface/tau src/tau_coding/session_usage.py (render_usage_dashboard),
-// interactivity/styles auto-extracted into ./tau-assets.mjs.
+// interactivity/styles auto-extracted into ./tau-assets.ts.
 
 import { USAGE_STYLES, USAGE_SCRIPT } from "./tau-assets.ts";
 

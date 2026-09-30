@@ -4,7 +4,7 @@ import {
 	activeTodos,
 	applyTodoAction,
 	restoreTodoState,
-} from "../todo-state.ts";
+} from "../src/todo-state.ts";
 
 const empty = { todos: [], nextId: 1 };
 

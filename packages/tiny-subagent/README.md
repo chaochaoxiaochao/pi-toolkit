@@ -2,11 +2,42 @@
 
 A small Pi extension that runs one fresh Pi child process for one focused prompt. It does not use the `pi-subagents` package and does not inherit the parent conversation or extensions.
 
+![Tiny Subagent production runner screenshot](docs/screenshot.png)
+
+## Why this package exists
+
+This is the toolkit's deliberately small subagent model: one persona, one focused prompt, one isolated child context. It avoids a general orchestration framework and keeps child transcript noise out of the parent context while preserving process and protocol diagnostics.
+
+## Demo
+
+![Tiny Subagent demo](docs/demo.gif)
+
+```text
+tiny_subagents({ action: "list" })
+tiny_subagents({
+  agent: "worker",
+  prompt: "Inspect the authentication flow and summarize the risks"
+})
+```
+
+The child receives package-local persona instructions, selected built-in tools, and a fresh context; the parent receives the focused result or structured failure details.
+
 ## Install
 
 ```bash
 pi install npm:@maxiaochao/pi-tiny-subagent
 ```
+
+The full `@maxiaochao/pi-toolkit` package also bundles this extension. Install the full toolkit or this standalone child package, not both.
+
+Update the distribution you installed:
+
+```bash
+pi update npm:@maxiaochao/pi-toolkit       # bundled copy
+pi update npm:@maxiaochao/pi-tiny-subagent # standalone child
+```
+
+The versions are independent. Publishing the child does not update an already published toolkit version.
 
 The package registers one tool: `tiny_subagents`.
 
@@ -91,3 +122,7 @@ This uses Pi's standard tool-output expansion state, so `Ctrl+O` also changes th
 Successful calls return the final assistant text. Failures return the Pi error message, stop reason, exit code, signal, stderr, protocol errors, and output produced before failure. Inline output is limited to 16 KiB. If stdout, stderr, or the final answer exceeds that size, the complete files are retained in a private temporary artifact directory and its path, byte counts, and `cleanup: "remove directory when no longer needed"` instruction are returned. Small-result temporary directories are removed automatically.
 
 The child uses the same Pi installation, provider configuration, model catalog, and authentication environment as the parent process. The package only selects the model; it does not define providers or credentials.
+
+## Development and tests
+
+The authoritative implementation is under `extensions/` and `src/`. See [TESTING.md](TESTING.md) for the test strategy, fixture cases, and latest baseline.
