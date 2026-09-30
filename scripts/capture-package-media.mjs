@@ -161,6 +161,7 @@ function table(state) {
     const herdr = {
       async createTab(request) { taskDirectory = request.env.PI_HERDR_SUBAGENTS_TASK_DIR; return { tabId: "media:t1", paneId: "media:p1" }; },
       async startAgent(request) { childArgs = request.args; },
+	  async renamePane() {},
       async promptAgent() {
         writeFileSync(join(taskDirectory, "session.jsonl"), `${JSON.stringify({ type: "session", version: 3, id: "media-session", cwd: temp })}\n`);
         writeFileSync(join(taskDirectory, "result.md"), "Found one issue: validate the empty path before writing.");
@@ -176,8 +177,8 @@ function table(state) {
     const result = await runHerdrSubagents("Review src/export.ts", { cwd: temp, model: "fixture/reviewer", tools: ["read", "grep"], herdr });
     if (previous.herdr === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = previous.herdr;
     if (previous.workspace === undefined) delete process.env.HERDR_WORKSPACE_ID; else process.env.HERDR_WORKSPACE_ID = previous.workspace;
-    const one = [`$ herdr_subagents run reviewer "Review src/export.ts"`, ``, `Opening an inspectable Herdr child session...`].join("\n");
-    const two = [one, `  model: fixture/reviewer`, `  tools: read, grep`, `  persistent session: ${childArgs.includes("--session") ? "enabled" : "missing"}`, `  extension discovery: ${childArgs.includes("--no-extensions") ? "disabled" : "enabled"}`, `  child recursion guard: enabled`].join("\n");
+	const one = [`$ herdr_subagents run reviewer "Review src/export.ts"`, ``, `Opening an interactive Pi Agent in a dedicated Herdr pane...`].join("\n");
+	const two = [one, `  lifecycle: agent start → agent prompt --wait`, `  print mode: ${childArgs.includes("--print") ? "unexpected" : "disabled"}`, `  model: fixture/reviewer`, `  tools: read, grep`, `  persistent session: ${childArgs.includes("--session") ? "enabled" : "missing"}`, `  extension discovery: ${childArgs.includes("--no-extensions") ? "disabled" : "enabled"}`, `  child recursion guard: enabled`].join("\n");
     const three = [two, ``, `Child result`, `------------`, result.output, ``, `Process exited successfully.`].join("\n");
     pages("herdr-subagents", [one, two, three]);
   } finally {

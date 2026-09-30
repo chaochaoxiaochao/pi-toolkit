@@ -31,6 +31,12 @@ export class RunDispatcher {
 
 	pause(): void { this.paused = true; this.changed(); }
 	resume(): void { this.paused = false; this.changed(); void this.drain(); }
+	cancelQueued(reason: Error): string[] {
+		const cancelled = this.queue.splice(0);
+		for (const run of cancelled) run.reject(reason);
+		this.changed();
+		return cancelled.map((run) => run.id);
+	}
 
 	private changed(): void { this.onChange?.(this.snapshot()); }
 

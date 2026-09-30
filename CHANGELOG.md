@@ -1,5 +1,6 @@
 ## 2026-09-30 - v0.9.4
 
+- replace Herdr Subagents' hidden print/shell execution with visible interactive Pi Agents, one exclusive on-demand pane per task, Fleet keyboard navigation, durable blocked/history continuation, parent-session cancellation, and focus-safe batch tab cleanup
 - retain Codex Edit in the root toolkit while restoring `@maxiaochao/pi-codex-edit` as an independently installable child package; both distributions share the implementation under `packages/codex-edit`
 - align repeated-region hunk matching with Codex by selecting the first match at or after the current cursor
 - reorganize the repository as an npm workspace: todo, cache-export, codex-edit, herdr-subagents, and worktree own their source, docs, tests, versions, and child-package releases while the root manifest loads their entrypoints directly; BTW remains root-only

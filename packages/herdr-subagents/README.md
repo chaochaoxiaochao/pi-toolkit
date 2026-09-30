@@ -1,6 +1,6 @@
 # @maxiaochao/pi-herdr-subagents
 
-A Pi extension that runs focused synchronous or background subagent batches in visible Herdr tabs. Children have fresh Pi contexts; full answers and sessions stay in project-local records while the parent receives only concise summaries and document paths.
+A Pi extension that runs focused foreground or background work as normal interactive Pi Agents in visible Herdr panes. Full answers and sessions stay in project-local records while the parent receives only concise summaries and document paths.
 
 ![Herdr Subagents production runner screenshot](docs/screenshot.png)
 
@@ -38,7 +38,7 @@ herdr_subagents({
 })
 ```
 
-Or submit an ordered synchronous batch:
+Or submit an ordered foreground batch:
 
 ```text
 herdr_subagents({
@@ -59,7 +59,7 @@ A child missing required information reports `needs-input` with an exact questio
 herdr_subagents({ action: "respond", runId: "<run-id>", answer: "Use the main branch." })
 ```
 
-`/herdr-subagents focus <task-number>` can also open the blocked pane for direct manual interaction.
+While a batch is active, its task rows stay below the editor. With an empty editor, press `↓` to enter the list, `↑`/`↓` to choose a task, `Enter` to focus its exact pane, and `Esc` to return. `/herdr-subagents focus <task-number>` remains available as a fallback.
 
 ## History
 
@@ -67,11 +67,11 @@ Run `/herdr-subagents history` or `herdr_subagents({ action: "history" })` to li
 
 Continue a saved conversation in a new Herdr tab with `herdr_subagents({ action: "resume", runId: "<run-id>", task: 1, prompt: "Follow up..." })`. Remove only a selected archive with `herdr_subagents({ action: "cleanup", runId: "<run-id>" })`. History has no automatic count-based eviction. The extension adds the runtime path to local Git excludes when available (and otherwise uses `.pi/.gitignore`) without overwriting unrelated rules.
 
-Read-only tasks start FIFO up to the configured concurrency limit. Worker panes are reused as tasks settle, results remain in input order, and one failed task does not cancel its siblings. Any batch containing a write-capable persona is forced to concurrency one.
+Read-only tasks start FIFO up to the configured concurrency limit. A pane is created only when its task starts, belongs exclusively to that task, and is never reused. Completed panes remain inspectable while another task in the batch is unsettled. Results remain in input order, and one failed task does not cancel its siblings. Any batch containing a write-capable persona is forced to concurrency one.
 
-While a run is active, the parent widget shows running, queued, blocked, failed, and completed counts. `/herdr-subagents active` shows the compact task list, and `/herdr-subagents focus <task-number>` jumps to the exact active Herdr pane without copying its transcript into Pi. Tab and pane labels track progress and stable task order. Completed tabs close immediately when unfocused; a tab being inspected waits until focus leaves.
+The widget shows one row per queued, running, blocked, failed, or completed task. Completed rows remain selectable until the whole batch settles. `/herdr-subagents active` shows the same compact state. Native labels stay short: `SA · <batch>` for the tab and `<order> · <task>` for each pane. When all tasks settle, the tab closes immediately if unfocused or after the user leaves it.
 
-Foreground calls block until all children report completion, failure, or a request for input. Each run creates one unfocused Herdr tab in the current workspace, starts visible Pi tasks in a bounded number of reusable panes, and closes the tab after the run settles unless it is focused or blocked.
+Foreground calls block until all children report completion, failure, or a request for input. Every child is started with Herdr's Agent lifecycle as a normal Pi TUI and prompted with wait semantics; no print-mode command or completion marker is injected into the pane.
 
 ## Reports and records
 
@@ -136,7 +136,7 @@ Project values override global values recursively. Model resolution is: task ove
 
 ## Recovery and failures
 
-Queued background submissions are persisted before dispatch. Parent shutdown pauses new queued tasks while already-running Herdr children may finish. On the next Pi start, the extension reconciles saved reports and live panes, resumes safe queued dispatch, and marks a vanished child as interrupted.
+Queued background submissions are persisted before dispatch. Closing the parent Pi session cancels queued, running, and blocked work, records `cancelled`, and closes the owned run tab. On the next Pi start, stale active records left by an ungraceful exit are reconciled to `cancelled` and leaked tabs are cleaned up when possible.
 
 Tab, pane, and child startup failures are retried at most twice before a prompt is submitted. A failure after submission is preserved and never automatically rerun. `stalledWarningSeconds` emits a warning without killing long-running work. Run/task/report snapshots use atomic replacement so interruption cannot expose half-written JSON.
 

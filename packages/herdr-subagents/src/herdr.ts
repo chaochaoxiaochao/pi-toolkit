@@ -28,17 +28,7 @@ export interface SplitPaneRequest {
 	cwd: string;
 	direction: "right" | "down";
 	focus: boolean;
-	signal?: AbortSignal;
-}
-
-export interface RunTaskRequest {
-	paneId: string;
-	args: string[];
-	prompt: string;
-	env: Record<string, string>;
-	marker: string;
-	stalledWarningMs?: number;
-	onStalled?: () => void;
+	env?: Record<string, string>;
 	signal?: AbortSignal;
 }
 
@@ -47,8 +37,6 @@ export interface HerdrAutomation {
 	startAgent(request: StartAgentRequest): Promise<void>;
 	promptAgent(request: PromptAgentRequest): Promise<{ status?: string }>;
 	splitPane(request: SplitPaneRequest): Promise<{ paneId: string }>;
-	prepareTask(args: string[], signal?: AbortSignal): Promise<void>;
-	runTask(request: RunTaskRequest): Promise<void>;
 	renamePane(paneId: string, label: string, signal?: AbortSignal): Promise<void>;
 	renameTab(tabId: string, label: string, signal?: AbortSignal): Promise<void>;
 	focusPane(paneId: string, signal?: AbortSignal): Promise<void>;
@@ -143,10 +131,6 @@ function parseResponse(output: string, operation: string): HerdrResponse {
 	}
 }
 
-function shellQuote(value: string): string {
-	return `'${value.replace(/'/g, `'"'"'`)}'`;
-}
-
 export class CliHerdrAutomation implements HerdrAutomation {
 	private readonly binary: string;
 
@@ -181,41 +165,11 @@ export class CliHerdrAutomation implements HerdrAutomation {
 
 	async splitPane(request: SplitPaneRequest): Promise<{ paneId: string }> {
 		const args = ["pane", "split", request.paneId, "--direction", request.direction, "--cwd", request.cwd, request.focus ? "--focus" : "--no-focus"];
+		for (const [key, value] of Object.entries(request.env ?? {}).sort(([left], [right]) => left.localeCompare(right))) args.push("--env", `${key}=${value}`);
 		const response = parseResponse(await runCommand(this.binary, args, request.signal), "herdr pane split");
 		const paneId = response.result?.pane?.pane_id;
 		if (!paneId) throw new Error("herdr pane split omitted the pane id");
 		return { paneId };
-	}
-
-	async prepareTask(args: string[], signal?: AbortSignal): Promise<void> {
-		const [binary] = args;
-		if (!binary) throw new Error("Child Pi command is empty");
-		const modelIndex = args.indexOf("--model");
-		const model = modelIndex >= 0 ? args[modelIndex + 1] : undefined;
-		await runCommand(binary, ["--list-models", ...(model ? [model] : []), "--offline"], signal);
-	}
-
-	async runTask(request: RunTaskRequest): Promise<void> {
-		const environment = Object.entries(request.env).sort(([left], [right]) => left.localeCompare(right)).map(([key, value]) => `${key}=${shellQuote(value)}`).join(" ");
-		const encodedMarker = Buffer.from(request.marker, "utf8").toString("base64");
-		const command = `${environment ? `${environment} ` : ""}${request.args.map(shellQuote).join(" ")} -- ${shellQuote(request.prompt)}; code=$?; printf '\\n%s\\n' "$(printf %s ${shellQuote(encodedMarker)} | base64 -d)"; test "$code" -eq 0`;
-		await runCommand(this.binary, ["pane", "run", request.paneId, command], request.signal);
-		let lastOutput = "";
-		let lastActivity = Date.now();
-		let warned = false;
-		let checking = false;
-		const interval = request.stalledWarningMs ? setInterval(async () => {
-			if (checking) return;
-			checking = true;
-			try {
-				const output = await runCommand(this.binary, ["pane", "read", request.paneId, "--source", "recent-unwrapped", "--lines", "40"], request.signal);
-				if (output !== lastOutput) { lastOutput = output; lastActivity = Date.now(); warned = false; }
-				else if (!warned && Date.now() - lastActivity >= (request.stalledWarningMs ?? 0)) { warned = true; request.onStalled?.(); }
-			} catch {}
-			finally { checking = false; }
-		}, Math.max(250, Math.min(1000, Math.floor(request.stalledWarningMs / 2)))) : undefined;
-		try { await runCommand(this.binary, ["pane", "wait-output", request.paneId, "--match", request.marker, "--source", "recent-unwrapped"], request.signal); }
-		finally { if (interval) clearInterval(interval); }
 	}
 
 	async renamePane(paneId: string, label: string, signal?: AbortSignal): Promise<void> {

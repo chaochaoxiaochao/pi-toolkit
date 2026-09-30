@@ -10,12 +10,13 @@
 ## Cases
 
 - Resolve package, global, and project personas and validate frontmatter/configuration.
-- Run synchronous tasks and FIFO bounded-concurrency batches through an injectable Herdr boundary.
+- Run foreground tasks and FIFO bounded-concurrency batches through an injectable Herdr boundary.
+- Verify all paths use interactive Agent start/prompt without print mode, shell injection, markers, or pane reuse.
 - Force write-capable batches to serial execution while allowing bounded read-only parallelism.
 - Preserve compact reports, full results, Pi sessions, blocked questions, and historical follow-ups.
 - Recover queued/running work after interruption without retrying post-prompt side effects.
-- Verify widgets, pane navigation, cleanup, atomic state replacement, startup retries, and stalled warnings.
+- Verify the flat public contract, Fleet keyboard navigation, parent-shutdown cancellation, cleanup, atomic state replacement, startup retries, and stalled warnings.
 
 ## Latest baseline
 
-All 58 deterministic scheduler, recovery, process-boundary, and persona cases pass. Release validation also requires extension loading and a real Herdr read-only batch smoke.
+All 81 deterministic scheduler, recovery, process-boundary, schema-validation, navigation, and persona cases must pass. Release validation also requires extension loading and a real Herdr read-only batch smoke with distinct task panes and final tab cleanup.

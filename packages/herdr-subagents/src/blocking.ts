@@ -1,25 +1,16 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { readFile, rm } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { CliHerdrAutomation, retryBeforePrompt, type HerdrAutomation } from "./herdr.ts";
-import type { HerdrSubagentsReport } from "./runner.ts";
-import { writeJsonAtomic, writeTextAtomic } from "./state.ts";
 import { continueQueuedRun } from "./continue-run.ts";
+import { liveAgentName, promptLiveAgent } from "./live-agent.ts";
+import { writeJsonAtomic, writeTextAtomic } from "./state.ts";
+import { cleanupRunTab } from "./tab-cleanup.ts";
 
 async function readJson(path: string): Promise<Record<string, any>> { return JSON.parse(await readFile(path, "utf8")) as Record<string, any>; }
-async function writeJson(path: string, value: unknown): Promise<void> { await writeJsonAtomic(path, value); }
+export interface ResumeBlockedResult { runId: string; status: "blocked" | "completed" | "partial" | "failed" | "cancelled"; summary: string; question?: string; documents: Array<{ path: string; description: string }>; recordDirectory: string; }
 
-export interface ResumeBlockedResult {
-	runId: string;
-	status: "blocked" | "completed" | "partial" | "failed";
-	summary: string;
-	question?: string;
-	documents: Array<{ path: string; description: string }>;
-	recordDirectory: string;
-}
-
-export async function respondToBlockedTask(cwd: string, runId: string, answer: string, herdr: HerdrAutomation = new CliHerdrAutomation(), taskNumber?: number): Promise<ResumeBlockedResult> {
+export async function respondToBlockedTask(cwd: string, runId: string, answer: string, herdr: HerdrAutomation = new CliHerdrAutomation(), taskNumber?: number, signal?: AbortSignal, ownerSessionId?: string, ownerProcessId?: number, onCleanupError?: (message: string) => void): Promise<ResumeBlockedResult> {
 	const runsDirectory = join(cwd, ".pi", "herdr-subagents", "runs");
 	const runDirectory = readdirSync(runsDirectory).map((entry) => join(runsDirectory, entry)).find((directory) => {
 		try { return JSON.parse(readFileSync(join(directory, "run.json"), "utf8")).id === runId; } catch { return false; }
@@ -35,44 +26,91 @@ export async function respondToBlockedTask(cwd: string, runId: string, answer: s
 		if (candidate.status === "blocked" && (!taskNumber || candidate.order === taskNumber)) { taskDirectory = directory; task = candidate; break; }
 	}
 	if (!taskDirectory || !task) throw new Error(`Run '${runId}' has no blocked task.`);
-	const reportFile = join(taskDirectory, "report.json");
-	await rm(reportFile, { force: true });
+	if (ownerSessionId) run.ownerSessionId = ownerSessionId;
+	if (ownerProcessId) run.ownerProcessId = ownerProcessId;
+	const previousReport = await readJson(join(taskDirectory, "report.json"));
+	const turnsDirectory = join(taskDirectory, "turns");
+	await mkdir(turnsDirectory, { recursive: true, mode: 0o700 });
+	const turnFile = String(task.currentTurnFile ?? join(turnsDirectory, `${String(Number(task.attempt ?? 1)).padStart(2, "0")}.json`));
+	let turn: Record<string, any>;
+	try { turn = await readJson(turnFile); }
+	catch { turn = { attempt: Number(task.attempt ?? 1), prompt: task.prompt, status: "blocked", summary: previousReport.summary, question: previousReport.question, documents: previousReport.documents ?? [], sessionFile: task.sessionFile, startedAt: task.startedAt }; }
+	turn.events = [...(Array.isArray(turn.events) ? turn.events : []), { type: "answer", text: answer, at: new Date().toISOString() }];
+	task.currentTurnFile = turnFile;
 	const resumePrompt = join(taskDirectory, "resume-system-prompt.md");
-	await writeTextAtomic(resumePrompt, "This is a new resumed turn. When this turn is finished, call subagent_report exactly once for this turn, even if an earlier turn already used it.\n");
-	const args = [process.env.PI_HERDR_SUBAGENTS_PI_BINARY?.trim() || "pi", "--approve", "--print", "--session", task.sessionFile, "--name", `Subagent: ${task.name ?? task.agent}`, "--no-extensions", "--extension", fileURLToPath(new URL("../extensions/subagent-report.ts", import.meta.url)), "--no-skills", "--append-system-prompt", resumePrompt];
-	if (task.model) args.push("--model", task.model);
-	if (task.thinking) args.push("--thinking", task.thinking);
-	if (Array.isArray(task.tools) && task.tools.length) args.push("--tools", [...new Set([...task.tools, "subagent_report"])].join(","));
-	for (const skill of task.skills ?? []) args.push("--skill", skill);
-	await retryBeforePrompt(() => herdr.prepareTask(args));
-	await herdr.runTask({ paneId: task.paneId, args, prompt: answer, env: { PI_HERDR_SUBAGENTS_CHILD: "1", PI_HERDR_SUBAGENTS_TASK_DIR: taskDirectory }, marker: `PI_HERDR_SUBAGENTS_RESUMED_${task.id.replace(/-/g, "")}` });
-	if (!existsSync(reportFile)) throw new Error("Resumed child Pi did not submit a subagent_report.");
-	const report = await readJson(reportFile) as unknown as HerdrSubagentsReport;
-	if (report.status !== "completed" && report.status !== "needs-input" && report.status !== "failed") throw new Error("Resumed child Pi submitted an invalid subagent_report.");
+	await writeTextAtomic(resumePrompt, "This is a resumed turn. When this turn is finished, call subagent_report exactly once for this turn, even if an earlier turn already used it.\n");
+	let paneId = String(task.paneId ?? "");
+	let agentName = String(task.agentName ?? liveAgentName(task.id));
+	let live = Boolean(paneId) && await herdr.paneExists(paneId, signal) && await herdr.isTaskRunning(paneId, signal);
+	if (!live) {
+		paneId = "";
+		const env = { PI_HERDR_SUBAGENTS_CHILD: "1", PI_HERDR_SUBAGENTS_TASK_DIR: taskDirectory };
+		const anchorPane = Array.isArray(run.paneIds) ? run.paneIds.at(-1) : undefined;
+		const anchorExists = Boolean(run.tabId && anchorPane && await herdr.paneExists(anchorPane, signal));
+		if (anchorExists) {
+			try {
+				const split = await retryBeforePrompt(() => herdr.splitPane({ paneId: anchorPane, cwd: run.cwd ?? cwd, direction: "right", focus: false, env, signal }));
+				paneId = split.paneId;
+				run.paneIds.push(paneId);
+			} catch { paneId = ""; }
+		}
+		if (!paneId) {
+			const staleTabId = run.tabId;
+			const tab = await retryBeforePrompt(() => herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID ?? "", cwd: run.cwd ?? cwd, label: `SA · ${run.label}`, env, focus: false, signal }));
+			run.tabId = tab.tabId;
+			paneId = tab.paneId;
+			run.paneIds = [paneId];
+			if (staleTabId) await herdr.closeTab(staleTabId).catch(() => undefined);
+		}
+		agentName = liveAgentName(task.id, Number(task.attempt ?? 1) + 1);
+		task.attempt = Number(task.attempt ?? 1) + 1;
+		await herdr.renamePane(paneId, `${String(task.order).padStart(2, "0")} · ${task.name ?? task.agent}`, signal);
+	}
+	Object.assign(task, { status: "running", tabId: run.tabId, paneId, agentName, updatedAt: new Date().toISOString() });
+	await Promise.all([writeJsonAtomic(join(taskDirectory, "task.json"), task), writeJsonAtomic(runFile, run), writeJsonAtomic(turnFile, turn)]);
+	let report: Record<string, any>;
+	try {
+		({ report } = await promptLiveAgent({ herdr, task: { ...task, id: task.id, sessionFile: task.sessionFile }, paneId, prompt: answer, systemPromptFile: resumePrompt, agentName, start: !live, signal }));
+	} catch (error) {
+		const cancelled = signal?.aborted === true;
+		const message = error instanceof Error ? error.message : String(error);
+		const status = cancelled ? "cancelled" : "failed";
+		Object.assign(task, { status, completedAt: new Date().toISOString(), error: message });
+		Object.assign(run, { status, completedAt: new Date().toISOString(), error: message });
+		Object.assign(turn, { status, error: message, completedAt: new Date().toISOString() });
+		for (const siblingDirectory of taskDirectories) {
+			if (siblingDirectory === taskDirectory) continue;
+			const siblingFile = join(siblingDirectory, "task.json");
+			const sibling = await readJson(siblingFile);
+			if (!["starting", "running", "queued", "blocked"].includes(sibling.status)) continue;
+			Object.assign(sibling, { status: "cancelled", completedAt: new Date().toISOString(), error: `Run ended because ${task.name ?? task.agent} could not continue.` });
+			await writeJsonAtomic(siblingFile, sibling);
+		}
+		await Promise.all([writeJsonAtomic(join(taskDirectory, "task.json"), task), writeJsonAtomic(runFile, run), writeJsonAtomic(turnFile, turn)]);
+		if (run.tabId) await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, onError: onCleanupError }).catch(() => undefined);
+		return { runId, status, summary: cancelled ? "Subagent response cancelled." : `Subagent response failed: ${message}`, documents: [], recordDirectory: taskDirectory };
+	}
 	const status = report.status === "needs-input" ? "blocked" : report.status;
+	turn.events.push({ type: "report", status, summary: report.summary, question: report.question, error: report.error, at: new Date().toISOString() });
+	Object.assign(turn, { status, summary: report.summary, documents: report.documents ?? [], ...(report.question ? { question: report.question } : {}), ...(report.error ? { error: report.error } : {}), completedAt: new Date().toISOString() });
 	Object.assign(task, { status, completedAt: new Date().toISOString(), ...(report.error ? { error: report.error } : {}), ...(report.question ? { question: report.question } : {}) });
-	await writeJson(join(taskDirectory, "task.json"), task);
+	await Promise.all([writeJsonAtomic(join(taskDirectory, "task.json"), task), writeJsonAtomic(turnFile, turn)]);
 	if (status !== "blocked") {
 		Object.assign(run, { status: "queued", updatedAt: new Date().toISOString() });
-		await writeJson(runFile, run);
-		await continueQueuedRun(runDirectory, herdr, { cleanup: false });
+		await writeJsonAtomic(runFile, run);
+		await continueQueuedRun(runDirectory, herdr, { cleanup: false, signal });
 	}
 	const finalTasks = await Promise.all(taskDirectories.map((directory) => readJson(join(directory, "task.json"))));
-	const finalReports = await Promise.all(taskDirectories.map(async (directory) => {
-		try { return await readJson(join(directory, "report.json")); }
-		catch { return { status: "failed", summary: "Task failed without a structured report.", documents: [] }; }
-	}));
+	const finalReports = await Promise.all(taskDirectories.map(async (directory) => { try { return await readJson(join(directory, "report.json")); } catch { return { summary: "Task has no report.", documents: [] }; } }));
 	const statuses = finalTasks.map((entry) => entry.status);
 	const runStatus = statuses.some((value) => value === "blocked" || value === "queued" || value === "running") ? "blocked" : statuses.some((value) => value === "failed") ? (statuses.some((value) => value === "completed") ? "partial" : "failed") : "completed";
 	const blockedIndex = finalTasks.findIndex((entry) => entry.status === "blocked");
-	const currentBlockedReport = blockedIndex >= 0 ? finalReports[blockedIndex] : undefined;
-	Object.assign(run, { status: runStatus, ...(runStatus === "blocked" ? { question: currentBlockedReport?.question, updatedAt: new Date().toISOString() } : { completedAt: new Date().toISOString() }) });
-	await writeJson(runFile, run);
+	const blockedReport = blockedIndex >= 0 ? finalReports[blockedIndex] : undefined;
+	Object.assign(run, { status: runStatus, ...(runStatus === "blocked" ? { question: blockedReport?.question, updatedAt: new Date().toISOString() } : { completedAt: new Date().toISOString() }) });
+	await writeJsonAtomic(runFile, run);
 	if (runStatus !== "blocked" && run.tabId) {
-		if (await herdr.isTabFocused(run.tabId)) void herdr.waitForTabUnfocused(run.tabId).then(() => herdr.closeTab(run.tabId)).catch(() => undefined);
-		else await herdr.closeTab(run.tabId);
+		await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, onError: onCleanupError });
 	}
-	const summary = runStatus === "completed" ? "All tasks completed after the answer." : runStatus === "blocked" ? `${finalTasks[blockedIndex]?.name ?? "Task"} needs input: ${currentBlockedReport?.question ?? "Input required."}` : finalReports.map((entry, index) => `${finalTasks[index].name}: ${entry.summary}`).join("\n");
-	const documents = finalReports.flatMap((entry) => entry.documents ?? []);
-	return { runId, status: runStatus, summary, ...(currentBlockedReport?.question ? { question: currentBlockedReport.question } : {}), documents, recordDirectory: taskDirectory };
+	const summary = runStatus === "completed" ? "All tasks completed after the answer." : runStatus === "blocked" ? `${finalTasks[blockedIndex]?.name ?? "Task"} needs input: ${blockedReport?.question ?? "Input required."}` : finalReports.map((entry, index) => `${finalTasks[index].name}: ${entry.summary}`).join("\n");
+	return { runId, status: runStatus, summary, ...(blockedReport?.question ? { question: blockedReport.question } : {}), documents: finalReports.flatMap((entry) => entry.documents ?? []), recordDirectory: taskDirectory };
 }

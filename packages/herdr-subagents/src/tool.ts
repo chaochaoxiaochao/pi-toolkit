@@ -4,6 +4,7 @@ import { runHerdrSubagents, type HerdrSubagentsResult } from "./runner.ts";
 import { runHerdrSubagentsBatch, type BatchResult, type BatchTask } from "./batch-runner.ts";
 import { respondToBlockedTask } from "./blocking.ts";
 import { cleanSubagentRun, historyText, listSubagentHistory, resumeHistoricalTask } from "./history.ts";
+import { validateToolParams } from "./validation.ts";
 
 export interface HerdrSubagentsTaskParams { name: string; prompt: string; agent?: string; model?: string; }
 
@@ -31,6 +32,9 @@ export interface HerdrSubagentsToolDependencies {
 	agentsDirectory: string;
 	herdr?: HerdrAutomation;
 	configurationPaths?: ConfigurationPaths;
+	ownerSessionId?: string;
+	ownerProcessId?: number;
+	runId?: string;
 }
 
 export type HerdrSubagentsDetails = HerdrSubagentsResult & {
@@ -82,15 +86,22 @@ export async function executeHerdrSubagents(
 	ctx: HerdrSubagentsToolContext,
 	dependencies: HerdrSubagentsToolDependencies,
 ): Promise<ToolResponse> {
+	const validationError = validateToolParams(params);
+	if (validationError) return { content: [{ type: "text", text: validationError }], details: { errorMessage: validationError }, isError: true };
 	const discovery = loadSubagentConfiguration(ctx.cwd, dependencies.agentsDirectory, modelId(ctx), dependencies.configurationPaths);
 	if (params.action === "history") {
 		const history = await listSubagentHistory(ctx.cwd);
 		return { content: [{ type: "text", text: historyText(history) }], details: { action: "history", runs: history } };
 	}
 	if (params.action === "cleanup") {
-		const cleaned = params.runId ? await cleanSubagentRun(ctx.cwd, params.runId) : false;
-		const text = cleaned ? `Removed Subagent run ${params.runId}.` : `Unknown Subagent run '${params.runId ?? ""}'.`;
-		return { content: [{ type: "text", text }], details: { action: "cleanup", runId: params.runId, cleaned }, ...(cleaned ? {} : { isError: true }) };
+		try {
+			const cleaned = params.runId ? await cleanSubagentRun(ctx.cwd, params.runId) : false;
+			const text = cleaned ? `Removed Subagent run ${params.runId}.` : `Unknown Subagent run '${params.runId ?? ""}'.`;
+			return { content: [{ type: "text", text }], details: { action: "cleanup", runId: params.runId, cleaned }, ...(cleaned ? {} : { isError: true }) };
+		} catch (error) {
+			const text = error instanceof Error ? error.message : String(error);
+			return { content: [{ type: "text", text }], details: { action: "cleanup", runId: params.runId, cleaned: false, errorMessage: text }, isError: true };
+		}
 	}
 	if (params.action === "resume") {
 		if (!params.runId || !params.task || !params.prompt?.trim()) {
@@ -98,8 +109,8 @@ export async function executeHerdrSubagents(
 			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
 		}
 		try {
-			const result = await resumeHistoricalTask(ctx.cwd, params.runId, params.task, params.prompt.trim(), dependencies.herdr);
-			return { content: [{ type: "text", text: result.summary }], details: result, ...(result.status === "failed" ? { isError: true } : {}) };
+			const result = await resumeHistoricalTask(ctx.cwd, params.runId, params.task, params.prompt.trim(), dependencies.herdr, signal, dependencies.ownerSessionId, dependencies.ownerProcessId, (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "resume", runId: params.runId, cleanupError: text } }));
+			return { content: [{ type: "text", text: result.summary }], details: result, ...(result.status === "failed" || result.status === "cancelled" ? { isError: true } : {}) };
 		} catch (error) {
 			const text = error instanceof Error ? error.message : String(error);
 			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
@@ -111,9 +122,9 @@ export async function executeHerdrSubagents(
 			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
 		}
 		try {
-			const result = await respondToBlockedTask(ctx.cwd, params.runId.trim(), params.answer.trim(), dependencies.herdr, params.task);
+			const result = await respondToBlockedTask(ctx.cwd, params.runId.trim(), params.answer.trim(), dependencies.herdr, params.task, signal, dependencies.ownerSessionId, dependencies.ownerProcessId, (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "respond", runId: params.runId, cleanupError: text } }));
 			const text = [result.summary, ...(result.question ? [`Question: ${result.question}`] : []), ...result.documents.map((document) => `${document.description}: ${document.path}`)].join("\n");
-			return { content: [{ type: "text", text }], details: result, ...(result.status === "failed" || result.status === "partial" ? { isError: true } : {}) };
+			return { content: [{ type: "text", text }], details: result, ...(result.status === "failed" || result.status === "partial" || result.status === "cancelled" ? { isError: true } : {}) };
 		} catch (error) {
 			const text = error instanceof Error ? error.message : String(error);
 			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
@@ -143,7 +154,7 @@ export async function executeHerdrSubagents(
 		}
 		try {
 			const result = await runHerdrSubagentsBatch(resolved, {
-				runId: params.runId,
+				runId: dependencies.runId,
 				label: params.label?.trim() || "batch",
 				concurrency: params.concurrency ?? discovery.settings.defaultConcurrency,
 				maxConcurrency: discovery.settings.maxConcurrency,
@@ -151,6 +162,8 @@ export async function executeHerdrSubagents(
 				cwd: ctx.cwd,
 				signal,
 				herdr: dependencies.herdr,
+				ownerSessionId: dependencies.ownerSessionId,
+				ownerProcessId: dependencies.ownerProcessId,
 				onUpdate: (partial) => onUpdate?.({ content: [{ type: "text", text: partial.summary }], details: { ...partial, prompts: params.tasks?.map((task) => task.prompt) ?? [] } }),
 			});
 			const lines = [result.summary, ...result.tasks.map((task) => `- ${task.name}: ${task.status} — ${task.summary}`)];
@@ -158,7 +171,8 @@ export async function executeHerdrSubagents(
 			return { content: [{ type: "text", text: lines.join("\n") }], details: { ...result, prompts: params.tasks.map((task) => task.prompt) }, ...(result.ok ? {} : { isError: true }) };
 		} catch (error) {
 			const text = error instanceof Error ? error.message : String(error);
-			return { content: [{ type: "text", text }], details: { errorMessage: text }, isError: true };
+			const diagnostic = error as { recordDirectory?: string; runId?: string };
+			return { content: [{ type: "text", text }], details: { errorMessage: text, ...(diagnostic.recordDirectory ? { recordDirectory: diagnostic.recordDirectory } : {}), ...(diagnostic.runId ? { runId: diagnostic.runId } : {}) }, isError: true };
 		}
 	}
 
@@ -192,6 +206,8 @@ export async function executeHerdrSubagents(
 		...(persona.tools ? { tools: persona.tools } : {}),
 		skills: persona.skills,
 		access: persona.access,
+		ownerSessionId: dependencies.ownerSessionId,
+		ownerProcessId: dependencies.ownerProcessId,
 		systemPrompt: persona.systemPrompt,
 		cwd: ctx.cwd,
 		signal,
