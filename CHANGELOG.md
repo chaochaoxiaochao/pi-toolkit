@@ -1,3 +1,7 @@
+## Unreleased
+
+- redesign the todo extension around a concise model contract and enforced lifecycle: replace obsolete plans, cancel or remove individual tasks, keep one task active with automatic advancement, hide closed work from the persistent widget, preserve full branch history in `/todos`, and cover state transitions with deterministic tests
+
 ## 2026-09-30 - v0.9.0
 
 - merge the Codex-style apply_patch extension into the toolkit (from the standalone @maxiaochao/pi-codex-edit v0.1.6): it now ships as extensions/codex-edit/ registered in pi.extensions, its parser and model-routing tests join npm test, and the separate package, release script and publish workflow are removed

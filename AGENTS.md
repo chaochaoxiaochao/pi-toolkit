@@ -9,10 +9,11 @@ pi-toolkit/
 ├── package.json            # pi manifest：声明扩展、skills、themes 与运行依赖
 ├── global/AGENTS.md        # ★ 全局个人指令的权威源（见下方“全局 AGENTS 安装”）
 ├── extensions/
-│   ├── todo.ts             # /todos 扩展（来源于 ~/.pi/agent/extensions/todo.ts）
+│   ├── todo.ts             # todo 工具、活跃任务 widget 与 /todos 历史视图
+│   ├── todo-state.ts       # todo 状态机、迁移与自动推进纯逻辑
 │   ├── btw.ts              # /btw 独立侧聊会话
 │   ├── btw-scroll.ts       # BTW transcript 滚动边界与分页步长纯逻辑
-│   ├── tests/              # BTW 等根扩展的轻量确定性测试
+│   ├── tests/              # todo、BTW 等根扩展的轻量确定性测试
 │   ├── cache-export/       # /cache_export 交互式缓存仪表盘
 │   │   ├── index.ts        # 入口：注册命令、输出路径、WSL 打开
 │   │   ├── render.ts       # 聚合 + miss/streak 规则 + HTML 渲染（改逻辑在这里）

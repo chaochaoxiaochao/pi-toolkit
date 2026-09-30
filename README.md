@@ -38,6 +38,8 @@ To synchronize the file directly from a checkout instead:
 bash scripts/install.sh
 ```
 
+The `todo` tool maintains a session checklist for explicit plans and multi-step work. It automatically keeps one task active and advances the next queued task; `replace` starts a clean plan after a change of direction, while `cancelled` records obsolete work honestly. The persistent widget shows active work only, and `/todos` shows the complete active and closed history for the current branch.
+
 The `/btw` side chat is a separate agent session. It can inspect the main conversation and repository, and its thread stays out of the main context until you close it and choose to inject a summary. Use `/btw` to open it or `/btw <question>` to ask directly. While the BTW overlay has focus, use `Up` / `Down` to scroll its transcript one line at a time and `PageUp` / `PageDown` to move by one transcript page.
 
 Use `/cache_export [path]` to write an interactive per-request cache dashboard. It defaults to the latest Context segment for current-state diagnosis, and the View selector can show any earlier segment or all session history. Compaction and model changes both break context charts into segments; cache-hit accumulation also resets at model changes, while TTL and other inferred interruptions remain diagnostic events rather than segment boundaries.
