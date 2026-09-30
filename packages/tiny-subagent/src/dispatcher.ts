@@ -14,6 +14,7 @@ export class RunDispatcher {
 	private activeRunId?: string;
 	private readonly queue: QueuedRun<unknown>[] = [];
 	private readonly onChange?: (snapshot: DispatcherSnapshot) => void;
+	private paused = false;
 
 	constructor(onChange?: (snapshot: DispatcherSnapshot) => void) { this.onChange = onChange; }
 
@@ -28,10 +29,13 @@ export class RunDispatcher {
 		return { ...(this.activeRunId ? { activeRunId: this.activeRunId } : {}), queuedRunIds: this.queue.map((run) => run.id) };
 	}
 
+	pause(): void { this.paused = true; this.changed(); }
+	resume(): void { this.paused = false; this.changed(); void this.drain(); }
+
 	private changed(): void { this.onChange?.(this.snapshot()); }
 
 	private async drain(): Promise<void> {
-		if (this.activeRunId) return;
+		if (this.activeRunId || this.paused) return;
 		const run = this.queue.shift();
 		if (!run) { this.changed(); return; }
 		this.activeRunId = run.id;

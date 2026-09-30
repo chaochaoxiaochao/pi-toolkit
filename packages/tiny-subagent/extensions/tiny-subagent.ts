@@ -9,6 +9,8 @@ import { CliHerdrAutomation } from "../src/herdr.ts";
 import { activeRunText, activityCounts, focusActiveTask } from "../src/monitor.ts";
 import { RunDispatcher } from "../src/dispatcher.ts";
 import { historyText, listSubagentHistory } from "../src/history.ts";
+import { loadQueuedRuns, persistQueuedRun, removeQueuedRun } from "../src/queued-runs.ts";
+import { reconcileSubagentRuns } from "../src/reconcile.ts";
 import { executeTinySubagent, type TinySubagentBatchDetails, type TinySubagentDetails, type TinySubagentToolParams } from "../src/tool.ts";
 
 const ACTIONS = ["list"] as const;
@@ -50,6 +52,36 @@ export default function (pi: ExtensionAPI) {
 	let activeBatch: TinySubagentBatchDetails | undefined;
 	const herdr = new CliHerdrAutomation();
 	const dispatcher = new RunDispatcher();
+	const notifyRun = (runId: string, result: { details: unknown }) => {
+		const details = result.details as TinySubagentBatchDetails;
+		const lines = [`Subagent run ${runId} ${details.status}: ${details.summary}`, ...details.tasks.map((task) => `- ${task.name}: ${task.summary}`)];
+		if (details.documents.length) lines.push("Documents:", ...details.documents.map((document) => `- ${document.description}: ${document.path}`));
+		pi.sendMessage({ customType: "tiny-subagents-run", content: lines.join("\n"), display: true, details: { runId, status: details.status } }, { triggerTurn: true, deliverAs: "followUp" });
+	};
+
+	pi.on("session_shutdown", () => { dispatcher.pause(); });
+	pi.on("session_start", async (_event, ctx) => {
+		dispatcher.pause();
+		const reconciliation = await reconcileSubagentRuns(ctx.cwd, herdr);
+		const known = new Set([dispatcher.snapshot().activeRunId, ...dispatcher.snapshot().queuedRunIds].filter(Boolean));
+		for (const queued of await loadQueuedRuns(ctx.cwd)) {
+			if (known.has(queued.runId)) continue;
+			void dispatcher.submit(queued.runId, async () => {
+				await removeQueuedRun(ctx.cwd, queued.runId);
+				const result = await executeTinySubagent(queued.params, undefined, undefined, ctx, { agentsDirectory: packageAgentsDir });
+				notifyRun(queued.runId, result);
+				return result;
+			});
+		}
+		if (reconciliation.liveTasks === 0) dispatcher.resume();
+		else {
+			ctx.ui.notify(`${reconciliation.liveTasks} Subagent task(s) are still running in Herdr; queued dispatch remains paused.`, "info");
+			void (async () => {
+				while ((await reconcileSubagentRuns(ctx.cwd, herdr)).liveTasks > 0) await new Promise((resolve) => setTimeout(resolve, 1000));
+				dispatcher.resume();
+			})();
+		}
+	});
 
 	pi.registerTool({
 		name: "tiny_subagents",
@@ -77,7 +109,9 @@ export default function (pi: ExtensionAPI) {
 			}
 			const runId = randomUUID();
 			params.runId = runId;
+			if (params.background) await persistQueuedRun(ctx.cwd, runId, params);
 			const promise = dispatcher.submit(runId, async () => {
+				if (params.background) await removeQueuedRun(ctx.cwd, runId);
 				const result = await executeRun();
 				const details = result.details as TinySubagentBatchDetails;
 				activeBatch = details.status === "blocked" ? details : undefined;
@@ -90,10 +124,7 @@ export default function (pi: ExtensionAPI) {
 			if (params.background) {
 				ctx.ui.setWidget("tiny-subagents", [`Subagent run ${runId.slice(0, 8)} queued`, `queued runs ${dispatcher.snapshot().queuedRunIds.length}`]);
 				void promise.then((result) => {
-					const details = result.details as TinySubagentBatchDetails;
-					const lines = [`Subagent run ${runId} ${details.status}: ${details.summary}`, ...details.tasks.map((task) => `- ${task.name}: ${task.summary}`)];
-					if (details.documents.length) lines.push("Documents:", ...details.documents.map((document) => `- ${document.description}: ${document.path}`));
-					pi.sendMessage({ customType: "tiny-subagents-run", content: lines.join("\n"), display: true, details: { runId, status: details.status } }, { triggerTurn: true, deliverAs: "followUp" });
+					notifyRun(runId, result);
 					if (!activeBatch && !dispatcher.snapshot().activeRunId && dispatcher.snapshot().queuedRunIds.length === 0) ctx.ui.setWidget("tiny-subagents", undefined);
 				}).catch((error) => {
 					pi.sendMessage({ customType: "tiny-subagents-run", content: `Subagent run ${runId} failed: ${error instanceof Error ? error.message : String(error)}`, display: true, details: { runId, status: "failed" } }, { triggerTurn: true, deliverAs: "followUp" });

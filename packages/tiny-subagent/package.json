@@ -1,7 +1,7 @@
 {
   "name": "@maxiaochao/pi-tiny-subagent",
   "version": "0.1.0",
-  "description": "Run one synchronous Pi subagent in a dedicated Herdr tab.",
+  "description": "Run inspectable synchronous or background Pi subagent batches in Herdr.",
   "type": "module",
   "keywords": ["pi-package", "pi-extension", "subagent"],
   "files": ["extensions", "src", "agents", "README.md", "CHANGELOG.md", "package.json"],

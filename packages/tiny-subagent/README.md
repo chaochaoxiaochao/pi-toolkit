@@ -1,6 +1,6 @@
 # @maxiaochao/pi-tiny-subagent
 
-A Pi extension that runs one focused subagent synchronously in its own visible Herdr tab. The child has a fresh Pi context; its full answer and session stay in project-local records while the parent receives only a concise summary and document paths.
+A Pi extension that runs focused synchronous or background subagent batches in visible Herdr tabs. Children have fresh Pi contexts; full answers and sessions stay in project-local records while the parent receives only concise summaries and document paths.
 
 ## Requirements and install
 
@@ -125,5 +125,11 @@ Global settings live at `~/.pi/agent/subagents.json`; project overrides live at 
 ```
 
 Project values override global values recursively. Model resolution is: task override, project persona setting, global persona setting, persona frontmatter, global/project default model, then parent model. Run `/subagents agents`, `/subagents models`, or `/subagents settings` to inspect effective values and their sources.
+
+## Recovery and failures
+
+Queued background submissions are persisted before dispatch. Parent shutdown pauses new queued tasks while already-running Herdr children may finish. On the next Pi start, the extension reconciles saved reports and live panes, resumes safe queued dispatch, and marks a vanished child as interrupted.
+
+Tab, pane, and child startup failures are retried at most twice before a prompt is submitted. A failure after submission is preserved and never automatically rerun. `stalledWarningSeconds` emits a warning without killing long-running work. Run/task/report snapshots use atomic replacement so interruption cannot expose half-written JSON.
 
 The child does not inherit parent extensions, parent conversation, or unconfigured skills, but normal project context files still apply. It uses the same Pi installation, provider configuration, model catalog, and credentials as the parent.

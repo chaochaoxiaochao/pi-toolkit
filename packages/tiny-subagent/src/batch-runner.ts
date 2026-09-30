@@ -3,10 +3,11 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CliHerdrAutomation, type HerdrAutomation } from "./herdr.ts";
+import { CliHerdrAutomation, retryBeforePrompt, type HerdrAutomation } from "./herdr.ts";
 import type { PersonaAccess } from "./config.ts";
 import type { TinySubagentDocument, TinySubagentReport } from "./runner.ts";
 import { ensureRuntimeIgnored } from "./history.ts";
+import { writeJsonAtomic } from "./state.ts";
 
 export interface BatchTask {
 	name: string;
@@ -25,6 +26,7 @@ export interface BatchOptions {
 	label: string;
 	concurrency: number;
 	maxConcurrency: number;
+	stalledWarningSeconds?: number;
 	cwd: string;
 	signal?: AbortSignal;
 	herdr?: HerdrAutomation;
@@ -60,7 +62,7 @@ export interface BatchResult {
 }
 
 function timestamp(): string { return new Date().toISOString(); }
-async function writeJson(path: string, value: unknown): Promise<void> { await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 }); }
+async function writeJson(path: string, value: unknown): Promise<void> { await writeJsonAtomic(path, value); }
 function validReport(value: unknown): value is TinySubagentReport {
 	if (!value || typeof value !== "object") return false;
 	const report = value as Record<string, unknown>;
@@ -91,11 +93,11 @@ export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOpt
 	const emit = (status: BatchResult["status"], summary: string) => options.onUpdate?.({ ok: false, status, runId, label: options.label, requestedConcurrency, effectiveConcurrency, tasks: results.filter(Boolean), activity: activity.map((task) => ({ ...task })), summary, documents: [], recordDirectory: runDirectory, tabId });
 	emit("starting", `Creating ${effectiveConcurrency} Herdr worker slot${effectiveConcurrency === 1 ? "" : "s"}...`);
 	try {
-		const tab = await herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID, cwd: options.cwd, label: `SA · ${options.label} · 0/${tasks.length}`, env: { PI_SUBAGENT_CHILD: "1" }, focus: false, signal: options.signal });
+		const tab = await retryBeforePrompt(() => herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID, cwd: options.cwd, label: `SA · ${options.label} · 0/${tasks.length}`, env: { PI_SUBAGENT_CHILD: "1" }, focus: false, signal: options.signal }));
 		tabId = tab.tabId;
 		const panes = [tab.paneId];
 		while (panes.length < effectiveConcurrency) {
-			const split = await herdr.splitPane({ paneId: panes[panes.length - 1], cwd: options.cwd, direction: panes.length % 2 ? "right" : "down", focus: false, signal: options.signal });
+			const split = await retryBeforePrompt(() => herdr.splitPane({ paneId: panes[panes.length - 1], cwd: options.cwd, direction: panes.length % 2 ? "right" : "down", focus: false, signal: options.signal }));
 			panes.push(split.paneId);
 		}
 		Object.assign(runRecord, { status: "running", tabId, paneIds: panes });
@@ -130,7 +132,7 @@ export async function runTinySubagentBatch(tasks: BatchTask[], options: BatchOpt
 			let report: TinySubagentReport;
 			try {
 				if (index > 0) await started[index - 1];
-				const running = herdr.runTask({ paneId, args, prompt: task.prompt, env: { PI_SUBAGENT_CHILD: "1", PI_TINY_SUBAGENT_TASK_DIR: taskDirectory }, marker: `PI_SUBAGENT_DONE_${taskId.replace(/-/g, "")}`, signal: options.signal });
+				const running = herdr.runTask({ paneId, args, prompt: task.prompt, env: { PI_SUBAGENT_CHILD: "1", PI_TINY_SUBAGENT_TASK_DIR: taskDirectory }, marker: `PI_SUBAGENT_DONE_${taskId.replace(/-/g, "")}`, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => emit("running", `${task.name} appears stalled; it is still running.`), signal: options.signal });
 				startResolvers[index]();
 				await running;
 				if (!existsSync(reportFile)) throw new Error("Child Pi settled but did not submit a subagent_report.");

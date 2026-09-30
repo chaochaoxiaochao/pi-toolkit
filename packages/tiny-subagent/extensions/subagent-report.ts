@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -16,6 +16,12 @@ const ReportParams = Type.Object({
 	question: Type.Optional(Type.String({ minLength: 1, description: "Exact question when status is needs-input." })),
 });
 
+function writeAtomic(path: string, content: string): void {
+	const temporary = `${path}.tmp-${process.pid}`;
+	writeFileSync(temporary, content, { encoding: "utf8", mode: 0o600 });
+	renameSync(temporary, path);
+}
+
 export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "subagent_report",
@@ -27,7 +33,7 @@ export default function (pi: ExtensionAPI) {
 			if (!taskDirectory) throw new Error("PI_TINY_SUBAGENT_TASK_DIR is not set");
 			mkdirSync(taskDirectory, { recursive: true, mode: 0o700 });
 			const resultPath = resolve(taskDirectory, "result.md");
-			writeFileSync(resultPath, params.result, { encoding: "utf8", mode: 0o600 });
+			writeAtomic(resultPath, params.result);
 			const documents = (params.documents ?? []).map((document) => ({
 				path: resolve(process.cwd(), document.path),
 				description: document.description,
@@ -43,7 +49,7 @@ export default function (pi: ExtensionAPI) {
 				...(params.question ? { question: params.question } : {}),
 				reportedAt: new Date().toISOString(),
 			};
-			writeFileSync(resolve(taskDirectory, "report.json"), `${JSON.stringify(report, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+			writeAtomic(resolve(taskDirectory, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
 			return {
 				content: [{ type: "text" as const, text: `${params.status}: ${params.summary}` }],
 				details: report,

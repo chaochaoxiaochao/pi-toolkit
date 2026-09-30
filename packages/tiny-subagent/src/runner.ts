@@ -3,8 +3,9 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CliHerdrAutomation, type HerdrAutomation } from "./herdr.ts";
+import { CliHerdrAutomation, retryBeforePrompt, type HerdrAutomation } from "./herdr.ts";
 import { ensureRuntimeIgnored } from "./history.ts";
+import { writeJsonAtomic } from "./state.ts";
 
 const CHILD_ENV = "PI_SUBAGENT_CHILD";
 const TASK_DIRECTORY_ENV = "PI_TINY_SUBAGENT_TASK_DIR";
@@ -113,7 +114,7 @@ function failure(cwd: string, startedAt: number, errorMessage: string, fields: P
 }
 
 async function writeJson(path: string, value: unknown): Promise<void> {
-	await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+	await writeJsonAtomic(path, value);
 }
 
 function validReport(value: unknown): value is TinySubagentReport {
@@ -226,7 +227,7 @@ export async function runTinySubagent(prompt: string, options: TinySubagentOptio
 	update("starting", "Creating Herdr tab...");
 
 	try {
-		const tab = await herdr.createTab({
+		const tab = await retryBeforePrompt(() => herdr.createTab({
 			workspaceId: process.env.HERDR_WORKSPACE_ID,
 			cwd,
 			label: `SA · ${label}`,
@@ -236,7 +237,7 @@ export async function runTinySubagent(prompt: string, options: TinySubagentOptio
 			},
 			focus: false,
 			signal: options.signal,
-		});
+		}));
 		tabId = tab.tabId;
 		paneId = tab.paneId;
 		Object.assign(runRecord, { status: "running", tabId, paneId });
@@ -260,7 +261,7 @@ export async function runTinySubagent(prompt: string, options: TinySubagentOptio
 		for (const skill of options.skills ?? []) childArgs.push("--skill", skill);
 		const name = `tiny-${taskId.replace(/-/g, "").slice(0, 12)}`;
 		update("starting", "Starting child Pi in Herdr...");
-		await herdr.startAgent({ name, kind: "pi", paneId, args: childArgs, signal: options.signal });
+		await retryBeforePrompt(() => herdr.startAgent({ name, kind: "pi", paneId, args: childArgs, signal: options.signal }));
 		update("running", "Child Pi is working...");
 		await herdr.promptAgent({ target: name, prompt, signal: options.signal });
 

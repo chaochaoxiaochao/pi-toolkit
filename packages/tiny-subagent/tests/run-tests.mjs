@@ -8,6 +8,9 @@ import { executeTinySubagent } from "../src/tool.ts";
 import { activityCounts, focusActiveTask } from "../src/monitor.ts";
 import { RunDispatcher } from "../src/dispatcher.ts";
 import { ensureRuntimeIgnored, historyText, listSubagentHistory } from "../src/history.ts";
+import { writeJsonAtomic } from "../src/state.ts";
+import { loadQueuedRuns, persistQueuedRun } from "../src/queued-runs.ts";
+import { reconcileSubagentRuns } from "../src/reconcile.ts";
 
 let passed = 0;
 let failed = 0;
@@ -82,6 +85,8 @@ function fakeHerdr(mode = "completed") {
 			active += 1;
 			maxActive = Math.max(maxActive, active);
 			await new Promise((resolve) => setTimeout(resolve, request.prompt.includes("slow") ? 15 : 2));
+			if (mode === "stalled") request.onStalled?.();
+			if (mode === "post-fail") { active -= 1; throw new Error("connection lost after prompt submission"); }
 			const directory = request.env.PI_TINY_SUBAGENT_TASK_DIR;
 			writeFileSync(join(directory, "session.jsonl"), `${JSON.stringify({ type: "session", version: 3, id: request.marker, cwd: root })}\n`);
 			const needsInput = mode === "blocked" && taskRuns === 1;
@@ -96,6 +101,7 @@ function fakeHerdr(mode = "completed") {
 		async focusPane(paneId) { calls.push(["focusPane", { paneId }]); },
 		async isTabFocused(tabId) { calls.push(["isTabFocused", { tabId }]); return mode === "focused"; },
 		async waitForTabUnfocused(tabId) { calls.push(["waitForTabUnfocused", { tabId }]); },
+		async paneExists(paneId) { calls.push(["paneExists", { paneId }]); return mode !== "missing-pane"; },
 		async closeTab(tabId) {
 			calls.push(["closeTab", { tabId }]);
 			if (mode === "close-failed") throw new Error("tab still busy");
@@ -242,8 +248,12 @@ try {
 	const second = dispatcher.submit("run-two", async () => { starts.push("run-two"); await new Promise((resolve) => { releaseSecond = resolve; }); return "two"; });
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	check("dispatcher runs only one run and exposes queued successors", starts.join(",") === "run-one" && dispatcher.snapshot().activeRunId === "run-one" && dispatcher.snapshot().queuedRunIds.join(",") === "run-two");
+	dispatcher.pause();
 	releaseFirst();
 	check("dispatcher returns first result and advances FIFO", await first === "one");
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	check("parent shutdown pauses new queued dispatch", starts.join(",") === "run-one" && dispatcher.snapshot().queuedRunIds.join(",") === "run-two");
+	dispatcher.resume();
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	check("dispatcher starts next queued run automatically", starts.join(",") === "run-one,run-two" && dispatcher.snapshot().activeRunId === "run-two");
 	releaseSecond();
@@ -277,6 +287,34 @@ try {
 	const cleaned = await executeTinySubagent({ action: "cleanup", runId: backgroundId }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: fakeHerdr() });
 	const afterCleanup = await listSubagentHistory(root);
 	check("explicit cleanup removes only the selected run", !cleaned.isError && !afterCleanup.some((run) => run.id === backgroundId) && (!remainingRunId || afterCleanup.some((run) => run.id === remainingRunId)));
+
+	const retryHerdr = fakeHerdr();
+	const createTab = retryHerdr.createTab.bind(retryHerdr);
+	let createAttempts = 0;
+	retryHerdr.createTab = async (request) => { createAttempts += 1; if (createAttempts < 3) throw new Error("transient startup failure"); return await createTab(request); };
+	const retried = await executeTinySubagent({ tasks: [{ name: "retry", prompt: "retry", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: retryHerdr });
+	check("startup failures retry at most twice before prompt", !retried.isError && createAttempts === 3 && retryHerdr.calls.filter(([name]) => name === "runTask:start").length === 1);
+	const postFailureHerdr = fakeHerdr("post-fail");
+	const postFailure = await executeTinySubagent({ tasks: [{ name: "no-retry", prompt: "side effect", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: postFailureHerdr });
+	check("failure after prompt submission is preserved without rerun", postFailure.isError && postFailureHerdr.calls.filter(([name]) => name === "runTask:start").length === 1 && postFailure.details.tasks[0].error.includes("after prompt"));
+	const stalledUpdates = [];
+	const stalled = await executeTinySubagent({ tasks: [{ name: "long", prompt: "long", agent: "explorer" }] }, undefined, (update) => stalledUpdates.push(update.content[0].text), { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: fakeHerdr("stalled") });
+	check("stalled warning does not kill child", !stalled.isError && stalledUpdates.some((text) => text.includes("appears stalled")));
+
+	const atomicFile = join(root, "atomic.json");
+	await Promise.all(Array.from({ length: 12 }, (_, index) => writeJsonAtomic(atomicFile, { index, payload: "x".repeat(1000) })));
+	const atomicValue = JSON.parse(readFileSync(atomicFile, "utf8"));
+	check("atomic snapshots remain parseable under replacement", Number.isInteger(atomicValue.index) && !readdirSync(root).some((entry) => entry.startsWith("atomic.json.tmp-")));
+	await persistQueuedRun(root, "queued-persisted", { runId: "queued-persisted", background: true, tasks: [{ name: "later", prompt: "later", agent: "explorer" }] });
+	check("queued background submission survives parent shutdown", (await loadQueuedRuns(root)).some((run) => run.runId === "queued-persisted"));
+
+	const recoveryRoot = join(root, "recovery");
+	const recoveryTask = join(recoveryRoot, ".pi", "herdr-subagents", "runs", "run", "tasks", "01-task");
+	mkdirSync(recoveryTask, { recursive: true });
+	writeFileSync(join(recoveryRoot, ".pi", "herdr-subagents", "runs", "run", "run.json"), JSON.stringify({ id: "recover", label: "recover", status: "running", startedAt: new Date().toISOString() }));
+	writeFileSync(join(recoveryTask, "task.json"), JSON.stringify({ id: "task", runId: "recover", name: "lost", status: "running", paneId: "w1:missing", sessionFile: join(recoveryTask, "session.jsonl") }));
+	const reconciliation = await reconcileSubagentRuns(recoveryRoot, fakeHerdr("missing-pane"));
+	check("reconciliation marks missing child interrupted", reconciliation.interruptedTasks === 1 && JSON.parse(readFileSync(join(recoveryTask, "task.json"), "utf8")).status === "interrupted");
 } finally {
 	restoreEnv();
 	rmSync(root, { recursive: true, force: true });

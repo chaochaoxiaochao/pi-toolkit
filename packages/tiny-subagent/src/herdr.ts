@@ -37,6 +37,8 @@ export interface RunTaskRequest {
 	prompt: string;
 	env: Record<string, string>;
 	marker: string;
+	stalledWarningMs?: number;
+	onStalled?: () => void;
 	signal?: AbortSignal;
 }
 
@@ -51,6 +53,7 @@ export interface HerdrAutomation {
 	focusPane(paneId: string, signal?: AbortSignal): Promise<void>;
 	isTabFocused(tabId: string, signal?: AbortSignal): Promise<boolean>;
 	waitForTabUnfocused(tabId: string, signal?: AbortSignal): Promise<void>;
+	paneExists(paneId: string, signal?: AbortSignal): Promise<boolean>;
 	closeTab(tabId: string, signal?: AbortSignal): Promise<void>;
 }
 
@@ -80,6 +83,15 @@ export class HerdrCommandError extends Error {
 		this.exitCode = exitCode;
 		this.stderr = stderr;
 	}
+}
+
+export async function retryBeforePrompt<T>(operation: () => Promise<T>, retries = 2): Promise<T> {
+	let lastError: unknown;
+	for (let attempt = 0; attempt <= retries; attempt += 1) {
+		try { return await operation(); }
+		catch (error) { lastError = error; }
+	}
+	throw lastError;
 }
 
 async function runCommand(binary: string, args: string[], signal?: AbortSignal): Promise<string> {
@@ -174,9 +186,12 @@ export class CliHerdrAutomation implements HerdrAutomation {
 
 	async runTask(request: RunTaskRequest): Promise<void> {
 		const environment = Object.entries(request.env).sort(([left], [right]) => left.localeCompare(right)).map(([key, value]) => `${key}=${shellQuote(value)}`).join(" ");
-		const command = `${environment ? `${environment} ` : ""}${request.args.map(shellQuote).join(" ")} -- ${shellQuote(request.prompt)}; code=$?; printf '\\n%s\\n' ${shellQuote(request.marker)}; test "$code" -eq 0`;
+		const encodedMarker = Buffer.from(request.marker, "utf8").toString("base64");
+		const command = `${environment ? `${environment} ` : ""}${request.args.map(shellQuote).join(" ")} -- ${shellQuote(request.prompt)}; code=$?; printf '\\n%s\\n' "$(printf %s ${shellQuote(encodedMarker)} | base64 -d)"; test "$code" -eq 0`;
 		await runCommand(this.binary, ["pane", "run", request.paneId, command], request.signal);
-		await runCommand(this.binary, ["pane", "wait-output", request.paneId, "--match", request.marker, "--source", "recent-unwrapped"], request.signal);
+		const timer = request.stalledWarningMs ? setTimeout(() => request.onStalled?.(), request.stalledWarningMs) : undefined;
+		try { await runCommand(this.binary, ["pane", "wait-output", request.paneId, "--match", request.marker, "--source", "recent-unwrapped"], request.signal); }
+		finally { if (timer) clearTimeout(timer); }
 	}
 
 	async renamePane(paneId: string, label: string, signal?: AbortSignal): Promise<void> {
@@ -203,6 +218,11 @@ export class CliHerdrAutomation implements HerdrAutomation {
 				if (signal) signal.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
 			});
 		}
+	}
+
+	async paneExists(paneId: string, signal?: AbortSignal): Promise<boolean> {
+		try { await runCommand(this.binary, ["pane", "get", paneId], signal); return true; }
+		catch { return false; }
 	}
 
 	async closeTab(tabId: string, signal?: AbortSignal): Promise<void> {

@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Persist and reconcile queued/running work across parent shutdown, retry only pre-prompt startup, preserve post-submit failures, warn without timing out stalled children, and atomically replace state snapshots.
 - Add compact project-local history, saved-session follow-ups in new Herdr tabs, explicit per-run cleanup, unlimited retention, and generated-state Git exclusion.
 - Support structured `needs-input` reports, preserve blocked panes and sessions, and resume the original child with `action: respond`.
 - Queue background batches behind one active run, return stable IDs immediately, keep progress visible, and send one compact run-level parent notification.

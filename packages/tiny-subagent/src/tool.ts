@@ -147,6 +147,7 @@ export async function executeTinySubagent(
 				label: params.label?.trim() || "batch",
 				concurrency: params.concurrency ?? discovery.settings.defaultConcurrency,
 				maxConcurrency: discovery.settings.maxConcurrency,
+				stalledWarningSeconds: discovery.settings.stalledWarningSeconds,
 				cwd: ctx.cwd,
 				signal,
 				herdr: dependencies.herdr,

@@ -1,8 +1,9 @@
-import { existsSync, readdirSync } from "node:fs";
-import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
+import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CliHerdrAutomation, type HerdrAutomation } from "./herdr.ts";
+import { writeJsonAtomic, writeTextAtomic } from "./state.ts";
 
 export interface HistoricalTask { order: number; id: string; name: string; status: string; summary?: string; question?: string; recordDirectory: string; sessionFile: string; }
 export interface HistoricalRun { id: string; label: string; status: string; startedAt: string; completedAt?: string; effectiveConcurrency?: number; tasks: HistoricalTask[]; recordDirectory: string; }
@@ -11,9 +12,22 @@ async function readJson(path: string): Promise<Record<string, any>> { return JSO
 
 export async function ensureRuntimeIgnored(cwd: string): Promise<void> {
 	const piDirectory = join(cwd, ".pi");
-	const ignoreFile = join(piDirectory, ".gitignore");
 	await mkdir(piDirectory, { recursive: true, mode: 0o700 });
-	const line = "herdr-subagents/";
+	const dotGit = join(cwd, ".git");
+	let ignoreFile = join(piDirectory, ".gitignore");
+	let line = "herdr-subagents/";
+	if (existsSync(dotGit)) {
+		let gitDirectory = dotGit;
+		if (!statSync(dotGit).isDirectory()) {
+			const configured = readFileSync(dotGit, "utf8").match(/^gitdir:\s*(.+)$/m)?.[1]?.trim();
+			if (configured) gitDirectory = isAbsolute(configured) ? configured : join(cwd, configured);
+		}
+		const commonDirectoryFile = join(gitDirectory, "commondir");
+		const commonDirectory = existsSync(commonDirectoryFile) ? join(gitDirectory, readFileSync(commonDirectoryFile, "utf8").trim()) : gitDirectory;
+		ignoreFile = join(commonDirectory, "info", "exclude");
+		line = "/.pi/herdr-subagents/";
+		await mkdir(join(commonDirectory, "info"), { recursive: true });
+	}
 	const current = existsSync(ignoreFile) ? await readFile(ignoreFile, "utf8") : "";
 	if (current.split(/\r?\n/).includes(line)) return;
 	await appendFile(ignoreFile, `${current && !current.endsWith("\n") ? "\n" : ""}${line}\n`, { encoding: "utf8", mode: 0o600 });
@@ -60,11 +74,19 @@ export async function resumeHistoricalTask(cwd: string, runId: string, taskNumbe
 	if (!run || !historical) throw new Error(`Unknown historical task ${runId}#${taskNumber}.`);
 	const followupDirectory = join(historical.recordDirectory, "followups", new Date().toISOString().replace(/[-:.]/g, ""));
 	await mkdir(followupDirectory, { recursive: true, mode: 0o700 });
+	const followupPrompt = join(followupDirectory, "system-prompt.md");
+	await writeTextAtomic(followupPrompt, "This is a new resumed task. When this turn is finished, call subagent_report exactly once for this turn, even if an earlier turn already used it.\n");
 	const tab = await herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID ?? "", cwd, label: `SA · resume · ${historical.name}`, env: { PI_SUBAGENT_CHILD: "1" }, focus: false });
-	const args = [process.env.PI_TINY_SUBAGENT_PI_BINARY?.trim() || "pi", "--approve", "--print", "--session", historical.sessionFile, "--name", `Subagent: ${historical.name}`, "--no-extensions", "--extension", fileURLToPath(new URL("../extensions/subagent-report.ts", import.meta.url)), "--no-skills"];
-	await herdr.runTask({ paneId: tab.paneId, args, prompt, env: { PI_SUBAGENT_CHILD: "1", PI_TINY_SUBAGENT_TASK_DIR: followupDirectory }, marker: `PI_SUBAGENT_HISTORY_${Date.now()}` });
-	const report = await readJson(join(followupDirectory, "report.json"));
-	await writeFile(join(followupDirectory, "followup.json"), `${JSON.stringify({ prompt, sessionFile: historical.sessionFile, paneId: tab.paneId, reportedAt: new Date().toISOString() }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+	const args = [process.env.PI_TINY_SUBAGENT_PI_BINARY?.trim() || "pi", "--approve", "--print", "--session", historical.sessionFile, "--name", `Subagent: ${historical.name}`, "--no-extensions", "--extension", fileURLToPath(new URL("../extensions/subagent-report.ts", import.meta.url)), "--no-skills", "--append-system-prompt", followupPrompt];
+	let report: Record<string, any>;
+	try {
+		await herdr.runTask({ paneId: tab.paneId, args, prompt, env: { PI_SUBAGENT_CHILD: "1", PI_TINY_SUBAGENT_TASK_DIR: followupDirectory }, marker: `PI_SUBAGENT_HISTORY_${Date.now()}` });
+		report = await readJson(join(followupDirectory, "report.json"));
+	} catch (error) {
+		await herdr.closeTab(tab.tabId).catch(() => undefined);
+		throw error;
+	}
+	await writeJsonAtomic(join(followupDirectory, "followup.json"), { prompt, sessionFile: historical.sessionFile, paneId: tab.paneId, reportedAt: new Date().toISOString() });
 	if (report.status !== "needs-input") {
 		if (await herdr.isTabFocused(tab.tabId)) void herdr.waitForTabUnfocused(tab.tabId).then(() => herdr.closeTab(tab.tabId)).catch(() => undefined);
 		else await herdr.closeTab(tab.tabId);

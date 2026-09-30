@@ -58,7 +58,7 @@ pi-toolkit/
 
 ## 开发规则
 
-- **改扩展逻辑**：根扩展改完必须跑 `npm test`（根包确定性测试），再做 `npm run load-test`；tiny 包改完必须跑 `npm --prefix packages/tiny-subagent test`，再加载 `packages/tiny-subagent/extensions/tiny-subagent.ts`；codex-edit 的权威实现位于 `packages/codex-edit`，改完必须跑 `npm --prefix packages/codex-edit test`、`npm pack --dry-run`，再分别加载独立入口和 `extensions/codex-edit/index.ts` 根包入口。
+- **改扩展逻辑**：根扩展改完必须跑 `npm test`（根包确定性测试），再做 `npm run load-test`；tiny 包改完必须跑 `npm --prefix packages/tiny-subagent test`，再加载 `packages/tiny-subagent/extensions/tiny-subagent.ts`；涉及 Herdr 调度、导航、恢复时还要在 Herdr 内做只读并发批次、pane 聚焦、tab 清理和历史 session 恢复冒烟，配置与运行状态分别使用 `.pi/subagents.json` 和 `.pi/herdr-subagents/`；codex-edit 的权威实现位于 `packages/codex-edit`，改完必须跑 `npm --prefix packages/codex-edit test`、`npm pack --dry-run`，再分别加载独立入口和 `extensions/codex-edit/index.ts` 根包入口。
 - **文档同步**：新增或变更用户可见功能时，必须同步检查 `README.md`、根 `AGENTS.md`、`CHANGELOG.md` 和 `package.json` manifest；提交前用 `rg` 搜索旧的功能清单、目录说明和版本信息，确认没有过时描述。
 - **改 skill**：先按目标 skill 的 `SKILL.md` 验证脚本；`web-browser` 至少要检查全部 `scripts/*.js` 语法、实际启动隔离浏览器、完成一次导航/求值，并用 `npm pack --dry-run` 确认 skill 文件进入 tarball。WSL 下应验证 Windows Chrome 自动发现和 PowerShell 启动路径。
 - **skill 运行依赖**：第三方依赖统一声明在根 `package.json` 的 `dependencies`，不要提交 skill 内的 `node_modules`；Pi 从 npm/git 安装包时会执行 `npm install`。Pi 内置包仍按下条规则放 `peerDependencies`。
