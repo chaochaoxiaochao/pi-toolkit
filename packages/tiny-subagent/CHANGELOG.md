@@ -1,3 +1,9 @@
+## Unreleased
+
+- Run one synchronous subagent in a dedicated, unfocused Herdr tab and close it after completion.
+- Require a structured child report and return only its summary and document paths to the parent.
+- Persist run/task metadata, the full result, and the child Pi session under `.pi/herdr-subagents/runs`.
+
 ## 2026-09-01 - v0.1.0
 
 - initial release

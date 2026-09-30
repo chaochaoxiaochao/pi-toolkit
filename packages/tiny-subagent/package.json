@@ -1,7 +1,7 @@
 {
   "name": "@maxiaochao/pi-tiny-subagent",
   "version": "0.1.0",
-  "description": "A tiny Pi subagent tool with package-local personas and detailed process errors.",
+  "description": "Run one synchronous Pi subagent in a dedicated Herdr tab.",
   "type": "module",
   "keywords": ["pi-package", "pi-extension", "subagent"],
   "files": ["extensions", "src", "agents", "README.md", "CHANGELOG.md", "package.json"],
