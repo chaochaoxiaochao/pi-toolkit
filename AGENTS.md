@@ -33,12 +33,7 @@ pi-toolkit/
 │   │   ├── render.ts       # 聚合 + miss/streak 规则 + HTML 渲染（改逻辑在这里）
 │   │   ├── tau-assets.ts   # tau 原版 CSS/JS 资产（勿手改，重生成，见下）
 │   │   └── tests/          # 确定性测试（阈值边界、规则路径、退化输入）
-│   └── codex-edit/         # apply_patch 扩展（GPT/Codex 路由）+ benchmark docs
-│       ├── index.ts        # 工具注册、执行、防护、renderer、模型路由
-│       ├── parser.ts       # patch grammar parser / hunk matcher / path resolver
-│       ├── model-routing.ts # 模型 ID glob + API 路由判定
-│       ├── config.json     # 模型 allowlist（用户可改）
-│       └── tests/          # parser 与 config 路由测试
+│   └── codex-edit/         # 根包加载入口，复用 packages/codex-edit 的实现
 ├── skills/
 │   ├── html-artifact/     # 复杂说明的自包含 HTML artifact skill
 │   ├── web-browser/       # Chrome/Chromium CDP 自动化（含 WSL Windows Chrome 支持）
@@ -54,14 +49,16 @@ pi-toolkit/
 │   ├── pi-worktree        # worktree 创建/进入/合并/清理一条龙包装
 │   └── pi-worktree-completion.bash  # bash 补全（装到 ~/.local/share/bash-completion）
 ├── packages/tiny-subagent/  # 独立 npm 包：tiny_subagents Pi 扩展
+├── packages/codex-edit/     # 独立 npm 包：GPT/Codex apply_patch Pi 扩展 + docs
 ├── scripts/release.sh      # 根包一键发布（测试→版本→tag→推→publish）
 ├── scripts/release-tiny-subagent.sh # tiny 包独立发布
-└── .github/workflows/      # 根包与 tiny 包各自的 npm 发布 workflow
+├── scripts/release-codex-edit.sh # codex-edit 包独立发布
+└── .github/workflows/      # 三个包各自的 npm 发布 workflow
 ```
 
 ## 开发规则
 
-- **改扩展逻辑**：根扩展改完必须跑 `npm test`（根包确定性测试），再做 `npm run load-test`；tiny 包改完必须跑 `npm test --prefix packages/tiny-subagent`，再加载 `packages/tiny-subagent/extensions/tiny-subagent.ts`。
+- **改扩展逻辑**：根扩展改完必须跑 `npm test`（根包确定性测试），再做 `npm run load-test`；tiny 包改完必须跑 `npm --prefix packages/tiny-subagent test`，再加载 `packages/tiny-subagent/extensions/tiny-subagent.ts`；codex-edit 的权威实现位于 `packages/codex-edit`，改完必须跑 `npm --prefix packages/codex-edit test`、`npm pack --dry-run`，再分别加载独立入口和 `extensions/codex-edit/index.ts` 根包入口。
 - **文档同步**：新增或变更用户可见功能时，必须同步检查 `README.md`、根 `AGENTS.md`、`CHANGELOG.md` 和 `package.json` manifest；提交前用 `rg` 搜索旧的功能清单、目录说明和版本信息，确认没有过时描述。
 - **改 skill**：先按目标 skill 的 `SKILL.md` 验证脚本；`web-browser` 至少要检查全部 `scripts/*.js` 语法、实际启动隔离浏览器、完成一次导航/求值，并用 `npm pack --dry-run` 确认 skill 文件进入 tarball。WSL 下应验证 Windows Chrome 自动发现和 PowerShell 启动路径。
 - **skill 运行依赖**：第三方依赖统一声明在根 `package.json` 的 `dependencies`，不要提交 skill 内的 `node_modules`；Pi 从 npm/git 安装包时会执行 `npm install`。Pi 内置包仍按下条规则放 `peerDependencies`。
@@ -105,21 +102,21 @@ pi-toolkit/
 
 ### 独立 tiny subagent 包发布
 
-`packages/tiny-subagent` 是独立 npm 包 `@maxiaochao/pi-tiny-subagent`，不属于根包 `@maxiaochao/pi-toolkit` 的 `pi.extensions`，两个包分别安装和升级：
+`packages/tiny-subagent` 是完全独立的包；`packages/codex-edit` 既是 Codex Edit 的权威实现和独立子包，也由根包通过 `extensions/codex-edit/index.ts` 默认加载。三个包可分别安装和升级：
 
 ```bash
 pi install npm:@maxiaochao/pi-toolkit
 pi install npm:@maxiaochao/pi-tiny-subagent
+pi install npm:@maxiaochao/pi-codex-edit
 ```
 
-两个包使用独立版本号和 tag：
+三个包使用独立版本号和 tag：
 
 | 包 | 版本来源 | 发布 tag | 发布 workflow |
 |---|---|---|---|
 | `@maxiaochao/pi-toolkit` | 根目录 `package.json` | `vX.Y.Z` | `.github/workflows/publish.yml` |
 | `@maxiaochao/pi-tiny-subagent` | `packages/tiny-subagent/package.json` | `tiny-subagent-vX.Y.Z` | `.github/workflows/publish-tiny-subagent.yml` |
-
-> `apply_patch`（原独立包 `@maxiaochao/pi-codex-edit` v0.1.6）已合并进根包，作为 `./extensions/codex-edit/index.ts` 随 `pi.extensions` 发布，因此没有单独的 codex-edit 包、tag、release 脚本或 workflow。旧 npm 包已 deprecated，已装的机器执行 `pi remove npm:@maxiaochao/pi-codex-edit` 后 `pi update npm:@maxiaochao/pi-toolkit`；两边同时存在会重复注册 `apply_patch`。
+| `@maxiaochao/pi-codex-edit` | `packages/codex-edit/package.json` | `codex-edit-vX.Y.Z` | `.github/workflows/publish-codex-edit.yml` |
 
 tiny 包首次发版（使用当前 `0.1.0` 版本）：
 ```bash
@@ -133,7 +130,17 @@ tiny 包首次发版（使用当前 `0.1.0` 版本）：
 
 该脚本只运行 tiny 包测试和扩展加载检查，只修改 tiny 包版本及 CHANGELOG，并且只暂存 `packages/tiny-subagent`。它创建 `tiny-subagent-vX.Y.Z` tag 并推送；tag push 后由专用 GitHub Actions 校验版本、运行测试并执行 npm publish。不要用根目录 `scripts/release.sh` 发布 tiny 包，也不要在本地执行 `npm publish`。
 
-根包的 `vX.Y.Z` 与 tiny 包的 `tiny-subagent-vX.Y.Z` 互不触发彼此 workflow；两个包可以共用仓库和 `NPM_TOKEN`，但 npm 版本号、发布 tag 和 CI 发布步骤彼此独立。
+根包的 `vX.Y.Z`、tiny 包的 `tiny-subagent-vX.Y.Z` 和 codex-edit 包的 `codex-edit-vX.Y.Z` 互不触发彼此 workflow；三个包可以共用仓库和 `NPM_TOKEN`，但 npm 版本号、发布 tag 和 CI 发布步骤彼此独立。
+
+### 独立 codex-edit 包发布
+
+`packages/codex-edit` 作为独立子包发布为 `@maxiaochao/pi-codex-edit`，同时也是根包内置 Codex Edit 的单一源码。后续发布使用：
+
+```bash
+./scripts/release-codex-edit.sh <patch|minor|major> "<changelog note>"
+```
+
+该脚本只测试、打包和发布独立子包，并创建 `codex-edit-vX.Y.Z` tag；它不会发布根包。`packages/codex-edit` 的实现或配置有改动时，必须再运行 `./scripts/release.sh <patch|minor|major> "<changelog note>"` 发布新的根包版本，根包用户执行 `pi update npm:@maxiaochao/pi-toolkit` 后才会收到更新。不要在本地执行 `npm publish`。用户应在完整工具包和独立子包之间二选一，避免重复注册 `apply_patch`。
 
 ### 首次启用自动发布（一次性）
 
@@ -143,9 +150,9 @@ tiny 包首次发版（使用当前 `0.1.0` 版本）：
 ### 更新已装机器的包
 
 ```bash
-pi update npm:@maxiaochao/pi-toolkit      # 更新根包（含 apply_patch）
+pi update npm:@maxiaochao/pi-toolkit      # 更新根包及其内置 Codex Edit
 pi update npm:@maxiaochao/pi-tiny-subagent # 更新 tiny 包
-pi remove npm:@maxiaochao/pi-codex-edit    # 卸载旧 codex-edit 独立包（已 deprecated）
+pi update npm:@maxiaochao/pi-codex-edit    # 仅更新独立 Codex Edit 子包
 ```
 
 ## 回滚

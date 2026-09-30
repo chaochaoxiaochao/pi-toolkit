@@ -114,11 +114,25 @@ See [packages/tiny-subagent/README.md](packages/tiny-subagent/README.md) for per
 
 ## Codex Edit (apply_patch)
 
-The `apply_patch` extension ships with the toolkit as part of `pi.extensions`. It activates Codex's freeform `apply_patch` protocol for GPT/Codex models while other models keep Pi's native `edit` tool. Routing is by model ID (`gpt-5.6-*`) plus API (`openai-responses` or `openai-codex-responses`); provider does not matter. For every other model the extension only re-syncs an already-active editor tool, so it is a no-op.
+Codex Edit is bundled with `@maxiaochao/pi-toolkit` and loads automatically with the full toolkit. It activates Codex's freeform `apply_patch` protocol for GPT/Codex models while other models keep Pi's native `edit` tool.
 
-Because it ships with the toolkit, there is nothing extra to install or update — `pi update npm:@maxiaochao/pi-toolkit` covers it. The model allowlist lives in `extensions/codex-edit/config.json` inside the installed package; edit it there only if you need a different allowlist.
+Installing or updating the full toolkit also installs or updates its bundled Codex Edit implementation:
 
-See [extensions/codex-edit/README.md](extensions/codex-edit/README.md) for the routing rules and [extensions/codex-edit/summary.md](extensions/codex-edit/summary.md) for the measured tradeoffs, including why it stays limited to the `gpt-5.6-*` allowlist instead of replacing `edit` everywhere.
+```bash
+pi install npm:@maxiaochao/pi-toolkit
+pi update npm:@maxiaochao/pi-toolkit
+```
+
+The update command follows the latest published toolkit version when the configured source has no explicit version. A pinned source such as `npm:@maxiaochao/pi-toolkit@0.9.3` remains pinned.
+
+It is also published as a child package for users who only want this extension:
+
+```bash
+pi install npm:@maxiaochao/pi-codex-edit
+pi update npm:@maxiaochao/pi-codex-edit
+```
+
+Install either the full toolkit or the standalone package; installing both is unnecessary and may register `apply_patch` twice. Both distributions use the canonical implementation under [packages/codex-edit](packages/codex-edit). A Codex Edit implementation or configuration change must be released in both packages before both update commands can receive it. See its [README](packages/codex-edit/README.md) for routing rules and [benchmark summary](packages/codex-edit/summary.md) for measured tradeoffs.
 
 ## Development
 

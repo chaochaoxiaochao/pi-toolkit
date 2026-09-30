@@ -1,3 +1,7 @@
+## Unreleased
+
+- retain Codex Edit in the root toolkit while restoring `@maxiaochao/pi-codex-edit` as an independently installable child package; both distributions share the implementation under `packages/codex-edit`
+
 ## 2026-09-30 - v0.9.3
 
 - refine global agent guidance and add repository issue, triage, and domain instructions
