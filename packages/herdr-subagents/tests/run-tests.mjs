@@ -199,6 +199,17 @@ try {
 	] };
 	const metricLines = fleetLines(metricBatch, metricFleet, { width: 80, now: Date.parse(elapsedStart) + 65_000, metrics: new Map([[0, { tokens: 1_250 }], [1, { tokens: 999 }]]) });
 	check("Fleet rows show persona task status elapsed and right-aligned true usage", metricLines[1].includes("explorer") && metricLines[1].includes("inspect auth") && metricLines[1].includes("running") && metricLines[1].endsWith("1m 5s  1.3k tok"));
+	const compactLines = fleetLines({ label: "compact", activity: [
+		{ index: 0, name: "API", agent: "explorer", status: "running", startedAt: elapsedStart },
+		{ index: 1, name: "Recovery", agent: "explorer", status: "completed", startedAt: elapsedStart, completedAt: "2026-10-08T07:00:09.000Z" },
+	] }, new FleetSelection(), { width: 160, now: Date.parse(elapsedStart) + 21_000, metrics: new Map([[0, { tokens: 4_800 }], [1, { tokens: 900 }]]) });
+	check("wide Fleet rows align metrics without terminal-width whitespace", visibleWidth(compactLines[1]) < 80 && compactLines[1].indexOf("tok") === compactLines[2].indexOf("tok"));
+	const semanticColors = [];
+	fleetLines({ label: "colors", activity: [
+		{ index: 0, name: "doing", agent: "worker", status: "running" },
+		{ index: 1, name: "done", agent: "worker", status: "completed" },
+	] }, new FleetSelection(), { theme: { fg: (color, text) => { semanticColors.push([color, text]); return text; }, bold: (text) => text } });
+	check("Fleet uses warning yellow for running work and success green for completed work", semanticColors.some(([color, text]) => color === "warning" && text === "●") && semanticColors.some(([color, text]) => color === "success" && text === "●"));
 	check("queued Fleet rows fabricate neither duration nor usage", metricLines[2].includes("reviewer") && metricLines[2].includes("queued") && !metricLines[2].includes("tok") && !metricLines[2].match(/\d+[smh]/));
 	check("Fleet rendering fits narrow terminal widths", [1, 8, 16, 24].every((width) => fleetLines(metricBatch, metricFleet, { width, metrics: new Map([[0, { tokens: 1_250 }]]) }).every((line) => visibleWidth(line) <= width)));
 	let liveTokens = 42;
@@ -309,6 +320,7 @@ try {
 	const createRequest = herdr.calls.find(([name]) => name === "createTab")[1];
 	const startRequest = herdr.calls.find(([name]) => name === "startAgent")[1];
 	check("named unfocused tab in parent workspace", createRequest.workspaceId === "w1" && createRequest.cwd === root && createRequest.label === "SA · auth-review" && createRequest.focus === false);
+	check("ordinary execution never steals pane focus", !herdr.calls.some(([name]) => name === "focusPane"));
 	check("child environment points at durable task", createRequest.env.PI_HERDR_SUBAGENTS_CHILD === "1" && createRequest.env.PI_HERDR_SUBAGENTS_TASK_DIR.includes(join(".pi", "herdr-subagents", "runs")));
 	check("persistent isolated child Pi", startRequest.kind === "pi" && startRequest.paneId === "w1:p2" && startRequest.args.includes("--session") && startRequest.args.includes("--no-extensions") && startRequest.args.includes("--extension") && startRequest.args.includes("--no-skills") && startRequest.args.includes("--model") && startRequest.args.includes("fake/model") && startRequest.args.includes("--tools") && startRequest.args.includes("read,grep,subagent_report"));
 	const promptRequest = herdr.calls.find(([name]) => name === "promptAgent")[1];
@@ -800,6 +812,7 @@ try {
 	const authoritativeReport = JSON.parse(readFileSync(join(authoritativeTaskDirectory, "report.json"), "utf8"));
 	check("valid persisted report remains authoritative after Herdr prompt transport failure", !authoritativeAfterPromptFailure.isError && authoritativeTask.status === "completed" && authoritativeReport.status === "completed" && authoritativeAfterPromptFailure.details.tasks[0].summary === authoritativeReport.summary);
 	check("production batch path never passes print mode", batchStarts.every((request) => !request.args.includes("--print")));
+	check("production batch path never steals pane focus", !batchHerdr.calls.some(([name]) => name === "focusPane"));
 
 	const atomicFile = join(root, "atomic.json");
 	await Promise.all(Array.from({ length: 12 }, (_, index) => writeJsonAtomic(atomicFile, { index, payload: "x".repeat(1000) })));

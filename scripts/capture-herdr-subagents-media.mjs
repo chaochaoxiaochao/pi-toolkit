@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdirSync, openSync, closeSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, openSync, closeSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,9 +23,46 @@ const sleep = (ms) => new Promise((resolveWait) => setTimeout(resolveWait, ms));
 const herdr = (args) => JSON.parse(execFileSync("herdr", args, { cwd: root, encoding: "utf8" }));
 const tabs = () => herdr(["tab", "list", "--workspace", workspaceId]).result.tabs;
 const panes = () => herdr(["pane", "list", "--workspace", workspaceId]).result.panes;
-const capture = (index) => {
+const originalFocusedAgent = herdr(["agent", "list"]).result.agents.find((agent) => agent.focused);
+const originalFocusedWorkspace = herdr(["workspace", "list"]).result.workspaces.find((workspace) => workspace.focused);
+const originalFocusedTab = originalFocusedAgent?.tab_id ?? originalFocusedWorkspace?.active_tab_id;
+const runRoot = join(root, ".pi", "herdr-subagents", "runs");
+const currentRunMetrics = (tabId) => {
+  if (!existsSync(runRoot)) return { active: false, hasUsage: false };
+  for (const entry of readdirSync(runRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const directory = join(runRoot, entry.name);
+    try {
+      const run = JSON.parse(readFileSync(join(directory, "run.json"), "utf8"));
+      if (run.tabId !== tabId) continue;
+      const taskRoot = join(directory, "tasks");
+      let active = false;
+      let hasUsage = false;
+      for (const taskEntry of readdirSync(taskRoot, { withFileTypes: true })) {
+        if (!taskEntry.isDirectory()) continue;
+        const taskDirectory = join(taskRoot, taskEntry.name);
+        const task = JSON.parse(readFileSync(join(taskDirectory, "task.json"), "utf8"));
+        active ||= ["starting", "queued", "running", "blocked"].includes(task.status);
+        const sessionFile = join(taskDirectory, "session.jsonl");
+        if (!existsSync(sessionFile)) continue;
+        for (const line of readFileSync(sessionFile, "utf8").split(/\r?\n/)) {
+          if (!line.trim()) continue;
+          try {
+            const record = JSON.parse(line);
+            const usage = record.type === "message" ? record.message?.usage : record.usage;
+            if (usage && [usage.input, usage.output, usage.cacheRead, usage.cacheWrite].some((value) => Number(value) > 0)) hasUsage = true;
+          } catch { /* A live session can end in a partial JSONL line. */ }
+        }
+      }
+      return { active, hasUsage };
+    } catch { /* Ignore unrelated stale or partially-written records. */ }
+  }
+  return { active: false, hasUsage: false };
+};
+const capture = (index, alias) => {
   const path = join(frameDir, `frame-${String(index).padStart(3, "0")}.png`);
   execFileSync("import", ["-window", windowId, path], { stdio: "ignore" });
+  if (alias) copyFileSync(path, join(captureRoot, alias));
 };
 
 rmSync(frameDir, { recursive: true, force: true });
@@ -112,10 +149,6 @@ try {
   if (!runTab) throw new Error("The parent Pi did not create a Herdr Subagents run tab within 60 seconds.");
 
   herdr(["tab", "focus", runTab.tab_id]);
-  await sleep(1_500);
-  capture(2);
-  let frame = 3;
-
   let childPanes = [];
   for (let attempt = 0; attempt < 100; attempt++) {
     childPanes = panes().filter((pane) => pane.tab_id === runTab.tab_id);
@@ -125,11 +158,29 @@ try {
   if (childPanes.length !== 3) {
     throw new Error(`Expected three Herdr Subagents panes, found ${childPanes.length}.`);
   }
+
+  await sleep(500);
+  capture(2);
+  let frame = 3;
   for (const pane of childPanes) {
-    herdr(["agent", "focus", pane.pane_id]);
-    await sleep(2_500);
-    capture(frame++);
+    try {
+      herdr(["agent", "focus", pane.pane_id]);
+      await sleep(1_000);
+      capture(frame++);
+    } catch { /* A very fast child may settle before its pane is focused. */ }
   }
+
+  // Return to the parent while the children are active so the published screenshot
+  // demonstrates the live Fleet footer rather than only the child panes. Prefer a
+  // moment after one child has recorded authoritative usage while siblings still run.
+  herdr(["tab", "focus", parentTab]);
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const metrics = currentRunMetrics(runTab.tab_id);
+    if (metrics.active && metrics.hasUsage) break;
+    await sleep(500);
+  }
+  await sleep(750);
+  capture(frame++, "herdr-fleet.png");
 
   for (let index = 0; index < 18; index++) {
     await sleep(2_000);
@@ -154,6 +205,12 @@ try {
     try { await stopVideo(); } catch { videoProcess.kill("SIGKILL"); }
   }
   try { herdr(["tab", "close", parentTab]); } catch { /* The demo tab may already be gone. */ }
+  try {
+    if (originalFocusedAgent) herdr(["agent", "focus", originalFocusedAgent.pane_id]);
+    else if (originalFocusedTab) herdr(["tab", "focus", originalFocusedTab]);
+  } catch {
+    // The original pane or tab may have closed during a long recording.
+  }
 }
 
 console.log(`Captured live Herdr parent/subagent frames and video in ${captureRoot}`);

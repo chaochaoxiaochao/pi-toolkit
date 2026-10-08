@@ -2,16 +2,15 @@
 
 A Pi extension that runs focused foreground or background work as normal interactive Pi Agents in visible Herdr panes. Full answers and sessions stay in project-local records while the parent receives only concise summaries and document paths.
 
-![A parent Pi conversation running three visible Herdr Subagents panes](docs/screenshot.png)
+![A parent Pi conversation showing the live Herdr Subagents Fleet footer](docs/screenshot.png)
 
 ## Demo
 
-The recording shows a real Pi conversation invoking a three-task read-only batch, Herdr opening one interactive Agent pane per task, and the compact results returning to the parent.
+The recording shows a real Pi conversation invoking a three-task read-only batch, the active Fleet footer in the parent, Herdr opening one interactive Agent pane per task, and the compact results returning to the parent.
 
 https://github.com/user-attachments/assets/8ddf3ae6-a11a-492b-9cae-d9496ba65b67
 
-The video starts a three-agent batch, focuses each live child pane in turn, then returns
-to the parent summary. The reproducible source recording is retained as [`docs/demo.webm`](docs/demo.webm).
+The video starts a three-agent batch, focuses each live child pane in turn, captures the parent Fleet footer with yellow running indicators and true usage, then returns to the parent summary. Completed Fleet rows use green indicators. The reproducible source recording is retained as [`docs/demo.webm`](docs/demo.webm).
 
 ## Requirements and install
 
@@ -73,7 +72,7 @@ A child missing required information reports `needs-input` with an exact questio
 herdr_subagents_control({ action: "respond", runId: "<run-id>", answer: "Use the main branch." })
 ```
 
-While a batch is active, a compact Fleet monitor stays below the editor. Its divider/title row summarizes the run, and each task row shows a hollow or filled status circle, the real persona and task name, status, live active duration, and cumulative child Pi token usage aligned at the right. Token totals use the child session's persisted assistant, tool-result, standalone usage, compaction, and branch-summary usage; they are never estimated. Queued tasks show neither fabricated time nor tokens. The monitor follows Pi theme semantics, truncates by visible terminal columns, and updates session usage from file events while one lightweight repaint timer advances running durations.
+While a batch is active, a compact Fleet monitor stays below the editor. Its divider/title row summarizes the run, and each task row shows a hollow or filled status circle, the real persona and task name, status, live active duration, and cumulative child Pi token usage in one compact shared metrics column after the longest row rather than at the terminal edge. Running work uses Pi's warning/yellow semantic color and completed work uses success/green. Token totals use the child session's persisted assistant, tool-result, standalone usage, compaction, and branch-summary usage; they are never estimated. Queued tasks show neither fabricated time nor tokens. The monitor follows Pi theme semantics, truncates by visible terminal columns, and updates session usage from file events while one lightweight repaint timer advances running durations.
 
 With an empty editor, press `↓` to enter the list, `↑`/`↓` to choose a task, `Enter` to focus its exact pane, and `Esc` to return. `/herdr-subagents focus <task-number>` remains available as a fallback.
 

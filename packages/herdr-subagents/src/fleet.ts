@@ -147,17 +147,21 @@ export function fleetLines(
 	const title = `─ ${theme.bold("Fleet")} · ${batch.label} · ${statusSummary(batch.activity)} `;
 	const titleWidth = visibleWidth(title);
 	const lines = [truncateToWidth(title + "─".repeat(Math.max(0, width - titleWidth)), width)];
-	for (const [index, task] of batch.activity.entries()) {
+	const rows = batch.activity.map((task, index) => {
 		const chosen = selection.isSelecting() && index === selected;
 		const circle = task.status === "queued" || task.status === "starting" ? "○" : "●";
-		const color = task.status === "completed" ? "success" : task.status === "failed" ? "error" : task.status === "blocked" ? "warning" : task.status === "cancelled" ? "dim" : "accent";
+		const color = task.status === "completed" ? "success" : task.status === "running" ? "warning" : task.status === "failed" ? "error" : task.status === "blocked" ? "warning" : task.status === "cancelled" ? "dim" : "accent";
 		const marker = chosen ? theme.fg("accent", "›") : " ";
 		const persona = theme.fg("muted", task.agent || "worker");
 		const left = `${marker} ${theme.fg(color, circle)} ${persona}  ${task.name}  ${theme.fg("dim", task.status)}`;
 		const duration = formatFleetDuration(task, options.now);
 		const tokens = task.status === "queued" || task.status === "starting" ? undefined : options.metrics?.get(task.index)?.tokens;
 		const right = [duration, tokens === undefined ? undefined : formatFleetTokens(tokens)].filter(Boolean).join("  ");
-		lines.push(fitColumns(left, theme.fg("dim", right), width));
-	}
+		return { left, right: theme.fg("dim", right) };
+	});
+	const maxLeft = Math.max(0, ...rows.map(({ left }) => visibleWidth(left)));
+	const maxRight = Math.max(0, ...rows.map(({ right }) => visibleWidth(right)));
+	const contentWidth = Math.min(width, maxLeft + (maxRight ? 2 + maxRight : 0));
+	for (const row of rows) lines.push(fitColumns(row.left, row.right, contentWidth));
 	return lines;
 }

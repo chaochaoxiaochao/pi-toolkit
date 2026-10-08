@@ -103,8 +103,9 @@ def render_herdr_subagents():
         full_frames.append(image)
     docs = ROOT / "packages" / "herdr-subagents" / "docs"
     docs.mkdir(parents=True, exist_ok=True)
-    # The penultimate frame is the settled three-pane run; the last returns to the parent Pi.
-    full_frames[-2].save(docs / "screenshot.png", optimize=True)
+    # Publish the active parent view so the persistent Fleet footer is visible.
+    Image.open(CAPTURE / "herdr-fleet.png").convert("RGB").save(
+        docs / "screenshot.png", optimize=True)
     (docs / "demo.gif").unlink(missing_ok=True)
     shutil.copyfile(CAPTURE / "herdr-demo.webm", docs / "demo.webm")
 
