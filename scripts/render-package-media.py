@@ -2,6 +2,7 @@
 """Render README media from output captured by capture-package-media.mjs."""
 
 import json
+import shutil
 import sys
 import textwrap
 from pathlib import Path
@@ -117,10 +118,11 @@ def render_herdr_subagents():
     paletted[0].save(docs / "demo.gif", save_all=True,
                      append_images=paletted[1:], duration=durations,
                      loop=0, optimize=True, disposal=2)
+    shutil.copyfile(CAPTURE / "herdr-demo.webm", docs / "demo.webm")
 
 
 for package_slug, metadata in PACKAGES.items():
     render_terminal_package(package_slug, *metadata)
 render_herdr_subagents()
 render_cache_export()
-print("Rendered screenshot.png and demo.gif for all child packages")
+print("Rendered package screenshots and demos, including the Herdr WebM recording")

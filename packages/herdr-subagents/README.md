@@ -10,6 +10,9 @@ The recording shows a real Pi conversation invoking a three-task read-only batch
 
 ![Pi opening three interactive Subagents in Herdr](docs/demo.gif)
 
+[Watch the full parent/subagent workflow video](docs/demo.webm) — the parent starts a
+three-agent batch, focuses each live child pane in turn, then returns for the summary.
+
 ## Requirements and install
 
 Run Pi inside Herdr, then install the package:

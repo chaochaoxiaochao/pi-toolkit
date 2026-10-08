@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const captureRoot = resolve(process.argv[2] ?? join(root, ".cache", "package-media"));
 const frameDir = join(captureRoot, "herdr-live");
+const videoPath = join(captureRoot, "herdr-demo.webm");
 const windowId = process.env.HERDR_MEDIA_WINDOW_ID;
 const workspaceId = process.env.HERDR_WORKSPACE_ID;
 const model = process.env.PI_HERDR_MEDIA_MODEL ?? "pudu/gpt-5.6-sol";
@@ -21,12 +22,14 @@ if (!windowId) {
 const sleep = (ms) => new Promise((resolveWait) => setTimeout(resolveWait, ms));
 const herdr = (args) => JSON.parse(execFileSync("herdr", args, { cwd: root, encoding: "utf8" }));
 const tabs = () => herdr(["tab", "list", "--workspace", workspaceId]).result.tabs;
+const panes = () => herdr(["pane", "list", "--workspace", workspaceId]).result.panes;
 const capture = (index) => {
   const path = join(frameDir, `frame-${String(index).padStart(3, "0")}.png`);
   execFileSync("import", ["-window", windowId, path], { stdio: "ignore" });
 };
 
 rmSync(frameDir, { recursive: true, force: true });
+rmSync(videoPath, { force: true });
 mkdirSync(frameDir, { recursive: true });
 
 const existingTabs = new Set(tabs().map((tab) => tab.tab_id));
@@ -36,6 +39,18 @@ const parentPane = created.result.root_pane.pane_id;
 const parentName = `media_parent_${process.pid}`;
 let promptProcess;
 let promptExit;
+let videoProcess;
+let videoExit;
+let videoDone;
+
+const stopVideo = async () => {
+  if (!videoProcess) return;
+  if (!videoExit) videoProcess.kill("SIGINT");
+  await videoDone;
+  if (videoExit?.code !== 0 && videoExit?.signal !== "SIGINT") {
+    throw new Error(`The Herdr screen recorder failed (${videoExit?.signal ?? videoExit?.code ?? "unknown"}).`);
+  }
+};
 
 try {
   herdr([
@@ -46,6 +61,25 @@ try {
   herdr(["tab", "focus", parentTab]);
   await sleep(1_000);
   capture(0);
+
+  const videoLog = openSync(join(frameDir, "video.stderr"), "w");
+  videoProcess = spawn("gst-launch-1.0", [
+    "-e", "-q",
+    "ximagesrc", `xid=${Number.parseInt(windowId, 0)}`, "use-damage=false", "show-pointer=false",
+    "!", "video/x-raw,framerate=10/1",
+    "!", "videoscale", "!", "video/x-raw,width=1280,height=728",
+    "!", "videoconvert",
+    "!", "vp8enc", "deadline=1", "cpu-used=8", "threads=4", "target-bitrate=1400000", "keyframe-max-dist=30",
+    "!", "webmmux", "!", "filesink", `location=${videoPath}`,
+  ], { cwd: root, stdio: ["ignore", "ignore", videoLog] });
+  videoDone = new Promise((resolveExit) => {
+    videoProcess.once("exit", (code, signal) => {
+      closeSync(videoLog);
+      videoExit = { code, signal };
+      resolveExit();
+    });
+  });
+  await sleep(2_000);
 
   const prompt = [
     "Use herdr_subagents to run a foreground read-only batch with concurrency 3.",
@@ -78,9 +112,25 @@ try {
   if (!runTab) throw new Error("The parent Pi did not create a Herdr Subagents run tab within 60 seconds.");
 
   herdr(["tab", "focus", runTab.tab_id]);
-  await sleep(700);
+  await sleep(1_500);
   capture(2);
   let frame = 3;
+
+  let childPanes = [];
+  for (let attempt = 0; attempt < 100; attempt++) {
+    childPanes = panes().filter((pane) => pane.tab_id === runTab.tab_id);
+    if (childPanes.length === 3) break;
+    await sleep(300);
+  }
+  if (childPanes.length !== 3) {
+    throw new Error(`Expected three Herdr Subagents panes, found ${childPanes.length}.`);
+  }
+  for (const pane of childPanes) {
+    herdr(["agent", "focus", pane.pane_id]);
+    await sleep(2_500);
+    capture(frame++);
+  }
+
   for (let index = 0; index < 18; index++) {
     await sleep(2_000);
     capture(frame++);
@@ -95,11 +145,15 @@ try {
 
   capture(frame++);
   herdr(["tab", "focus", parentTab]);
-  await sleep(1_500);
+  await sleep(3_000);
   capture(frame);
+  await stopVideo();
 } finally {
   if (promptProcess && !promptExit) promptProcess.kill("SIGTERM");
+  if (videoProcess && !videoExit) {
+    try { await stopVideo(); } catch { videoProcess.kill("SIGKILL"); }
+  }
   try { herdr(["tab", "close", parentTab]); } catch { /* The demo tab may already be gone. */ }
 }
 
-console.log(`Captured live Herdr parent and subagent UI frames in ${frameDir}`);
+console.log(`Captured live Herdr parent/subagent frames and video in ${captureRoot}`);

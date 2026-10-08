@@ -4,9 +4,9 @@
 
 1. `npm --prefix packages/herdr-subagents test` runs deterministic scheduler, recovery, and persona tests.
 2. `pi -ne -ns --no-session -e ./packages/herdr-subagents/extensions/herdr-subagents.ts` verifies extension loading.
-3. From a visible X11 Herdr client, run `HERDR_MEDIA_WINDOW_ID=<window-id> node scripts/capture-package-media.mjs`. The Herdr capture must show a parent Pi conversation, a three-task run tab with three real interactive Agent panes, and the final compact parent response.
+3. From a visible X11 Herdr client with the GStreamer X11 and VP8 plugins installed, run `HERDR_MEDIA_WINDOW_ID=<window-id> node scripts/capture-package-media.mjs`. The Herdr capture must show a parent Pi conversation, a three-task run tab, each of the three real interactive Agent panes receiving focus in turn, and the final compact parent response.
 4. `npm pack ./packages/herdr-subagents --dry-run` verifies package contents.
-5. Verify the README example and live Herdr UI media `docs/screenshot.png` and `docs/demo.gif` are present in the tarball.
+5. Verify the README example and live Herdr UI media `docs/screenshot.png`, `docs/demo.gif`, and `docs/demo.webm` are present in the tarball. Inspect the WebM metadata and play it through once to confirm the parent → three focused children → parent sequence.
 
 ## Cases
 

@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Add a full WebM recording that focuses all three live child Agent panes before returning to the parent summary, while retaining the GIF preview.
 - Replace the rendered transcript media with a real Herdr UI recording that follows a parent Pi conversation through a three-Agent batch and final compact response.
 
 ## 2026-10-08 - v0.2.0

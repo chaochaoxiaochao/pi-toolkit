@@ -21,6 +21,6 @@ This report covers the root bundle and the five independently releasable package
 - Codex Edit: 22 Node tests and 12 shared comparison cases passed, including real Pi native-edit versus local Codex Edit, released versus local parser, deterministic report regeneration, and outside-workspace safety comparisons.
 - Herdr Subagents: 133 scheduler, recovery, schema, navigation, persona, and process-boundary tests passed. A real Herdr smoke completed two concurrent interactive Pi Agents in distinct panes, kept the focused shared tab open through settlement, and automatically closed it after focus moved away. Deterministic extension coverage also verifies blocked dispatcher/Fleet ownership, parent-shutdown cleanup, malformed-report repair, and deferred cleanup notifications.
 - Todo, BTW, Worktree installer, and Worktree CLI integration tests passed.
-- Media: all five screenshots are non-empty; Cache Export is a full-page 1440 × 2278 capture; Herdr Subagents is a live parent-Pi and three-pane Agent recording, while the other four GIFs contain three distinct frames.
+- Media: all five screenshots are non-empty; Cache Export is a full-page 1440 × 2278 capture; Herdr Subagents includes a live WebM recording that moves from the parent Pi through each of three focused Agent panes and back to the final parent summary, plus a GIF preview; the other four GIFs contain three distinct frames.
 
 Open [`package-media-gallery.html`](package-media-gallery.html) to inspect every generated PNG and GIF in one page.
