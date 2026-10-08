@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-08 - v0.10.5
 
+- bundle herdr-subagents v0.4.2: add Alt+P and /parent controls to return from child Agents
 ## 2026-10-08 - v0.10.4
 
 - bundle herdr-subagents v0.4.1: targeted cancellation, live token polling, and idempotent tab cleanup
