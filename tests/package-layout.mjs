@@ -9,7 +9,7 @@ const children = [
   ["todo", "@maxiaochao/pi-todo", "extensions/todo.ts"],
   ["cache-export", "@maxiaochao/pi-cache-export", "extensions/cache-export.ts"],
   ["codex-edit", "@maxiaochao/pi-codex-edit", "extensions/codex-edit.ts"],
-  ["tiny-subagent", "@maxiaochao/pi-tiny-subagent", "extensions/tiny-subagent.ts"],
+  ["herdr-subagents", "@maxiaochao/pi-herdr-subagents", "extensions/herdr-subagents.ts"],
   ["worktree", "@maxiaochao/pi-worktree", null],
 ];
 
@@ -39,7 +39,7 @@ assert.deepEqual(root.pi.extensions, [
   "./packages/cache-export/extensions/cache-export.ts",
   "./extensions/btw/index.ts",
   "./packages/codex-edit/extensions/codex-edit.ts",
-  "./packages/tiny-subagent/extensions/tiny-subagent.ts",
+  "./packages/herdr-subagents/extensions/herdr-subagents.ts",
 ]);
 assert.equal(root.pi.skills.includes("./packages/worktree/skills"), true);
 assert.equal(root.bin["pi-worktree"], "packages/worktree/bin/pi-worktree");

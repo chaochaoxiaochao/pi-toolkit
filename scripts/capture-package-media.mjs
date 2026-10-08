@@ -151,33 +151,17 @@ function table(state) {
   pages("codex-edit", [one, two, three]);
 }
 
-// Tiny Subagent: run the production runner through a real isolated child process.
+// Herdr Subagents: run the production runner against the live Herdr session.
 {
-  const { runTinySubagent } = await import(join(root, "packages/tiny-subagent/src/runner.ts"));
-  const temp = mkdtempSync(join(tmpdir(), "tiny-media-"));
-  try {
-    const child = join(temp, "child.mjs");
-    const capture = join(temp, "launch.json");
-    writeFileSync(child, `#!/usr/bin/env node
-import { writeFileSync } from "node:fs";
-writeFileSync(process.env.TINY_MEDIA_CAPTURE, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), child: process.env.PI_SUBAGENT_CHILD }));
-process.stdout.write(JSON.stringify({ type: "message_end", message: { role: "assistant", model: "fixture/reviewer", stopReason: "stop", content: [{ type: "text", text: "Found one issue: validate the empty path before writing." }] } }) + "\\n");
-`, { mode: 0o700 });
-    chmodSync(child, 0o700);
-    const previous = { binary: process.env.PI_TINY_SUBAGENT_PI_BINARY, capture: process.env.TINY_MEDIA_CAPTURE };
-    process.env.PI_TINY_SUBAGENT_PI_BINARY = child;
-    process.env.TINY_MEDIA_CAPTURE = capture;
-    const result = await runTinySubagent("Review src/export.ts", { cwd: temp, model: "fixture/reviewer", tools: ["read", "grep"] });
-    const launch = JSON.parse(readFileSync(capture, "utf8"));
-    if (previous.binary === undefined) delete process.env.PI_TINY_SUBAGENT_PI_BINARY; else process.env.PI_TINY_SUBAGENT_PI_BINARY = previous.binary;
-    if (previous.capture === undefined) delete process.env.TINY_MEDIA_CAPTURE; else process.env.TINY_MEDIA_CAPTURE = previous.capture;
-    const one = [`$ tiny_subagents run reviewer "Review src/export.ts"`, ``, `Launching isolated child process...`].join("\n");
-    const two = [one, `  model: fixture/reviewer`, `  tools: read, grep`, `  session: ${launch.args.includes("--no-session") ? "fresh (--no-session)" : "unexpected"}`, `  extension discovery: ${launch.args.includes("--no-extensions") ? "disabled" : "enabled"}`, `  child marker: ${launch.child}`].join("\n");
-    const three = [two, ``, `Child result`, `------------`, result.output, ``, `Process exited successfully.`].join("\n");
-    pages("tiny-subagent", [one, two, three]);
-  } finally {
-    rmSync(temp, { recursive: true, force: true });
-  }
+  const { runHerdrSubagents } = await import(join(root, "packages/herdr-subagents/src/runner.ts"));
+  if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_WORKSPACE_ID) throw new Error("Herdr Subagents media capture must run inside Herdr.");
+  const model = process.env.PI_HERDR_MEDIA_MODEL ?? "pudu/gpt-5.6-sol";
+  const result = await runHerdrSubagents("Inspect packages/herdr-subagents/src/result-path.ts and summarize what it guarantees.", { cwd: root, model, tools: ["read", "grep"] });
+  if (!result.ok) throw new Error(`Herdr Subagents media capture failed: ${result.errorMessage ?? result.summary}`);
+	const one = [`$ herdr_subagents run explorer "Inspect result-path.ts"`, ``, `Opening an interactive Pi Agent in a dedicated Herdr pane...`].join("\n");
+	const two = [one, `  lifecycle: agent start → agent prompt --wait`, `  print mode: disabled`, `  model: ${model}`, `  tools: read, grep`, `  persistent session: ${result.sessionFile ? "enabled" : "missing"}`, `  child recursion guard: enabled`].join("\n");
+  const three = [two, ``, `Child result`, `------------`, result.output, ``, `Process exited successfully.`].join("\n");
+  pages("herdr-subagents", [one, two, three]);
 }
 
 // Worktree: run the shipped CLI against a real temporary Git repository.

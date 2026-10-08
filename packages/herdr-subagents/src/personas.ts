@@ -17,6 +17,9 @@ export interface AgentDefinition {
 	description: string;
 	model?: string;
 	tools?: string[];
+	access?: "read" | "write";
+	thinking?: string;
+	skills?: string[];
 	systemPrompt: string;
 	filePath: string;
 }
@@ -70,24 +73,32 @@ export function parseAgentMarkdown(content: string, filePath = "<memory>"): Agen
 	}
 
 	const model = fields.get("model")?.trim() || undefined;
+	const rawAccess = fields.get("access")?.trim();
+	if (rawAccess && rawAccess !== "read" && rawAccess !== "write") throw new Error("frontmatter access must be read or write");
+	const access = rawAccess as "read" | "write" | undefined;
+	const thinking = fields.get("thinking")?.trim() || undefined;
+	const skills = fields.has("skills") ? parseList(fields.get("skills") ?? "") : undefined;
 	return {
 		name,
 		description,
 		...(model ? { model } : {}),
 		...(tools ? { tools } : {}),
+		...(access ? { access } : {}),
+		...(thinking ? { thinking } : {}),
+		...(skills ? { skills } : {}),
 		systemPrompt: lines.slice(end + 1).join("\n").trim(),
 		filePath,
 	};
 }
 
-export function discoverPackageAgents(agentsDir: string): AgentDiscovery {
+export function discoverPackageAgents(agentsDir: string, optional = false): AgentDiscovery {
 	const agents: AgentDefinition[] = [];
 	const diagnostics: string[] = [];
 	let entries: string[];
 	try {
 		entries = readdirSync(agentsDir).filter((entry) => entry.endsWith(".md")).sort();
 	} catch (error) {
-		return { agents, diagnostics: [`Cannot read persona directory ${agentsDir}: ${error instanceof Error ? error.message : String(error)}`] };
+		return { agents, diagnostics: optional ? [] : [`Cannot read persona directory ${agentsDir}: ${error instanceof Error ? error.message : String(error)}`] };
 	}
 
 	const names = new Set<string>();

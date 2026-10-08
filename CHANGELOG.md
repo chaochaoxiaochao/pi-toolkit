@@ -1,3 +1,8 @@
+## Unreleased
+
+- replace Tiny Subagent's hidden print/shell execution with Herdr Subagents: visible interactive Pi Agents, one exclusive on-demand pane per task, Fleet keyboard navigation, durable blocked/history continuation, parent-session cancellation, and focus-safe batch tab cleanup
+- fix Herdr Subagents Fleet state after blocked responses, preserve the active task widget while later background runs queue, and share ownership, pane-allocation, and status-reduction logic across recovery paths
+
 ## 2026-10-08 - v0.9.6
 
 - bundle codex-edit v0.1.9: install the pinned Pi runtime for clean-runner publication tests
