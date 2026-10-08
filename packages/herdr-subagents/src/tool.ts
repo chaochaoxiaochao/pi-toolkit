@@ -4,11 +4,27 @@ import { runHerdrSubagents, type HerdrSubagentsResult } from "./runner.ts";
 import { runHerdrSubagentsBatch, type BatchResult, type BatchTask } from "./batch-runner.ts";
 import { respondToBlockedTask } from "./blocking.ts";
 import { cleanSubagentRun, historyText, listSubagentHistory, resumeHistoricalTask } from "./history.ts";
-import { HERDR_ACTIONS, validateToolParams } from "./validation.ts";
+import { HERDR_ACTIONS, validateControlParams, validateRunParams } from "./validation.ts";
 import type { OwnerIdentity } from "./ownership.ts";
 
 export interface HerdrSubagentsTaskParams { name: string; prompt: string; agent?: string; model?: string; }
 
+export interface HerdrSubagentsRunParams {
+	tasks: HerdrSubagentsTaskParams[];
+	label?: string;
+	concurrency?: number;
+	background?: boolean;
+}
+
+export interface HerdrSubagentsControlToolParams {
+	action: "list" | "respond" | "history" | "resume" | "cleanup";
+	runId?: string;
+	answer?: string;
+	task?: number;
+	prompt?: string;
+}
+
+/** Internal superset used by shared execution helpers. */
 export interface HerdrSubagentsToolParams {
 	action?: "list" | "respond" | "history" | "resume" | "cleanup";
 	prompt?: string;
@@ -201,17 +217,34 @@ async function executeSingle({ params, signal, onUpdate, ctx, dependencies, disc
 }
 
 export async function executeHerdrSubagents(
-	params: HerdrSubagentsToolParams,
+	params: HerdrSubagentsRunParams | HerdrSubagentsToolParams,
 	signal: AbortSignal | undefined,
 	onUpdate: ((response: ToolResponse) => void) | undefined,
 	ctx: HerdrSubagentsToolContext,
 	dependencies: HerdrSubagentsToolDependencies,
 ): Promise<ToolResponse> {
-	const validationError = validateToolParams(params);
+	if (params.action) return executeHerdrSubagentsControl(params as HerdrSubagentsControlToolParams, signal, onUpdate, ctx, dependencies);
+	if (params.prompt && !params.tasks) {
+		const discovery = loadSubagentConfiguration(ctx.cwd, dependencies.agentsDirectory, modelId(ctx), dependencies.configurationPaths);
+		return executeSingle({ params, signal, onUpdate, ctx, dependencies, discovery });
+	}
+	const runParams = params as HerdrSubagentsRunParams;
+	const validationError = validateRunParams(runParams);
 	if (validationError) return { content: [{ type: "text", text: validationError }], details: { errorMessage: validationError }, isError: true };
 	const discovery = loadSubagentConfiguration(ctx.cwd, dependencies.agentsDirectory, modelId(ctx), dependencies.configurationPaths);
-	const execution = { params, signal, onUpdate, ctx, dependencies, discovery };
-	if (params.action) return actionHandlers[params.action](execution);
+	const execution = { params: runParams, signal, onUpdate, ctx, dependencies, discovery };
+	return executeBatch(execution);
+}
 
-	return params.tasks ? executeBatch(execution) : executeSingle(execution);
+export async function executeHerdrSubagentsControl(
+	params: HerdrSubagentsControlToolParams,
+	signal: AbortSignal | undefined,
+	onUpdate: ((response: ToolResponse) => void) | undefined,
+	ctx: HerdrSubagentsToolContext,
+	dependencies: HerdrSubagentsToolDependencies,
+): Promise<ToolResponse> {
+	const validationError = validateControlParams(params);
+	if (validationError) return { content: [{ type: "text", text: validationError }], details: { errorMessage: validationError }, isError: true };
+	const discovery = loadSubagentConfiguration(ctx.cwd, dependencies.agentsDirectory, modelId(ctx), dependencies.configurationPaths);
+	return actionHandlers[params.action]({ params, signal, onUpdate, ctx, dependencies, discovery });
 }

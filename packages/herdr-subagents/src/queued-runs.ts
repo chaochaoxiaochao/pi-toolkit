@@ -1,15 +1,15 @@
 import { existsSync, readdirSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import type { HerdrSubagentsToolParams } from "./tool.ts";
+import type { HerdrSubagentsRunParams } from "./tool.ts";
 import { isProcessAlive, ownerRecord, type OwnerIdentity } from "./ownership.ts";
 import { writeJsonAtomic } from "./state.ts";
 import { findRunDirectory } from "./run-locator.ts";
 
-export interface QueuedRunRecord { runId: string; cwd: string; ownerSessionId?: string; ownerProcessId?: number; params: HerdrSubagentsToolParams; queuedAt: string; }
+export interface QueuedRunRecord { runId: string; cwd: string; ownerSessionId?: string; ownerProcessId?: number; params: HerdrSubagentsRunParams; queuedAt: string; }
 function queueDirectory(cwd: string): string { return join(cwd, ".pi", "herdr-subagents", "queue"); }
 
-export async function persistQueuedRun(cwd: string, runId: string, params: HerdrSubagentsToolParams, owner?: OwnerIdentity): Promise<void> {
+export async function persistQueuedRun(cwd: string, runId: string, params: HerdrSubagentsRunParams, owner?: OwnerIdentity): Promise<void> {
 	const directory = queueDirectory(cwd);
 	await mkdir(directory, { recursive: true, mode: 0o700 });
 	await writeJsonAtomic(join(directory, `${runId}.json`), { runId, cwd, ...ownerRecord(owner), params: { ...params, background: true }, queuedAt: new Date().toISOString() });

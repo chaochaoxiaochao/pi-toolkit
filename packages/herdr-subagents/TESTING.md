@@ -16,10 +16,10 @@
 - Force write-capable batches to serial execution while allowing bounded read-only parallelism.
 - Preserve compact reports, full results, Pi sessions, blocked questions, and historical follow-ups.
 - Recover queued/running work after interruption without retrying post-prompt side effects, including truncated reports and recovery errors.
-- Verify the flat public contract and injectable extension wiring, including conditional registration only inside Herdr, Fleet rendering, editor focus ownership, terminal-input passthrough, exact-pane navigation, and stable display while another background run queues.
+- Verify the split public contracts (`herdr_subagents` with required `tasks`, plus `herdr_subagents_control` with required `action`) and injectable extension wiring, including conditional registration only inside Herdr, Fleet rendering, editor focus ownership, terminal-input passthrough, exact-pane navigation, and stable display while another background run queues.
 - Verify blocked-response live Fleet updates, authoritative stale-field replacement, parent-shutdown cancellation, cleanup notifications, atomic state replacement, non-retried uncertain startup operations, and stalled warnings.
 - Verify resumed batches retain newly allocated pane IDs and historical follow-ups exclude simultaneous session writers.
 
 ## Latest baseline
 
-All 136 deterministic scheduler, recovery, process-boundary, schema-validation, navigation, and persona cases must pass. Release validation also requires extension loading and a real Herdr read-only batch smoke with distinct task panes and final tab cleanup. The latest smoke completed two concurrent tasks, retained its focused run tab through settlement, and closed it automatically after focus moved away.
+All 137 deterministic scheduler, recovery, process-boundary, schema-validation, navigation, and persona cases must pass. Release validation also requires extension loading and a real Herdr read-only batch smoke with distinct task panes and final tab cleanup. The latest smoke completed two concurrent tasks, retained its focused run tab through settlement, and closed it automatically after focus moved away.

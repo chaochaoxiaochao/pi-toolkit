@@ -1,3 +1,8 @@
+## Unreleased
+
+- Split execution and control into `herdr_subagents` and `herdr_subagents_control`; require a non-empty `tasks` array for new runs so one-item runs and batches share background and concurrency semantics.
+- Normalize legacy top-level single-task prompts into one-item task arrays before schema validation.
+
 ## 2026-10-08 - v0.2.1
 
 - add default thinking configuration and inline Herdr workflow video

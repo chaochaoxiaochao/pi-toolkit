@@ -29,7 +29,7 @@ pi update npm:@maxiaochao/pi-herdr-subagents
 
 The full `@maxiaochao/pi-toolkit` package also bundles this extension. Install the full toolkit or this standalone child package, not both.
 
-Inside a Herdr workspace, the package registers `herdr_subagents` and `/herdr-subagents`. Outside Herdr (or without a workspace ID), the extension registers neither, so the tool is absent from the model context. Start Pi inside Herdr or reload the extension there to enable them.
+Inside a Herdr workspace, the package registers `herdr_subagents`, `herdr_subagents_control`, and `/herdr-subagents`. Outside Herdr (or without a workspace ID), the extension registers none of them, so these capabilities are absent from the model context. Start Pi inside Herdr or reload the extension there to enable them.
 
 The design replaces hidden print-mode subprocesses with ordinary interactive Pi Agents managed through Herdr, so delegated work stays visible, inspectable, resumable, and durably recorded.
 
@@ -38,16 +38,17 @@ The design replaces hidden print-mode subprocesses with ordinary interactive Pi 
 Discover the effective personas first:
 
 ```text
-herdr_subagents({ action: "list" })
+herdr_subagents_control({ action: "list" })
 ```
 
 Then run one self-contained task:
 
 ```text
 herdr_subagents({
-  agent: "worker",
   label: "auth-review",
-  prompt: "Inspect the authentication flow and summarize the risks"
+  tasks: [
+    { name: "auth", agent: "worker", prompt: "Inspect the authentication flow and summarize the risks" }
+  ]
 })
 ```
 
@@ -64,21 +65,21 @@ herdr_subagents({
 })
 ```
 
-Set `background: true` to return a stable run ID immediately while the queue continues. One run is dispatched at a time by an extension instance; later runs remain queued and start FIFO. Each background run sends one compact parent notification only when the whole run completes, partially fails, fails, or blocks. Individual successful tasks do not wake the parent model.
+`tasks` is always a non-empty array: one item is a single task and multiple items form a batch. Set `background: true` for either form to return a stable run ID immediately while the queue continues. One run is dispatched at a time by an extension instance; later runs remain queued and start FIFO. Each background run sends one compact parent notification only when the whole run completes, partially fails, fails, or blocks. Individual successful tasks do not wake the parent model.
 
-A child missing required information reports `needs-input` with an exact question. The run becomes blocked, keeps its Herdr tab, pane, partial report, and Pi session, and returns control to the parent. Answer through the same tool to continue the original session:
+A child missing required information reports `needs-input` with an exact question. The run becomes blocked, keeps its Herdr tab, pane, partial report, and Pi session, and returns control to the parent. Answer through the control tool to continue the original session:
 
 ```text
-herdr_subagents({ action: "respond", runId: "<run-id>", answer: "Use the main branch." })
+herdr_subagents_control({ action: "respond", runId: "<run-id>", answer: "Use the main branch." })
 ```
 
 While a batch is active, its task rows stay below the editor. With an empty editor, press `↓` to enter the list, `↑`/`↓` to choose a task, `Enter` to focus its exact pane, and `Esc` to return. `/herdr-subagents focus <task-number>` remains available as a fallback.
 
 ## History
 
-Run `/herdr-subagents history` or `herdr_subagents({ action: "history" })` to list compact project-local run and task reports after Herdr tabs close. Full results, described documents, artifacts, and persistent Pi sessions remain separate on disk and are not loaded into parent context.
+Run `/herdr-subagents history` or `herdr_subagents_control({ action: "history" })` to list compact project-local run and task reports after Herdr tabs close. Full results, described documents, artifacts, and persistent Pi sessions remain separate on disk and are not loaded into parent context.
 
-Continue a saved conversation in a new Herdr tab with `herdr_subagents({ action: "resume", runId: "<run-id>", task: 1, prompt: "Follow up..." })`. Remove only a selected archive with `herdr_subagents({ action: "cleanup", runId: "<run-id>" })`. History has no automatic count-based eviction. The extension adds the runtime path to local Git excludes when available (and otherwise uses `.pi/.gitignore`) without overwriting unrelated rules.
+Continue a saved conversation in a new Herdr tab with `herdr_subagents_control({ action: "resume", runId: "<run-id>", task: 1, prompt: "Follow up..." })`. Remove only a selected archive with `herdr_subagents_control({ action: "cleanup", runId: "<run-id>" })`. History has no automatic count-based eviction. The extension adds the runtime path to local Git excludes when available (and otherwise uses `.pi/.gitignore`) without overwriting unrelated rules.
 
 Read-only tasks start FIFO up to the configured concurrency limit. A pane is created only when its task starts, belongs exclusively to that task, and is never reused. Completed panes remain inspectable while another task in the batch is unsettled. Results remain in input order, and one failed task does not cancel its siblings. Any batch containing a write-capable persona is forced to concurrency one.
 
@@ -250,9 +251,9 @@ Override the model for one task:
 
 ```text
 herdr_subagents({
-  agent: "reviewer",
-  model: "anthropic/claude-opus-4-1:high",
-  prompt: "Review the authorization boundary"
+  tasks: [
+    { name: "authorization", agent: "reviewer", model: "anthropic/claude-opus-4-1:high", prompt: "Review the authorization boundary" }
+  ]
 })
 ```
 

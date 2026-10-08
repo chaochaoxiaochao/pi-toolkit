@@ -15,7 +15,7 @@ import { cancelActiveSubagentRuns, reconcileSubagentRuns } from "../src/reconcil
 import { continueQueuedRun } from "../src/continue-run.ts";
 import { CliHerdrAutomation } from "../src/herdr.ts";
 import { fleetEditorHasFocus, FleetSelection, fleetLines } from "../src/fleet.ts";
-import { HERDR_ACTIONS, validateToolParams } from "../src/validation.ts";
+import { HERDR_ACTIONS, validateControlParams, validateRunParams } from "../src/validation.ts";
 import { resultPathForAttempt } from "../src/result-path.ts";
 import { isSettledRunStatus, readTaskRecord } from "../src/records.ts";
 import { RunPaneAllocator } from "../src/run-pane-allocator.ts";
@@ -136,22 +136,18 @@ function latestRunDirectory() {
 }
 
 try {
-	check("flat mode validation accepts supported calls", [
+	check("run validation accepts one or more tasks", validateRunParams({ tasks: [{ name: "one", prompt: "do it" }], concurrency: 2, background: true }) === undefined);
+	check("control validation accepts supported calls", [
 		{ action: "list" }, { action: "history" }, { action: "cleanup", runId: "run" },
 		{ action: "respond", runId: "run", answer: "yes", task: 1 },
 		{ action: "resume", runId: "run", task: 1, prompt: "continue" },
-		{ prompt: "one task", agent: "worker", label: "one", model: "fake/model" },
-		{ tasks: [{ name: "one", prompt: "do it" }], concurrency: 2, background: true },
-	].every((params) => validateToolParams(params) === undefined));
+	].every((params) => validateControlParams(params) === undefined));
 	check("all supported actions have shared validation and rendering metadata", ["list", "history", "cleanup", "respond", "resume"].every((action) => action in HERDR_ACTIONS));
-	check("flat mode validation rejects ambiguous and extraneous fields", [
-		validateToolParams({ prompt: "one", tasks: [{ name: "two", prompt: "two" }] }),
-		validateToolParams({ action: "list", prompt: "not allowed" }),
-		validateToolParams({ action: "respond", runId: "run" }),
-		validateToolParams({ tasks: [{ name: "one", prompt: "one" }], agent: "worker" }),
-		validateToolParams({ prompt: "one", runId: "run" }),
-		validateToolParams({ prompt: "one", task: 1 }),
-		validateToolParams({ tasks: [{ name: "one", prompt: "one" }], answer: "extra" }),
+	check("split validation rejects missing tasks and invalid control fields", [
+		validateRunParams({ tasks: [] }),
+		validateControlParams({ action: "list", prompt: "not allowed" }),
+		validateControlParams({ action: "respond", runId: "run" }),
+		validateControlParams({ action: "resume", runId: "run", task: 1 }),
 	].every((message) => typeof message === "string" && message.length > 0));
 	const fleet = new FleetSelection();
 	const fleetBatch = { label: "reviews", activity: [
@@ -554,7 +550,7 @@ try {
 	const historyHerdr = fakeHerdr();
 	const historicalResume = await executeHerdrSubagents({ action: "resume", runId: backgroundId, task: 1, prompt: "follow up" }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: historyHerdr });
 	const historyStartRequest = historyHerdr.calls.find(([name]) => name === "startAgent")[1];
-	check("historical resume preserves the saved Pi session and persona prompt", !historicalResume.isError && historyHerdr.calls[0][0] === "createTab" && historyStartRequest.args.includes(stableHistory.tasks[0].sessionFile) && historyStartRequest.args.includes("fake/model") && historyStartRequest.args.some((value) => String(value).includes("subagent_report")) && existsSync(join(stableHistory.tasks[0].recordDirectory, "turns", "02.json")) && readFileSync(join(stableHistory.tasks[0].recordDirectory, "followup-system-prompt.md"), "utf8").includes("Investigate the assigned question without modifying files"));
+	check("historical resume preserves the saved Pi session and persona prompt", !historicalResume.isError && historyHerdr.calls[0][0] === "createTab" && historyStartRequest.args.includes(stableHistory.tasks[0].sessionFile) && historyStartRequest.args.includes(stableHistory.tasks[0].model) && historyStartRequest.args.some((value) => String(value).includes("subagent_report")) && existsSync(join(stableHistory.tasks[0].recordDirectory, "turns", "02.json")) && readFileSync(join(stableHistory.tasks[0].recordDirectory, "followup-system-prompt.md"), "utf8").includes("Investigate the assigned question without modifying files"));
 	const historicalTaskRecord = JSON.parse(readFileSync(join(stableHistory.tasks[0].recordDirectory, "task.json"), "utf8"));
 	const historicalTurnRecord = JSON.parse(readFileSync(join(stableHistory.tasks[0].recordDirectory, "turns", "02.json"), "utf8"));
 	check("historical task and turn retain their tab identity", historicalTaskRecord.tabId === historicalResume.details.tabId && historicalTurnRecord.tabId === historicalResume.details.tabId);

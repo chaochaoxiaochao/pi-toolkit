@@ -9,6 +9,7 @@ function harness(execute: (...args: any[]) => Promise<any>) {
 	const handlers = new Map<string, (...args: any[]) => any>();
 	const commands: string[] = [];
 	let tool: Record<string, any> | undefined;
+	let controlTool: Record<string, any> | undefined;
 	let terminalInput: ((data: string) => { consume?: boolean } | undefined) | undefined;
 	let widgetCalls = 0;
 	let renderedLines: string[] = [];
@@ -26,13 +27,17 @@ function harness(execute: (...args: any[]) => Promise<any>) {
 	};
 	const pi = {
 		on(name: string, handler: (...args: any[]) => any) { handlers.set(name, handler); },
-		registerTool(definition: Record<string, any>) { tool = definition; },
+		registerTool(definition: Record<string, any>) {
+			if (definition.name === "herdr_subagents") tool = definition;
+			if (definition.name === "herdr_subagents_control") controlTool = definition;
+		},
 		registerCommand(name: string) { commands.push(name); },
 		sendMessage() {},
 	};
 	registerHerdrSubagents(pi as never, {
 		herdr: { async focusPane(paneId: string) { focusedPanes.push(paneId); } } as never,
 		execute: execute as never,
+		executeControl: execute as never,
 		isEditor: (value) => value === editor,
 		createFleetWidget(lines) { renderedLines = lines; return new Container(); },
 	});
@@ -40,6 +45,7 @@ function harness(execute: (...args: any[]) => Promise<any>) {
 		handlers,
 		commands,
 		get tool() { return tool; },
+		get controlTool() { return controlTool; },
 		get terminalInput() { return terminalInput; },
 		get widgetCalls() { return widgetCalls; },
 		get renderedLines() { return renderedLines; },
@@ -73,7 +79,8 @@ async function verifyPublicUiWiring() {
 		if (!responding.tool) throw new Error("herdr_subagents was not registered for UI wiring test");
 		const renderedBlocked = responding.tool.renderResult({ content: [{ type: "text", text: "needs input" }], details: { agent: "explorer", status: "blocked", ok: false, summary: "Need input.", documents: [] } }, { isPartial: false }, { fg: (_color: string, text: string) => text, bold: (text: string) => text }).render(100).join("\n");
 		if (!renderedBlocked.includes("blocked") || renderedBlocked.includes("failed")) throw new Error("single-task blocked result did not render its authoritative status");
-		await responding.tool.execute("call", { action: "respond", runId: "blocked-run", answer: "main" }, undefined, undefined, { cwd, ui: responding.ui });
+		if (!responding.controlTool) throw new Error("herdr_subagents_control was not registered for UI wiring test");
+		await responding.controlTool.execute("call", { action: "respond", runId: "blocked-run", answer: "main" }, undefined, undefined, { cwd, ui: responding.ui });
 		if (!responding.renderedLines.some((line) => line.includes("second") && line.includes("blocked"))) throw new Error("blocked response did not refresh Fleet rows");
 		if (!responding.terminalInput?.("\u001b[B")?.consume || !responding.terminalInput?.("\u001b[B")?.consume || !responding.terminalInput?.("\r")?.consume) throw new Error("Fleet terminal input was not consumed while selecting");
 		await new Promise((resolve) => setTimeout(resolve, 0));
@@ -167,7 +174,7 @@ try {
 	if (inactiveHerdr.tool || inactiveHerdr.commands.length || inactiveHerdr.handlers.size) throw new Error("Subagents registered with HERDR_ENV=0");
 	process.env.HERDR_ENV = "1";
 	const inside = harness(async () => { throw new Error("unreachable"); });
-	if (!inside.tool || !inside.commands.includes("herdr-subagents") || !inside.handlers.has("session_start")) throw new Error("Subagents did not register inside Herdr");
+	if (!inside.tool || !inside.controlTool || !inside.commands.includes("herdr-subagents") || !inside.handlers.has("session_start")) throw new Error("Subagents did not register both tools inside Herdr");
 	process.env.PI_HERDR_SUBAGENTS_CHILD = "1";
 	const child = harness(async () => { throw new Error("unreachable"); });
 	if (child.tool || child.commands.length || child.handlers.size) throw new Error("Subagents registered inside a child Agent");
@@ -183,10 +190,10 @@ try {
 }
 
 export default function (_pi: ExtensionAPI) {
-	let tool: Record<string, any> | undefined;
+	const tools = new Map<string, Record<string, any>>();
 	const pi = {
 		on() {},
-		registerTool(definition: Record<string, any>) { tool = definition; },
+		registerTool(definition: Record<string, any>) { tools.set(definition.name, definition); },
 		registerCommand() {},
 		sendMessage() {},
 	};
@@ -207,19 +214,30 @@ export default function (_pi: ExtensionAPI) {
 		if (previousChild === undefined) delete process.env.PI_HERDR_SUBAGENTS_CHILD;
 		else process.env.PI_HERDR_SUBAGENTS_CHILD = previousChild;
 	}
-	if (!tool) throw new Error("herdr_subagents was not registered");
+	const tool = tools.get("herdr_subagents");
+	const controlTool = tools.get("herdr_subagents_control");
+	if (!tool || !controlTool) throw new Error("Herdr execution and control tools were not both registered");
 	const schema = tool.parameters as Record<string, any>;
 	if (schema.type !== "object" || schema.anyOf || schema.oneOf) throw new Error("herdr_subagents parameters must be one flat object schema");
-	const required = ["action", "runId", "answer", "task", "prompt", "agent", "label", "model", "tasks", "concurrency", "background"];
-	for (const name of required) {
+	for (const name of ["tasks", "label", "concurrency", "background"]) {
 		if (!schema.properties?.[name]) throw new Error(`schema is missing property '${name}'`);
 		if (!schema.properties[name].description) throw new Error(`schema property '${name}' has no description`);
+	}
+	if (!schema.required?.includes("tasks")) throw new Error("herdr_subagents tasks must be required");
+	const normalized = tool.prepareArguments?.({ prompt: "inspect", agent: "explorer", label: "probe", background: true });
+	if (normalized?.tasks?.length !== 1 || normalized.tasks[0].name !== "probe" || normalized.tasks[0].prompt !== "inspect" || normalized.tasks[0].agent !== "explorer" || normalized.background !== true) {
+		throw new Error("legacy single-task arguments were not normalized into a one-item background run");
 	}
 	for (const name of ["name", "prompt", "agent", "model"]) {
 		const property = schema.properties.tasks.items.properties[name];
 		if (!property?.description) throw new Error(`nested task property '${name}' has no description`);
 	}
-	if (!/Foreground calls block/.test(tool.description) || !/background batches return a run ID immediately/.test(tool.description)) {
+	const controlSchema = controlTool.parameters as Record<string, any>;
+	for (const name of ["action", "runId", "answer", "task", "prompt"]) {
+		if (!controlSchema.properties?.[name]?.description) throw new Error(`control schema property '${name}' is missing or undocumented`);
+	}
+	if (!controlSchema.required?.includes("action")) throw new Error("herdr_subagents_control action must be required");
+	if (!/Foreground calls block/.test(tool.description) || !/background calls return a run ID immediately/.test(tool.description)) {
 		throw new Error("tool description does not distinguish foreground and background execution");
 	}
 }

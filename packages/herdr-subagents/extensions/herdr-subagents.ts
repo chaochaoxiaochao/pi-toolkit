@@ -9,8 +9,8 @@ import { RunDispatcher } from "../src/dispatcher.ts";
 import { historyText, listSubagentHistory } from "../src/history.ts";
 import { cancelQueuedRuns, loadQueuedRuns, persistQueuedRun, removeQueuedRun } from "../src/queued-runs.ts";
 import { cancelActiveSubagentRuns, reconcileSubagentRuns } from "../src/reconcile.ts";
-import { executeHerdrSubagents, type HerdrSubagentsBatchDetails, type HerdrSubagentsDetails, type HerdrSubagentsToolParams } from "../src/tool.ts";
-import { HerdrSubagentsParams } from "../src/parameters.ts";
+import { executeHerdrSubagents, executeHerdrSubagentsControl, type HerdrSubagentsBatchDetails, type HerdrSubagentsControlToolParams, type HerdrSubagentsDetails, type HerdrSubagentsRunParams } from "../src/tool.ts";
+import { HerdrSubagentsControlParams, HerdrSubagentsParams } from "../src/parameters.ts";
 import { HERDR_ACTIONS } from "../src/validation.ts";
 import { FleetController } from "../src/fleet-controller.ts";
 import { isSettledRunStatus } from "../src/records.ts";
@@ -25,18 +25,32 @@ function statusVisual(status: string): { color: "success" | "warning" | "error" 
 	return { color: "error", glyph: "✗" };
 }
 
-function renderToolCall(args: HerdrSubagentsToolParams, theme: Theme): Text {
-	if (args.action) {
-		const action = HERDR_ACTIONS[args.action];
-		const runId = action.includeRunId ? ` ${theme.fg("muted", String(args.runId ?? ""))}` : "";
-		return new Text(`${theme.fg("toolTitle", theme.bold(`herdr_subagents ${args.action}`))}${runId}`, 0, 0);
-	}
-	if (args.tasks) return new Text(`${theme.fg("toolTitle", theme.bold("herdr_subagents"))} ${theme.fg("accent", `${args.tasks.length} tasks`)}${theme.fg("muted", ` · concurrency ${args.concurrency ?? "default"}`)}`, 0, 0);
-	const agent = args.agent || "worker";
-	const label = args.label ? ` · ${String(args.label)}` : "";
-	const prompt = args.prompt ? String(args.prompt).replace(/\s+/g, " ") : "...";
-	const preview = prompt.length > 80 ? `${prompt.slice(0, 80)}...` : prompt;
-	return new Text(`${theme.fg("toolTitle", theme.bold("herdr_subagents"))} ${theme.fg("accent", agent)}${theme.fg("muted", label)}\n  ${theme.fg("dim", preview)}`, 0, 0);
+function renderToolCall(args: HerdrSubagentsRunParams, theme: Theme): Text {
+	return new Text(`${theme.fg("toolTitle", theme.bold("herdr_subagents"))} ${theme.fg("accent", `${args.tasks.length} task${args.tasks.length === 1 ? "" : "s"}`)}${theme.fg("muted", ` · concurrency ${args.concurrency ?? "default"}`)}`, 0, 0);
+}
+
+function renderControlToolCall(args: HerdrSubagentsControlToolParams, theme: Theme): Text {
+	const action = HERDR_ACTIONS[args.action];
+	const runId = action.includeRunId ? ` ${theme.fg("muted", String(args.runId ?? ""))}` : "";
+	return new Text(`${theme.fg("toolTitle", theme.bold(`herdr_subagents_control ${args.action}`))}${runId}`, 0, 0);
+}
+
+export function normalizeHerdrSubagentsArguments(args: unknown): HerdrSubagentsRunParams {
+	if (!args || typeof args !== "object") return args as HerdrSubagentsRunParams;
+	const legacy = args as Record<string, unknown>;
+	if (Array.isArray(legacy.tasks) || typeof legacy.prompt !== "string" || legacy.action !== undefined) return args as HerdrSubagentsRunParams;
+	if (Object.keys(legacy).some((key) => !["prompt", "agent", "label", "model", "background"].includes(key))) return args as HerdrSubagentsRunParams;
+	const label = typeof legacy.label === "string" ? legacy.label : undefined;
+	return {
+		tasks: [{
+			name: label || "task",
+			prompt: legacy.prompt,
+			...(typeof legacy.agent === "string" ? { agent: legacy.agent } : {}),
+			...(typeof legacy.model === "string" ? { model: legacy.model } : {}),
+		}],
+		...(label ? { label } : {}),
+		...(typeof legacy.background === "boolean" ? { background: legacy.background } : {}),
+	};
 }
 
 function renderToolResult(result: AgentToolResult<unknown>, _options: ToolRenderResultOptions, theme: Theme): Container | Text {
@@ -49,20 +63,20 @@ function renderToolResult(result: AgentToolResult<unknown>, _options: ToolRender
 		return container;
 	}
 	const details = result.details as HerdrSubagentsDetails | undefined;
-	if (!details?.agent) {
-		const content = result.content[0];
-		return new Text(content?.type === "text" ? content.text : "(no output)", 0, 0);
+	if (details?.agent) {
+		const container = new Container();
+		container.addChild(new Text(`${theme.fg("toolTitle", theme.bold(details.agent))} ${theme.fg(statusVisual(details.status).color, details.status)}`, 0, 0));
+		container.addChild(new Text(details.summary, 0, 0));
+		if (details.documents.length > 0) {
+			container.addChild(new Spacer(1));
+			for (const document of details.documents) container.addChild(new Text(theme.fg("muted", `${document.description}: ${document.path}`), 0, 0));
+		}
+		if (details.recordDirectory) container.addChild(new Text(theme.fg("dim", `Record: ${details.recordDirectory}`), 0, 0));
+		if (details.errorMessage) container.addChild(new Text(theme.fg("error", `Error: ${details.errorMessage}`), 0, 0));
+		return container;
 	}
-	const container = new Container();
-	container.addChild(new Text(`${theme.fg("toolTitle", theme.bold(details.agent))} ${theme.fg(statusVisual(details.status).color, details.status)}`, 0, 0));
-	container.addChild(new Text(details.summary, 0, 0));
-	if (details.documents.length > 0) {
-		container.addChild(new Spacer(1));
-		for (const document of details.documents) container.addChild(new Text(theme.fg("muted", `${document.description}: ${document.path}`), 0, 0));
-	}
-	if (details.recordDirectory) container.addChild(new Text(theme.fg("dim", `Record: ${details.recordDirectory}`), 0, 0));
-	if (details.errorMessage) container.addChild(new Text(theme.fg("error", `Error: ${details.errorMessage}`), 0, 0));
-	return container;
+	const content = result.content[0];
+	return new Text(content?.type === "text" ? content.text : "(no output)", 0, 0);
 }
 
 async function handleHerdrCommand(args: string, ctx: ExtensionCommandContext, fleet: FleetController): Promise<void> {
@@ -104,6 +118,7 @@ async function handleHerdrCommand(args: string, ctx: ExtensionCommandContext, fl
 export interface HerdrSubagentsExtensionDependencies {
 	herdr?: HerdrAutomation;
 	execute?: typeof executeHerdrSubagents;
+	executeControl?: typeof executeHerdrSubagentsControl;
 	isEditor?: (value: unknown) => boolean;
 	createFleetWidget?: (lines: string[]) => Container;
 }
@@ -139,6 +154,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 	if (process.env.PI_HERDR_SUBAGENTS_CHILD === "1" || process.env.HERDR_ENV !== "1" || !process.env.HERDR_WORKSPACE_ID) return;
 	const herdr = dependencies.herdr ?? new CliHerdrAutomation();
 	const execute = dependencies.execute ?? executeHerdrSubagents;
+	const executeControl = dependencies.executeControl ?? executeHerdrSubagentsControl;
 	const isEditorComponent = dependencies.isEditor ?? ((value: unknown) => value instanceof Editor);
 	const dispatcher = new RunDispatcher();
 	const fleet = new FleetController(herdr, isEditorComponent, dependencies.createFleetWidget);
@@ -177,17 +193,17 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 	pi.registerTool({
 		name: "herdr_subagents",
 		label: "Herdr Subagents",
-		description: "Run one focused task or an ordered bounded-concurrency batch in visible interactive Herdr Pi Agents. Foreground calls block while workers run concurrently; background batches return a run ID immediately and publish completion later. Complete results and Pi sessions stay in project-local records.",
+		description: "Run one or more ordered tasks in visible interactive Herdr Pi Agents. Use one tasks item for a single task. Independent read-only tasks may run concurrently; write-capable runs are serialized. Foreground calls block, while background calls return a run ID immediately. Complete results and Pi sessions stay in project-local records.",
 		promptSnippet: "Run focused work in visible Herdr subagents",
-		promptGuidelines: ["Call action=list once before the first execution. Submit one prompt or an ordered tasks list; use concurrency only for independent read-only tasks. Foreground calls block until the run settles; background calls return a run ID immediately."],
+		promptGuidelines: ["Call herdr_subagents_control with action=list once before the first execution. Submit an ordered tasks list; use one item for a single task and concurrency only for independent read-only tasks. Foreground calls block until the run settles; background calls return a run ID immediately."],
 		parameters: HerdrSubagentsParams,
+		prepareArguments: normalizeHerdrSubagentsArguments,
 
-		async execute(_toolCallId, params: HerdrSubagentsToolParams, signal, onUpdate, ctx) {
+		async execute(_toolCallId, params: HerdrSubagentsRunParams, signal, onUpdate, ctx) {
 			const generation = sessionGeneration;
-			const runId = params.tasks ? randomUUID() : undefined;
-			const executionId = runId ?? params.runId ?? randomUUID();
+			const runId = randomUUID();
 			const controller = new AbortController();
-			runControllers.set(executionId, controller);
+			runControllers.set(runId, controller);
 			const runSignal = AbortSignal.any([controller.signal, sessionController.signal, ...(!params.background && signal ? [signal] : [])]);
 			const executeRun = async () => {
 				const result = await execute(params, runSignal, (update) => {
@@ -201,21 +217,6 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 				fleet.sync(result.details);
 				return result;
 			};
-			if (!params.tasks) {
-				const promise = executeRun();
-				inFlight.add(promise);
-				const result = await promise.finally(() => { inFlight.delete(promise); runControllers.delete(executionId); });
-				if (params.action === "respond") {
-					const details = result.details as { runId?: string; status?: string };
-					if (details.status === "blocked") fleet.sync(result.details);
-					else if (isSettledRunStatus(details.status)) {
-						fleet.clearRun(params.runId);
-						if (params.runId) dispatcher.release(params.runId);
-					}
-				}
-				return result;
-			}
-			if (!runId) throw new Error("Batch run ID was not allocated.");
 			if (params.background) await persistQueuedRun(ctx.cwd, runId, params, { sessionId: ownerSessionId, processId: process.pid });
 			const promise = dispatcher.submit(runId, async () => {
 				const result = await executeRun().finally(async () => { if (params.background) await removeQueuedRun(ctx.cwd, runId); });
@@ -227,7 +228,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 				return result;
 			});
 			inFlight.add(promise);
-			void promise.finally(() => { inFlight.delete(promise); runControllers.delete(executionId); }).catch(() => undefined);
+			void promise.finally(() => { inFlight.delete(promise); runControllers.delete(runId); }).catch(() => undefined);
 			if (params.background) {
 				void promise.then((result) => {
 					if (generation !== sessionGeneration) return;
@@ -245,6 +246,44 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 		},
 
 		renderCall: renderToolCall,
+		renderResult: renderToolResult,
+	});
+
+	pi.registerTool({
+		name: "herdr_subagents_control",
+		label: "Herdr Subagents Control",
+		description: "Inspect Herdr personas and run history, answer a blocked task, resume a saved task, or remove a selected archived run. Use herdr_subagents to start new work.",
+		promptSnippet: "Inspect and control Herdr subagent runs",
+		parameters: HerdrSubagentsControlParams,
+
+		async execute(_toolCallId, params: HerdrSubagentsControlToolParams, signal, onUpdate, ctx) {
+			const executionId = params.runId ?? randomUUID();
+			const controller = new AbortController();
+			runControllers.set(executionId, controller);
+			const runSignal = AbortSignal.any([controller.signal, sessionController.signal, ...(signal ? [signal] : [])]);
+			const promise = executeControl(params, runSignal, (update) => {
+				const details = update.details as HerdrSubagentsBatchDetails | undefined;
+				if (details?.activity) fleet.sync(details);
+				const updateText = update.content.find((item) => item.type === "text")?.text;
+				const updateDetails = update.details as { warning?: string };
+				if (updateDetails.warning || updateText?.includes("cleanup failed")) ctx.ui.notify(updateDetails.warning ?? updateText ?? "Subagent warning", "warning");
+				onUpdate?.(update);
+			}, ctx, { agentsDirectory: packageAgentsDir, owner: { sessionId: ownerSessionId, processId: process.pid } });
+			inFlight.add(promise);
+			const result = await promise.finally(() => { inFlight.delete(promise); runControllers.delete(executionId); });
+			fleet.sync(result.details);
+			if (params.action === "respond") {
+				const details = result.details as { status?: string };
+				if (details.status === "blocked") fleet.sync(result.details);
+				else if (isSettledRunStatus(details.status)) {
+					fleet.clearRun(params.runId);
+					if (params.runId) dispatcher.release(params.runId);
+				}
+			}
+			return result;
+		},
+
+		renderCall: renderControlToolCall,
 		renderResult: renderToolResult,
 	});
 
