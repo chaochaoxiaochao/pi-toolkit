@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-08 - v0.1.8
 
+- fix repeated same-path updates and publish reproducible benchmark evidence
 - apply repeated plain `Update File` blocks for one path in order while retaining conflict rejection for add/delete/move targets
 - expand regressions and testing policy for repeated regions, empty chunks, stale context, malformed arguments, and project-scale patches
 - add mandatory real-native-edit versus local and released-v0.1.7 versus local comparisons over one growing scenario corpus

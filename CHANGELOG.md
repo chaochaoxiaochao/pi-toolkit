@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-08 - v0.9.5
 
+- bundle codex-edit v0.1.8: fix repeated same-path updates and publish reproducible benchmark evidence
 - harden bundled Codex Edit for repeated updates to one path and add mandatory native-vs-Codex and released-vs-local comparisons over a growing regression corpus
 - generate and bundle the latest Codex Edit Markdown and self-contained HTML test report on every test run
 - commit the completed 100-task benchmark evidence and make report generation deterministic on clean checkouts
