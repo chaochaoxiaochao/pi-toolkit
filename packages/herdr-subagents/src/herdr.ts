@@ -76,15 +76,6 @@ export class HerdrCommandError extends Error {
 	}
 }
 
-export async function retryBeforePrompt<T>(operation: () => Promise<T>, retries = 2): Promise<T> {
-	let lastError: unknown;
-	for (let attempt = 0; attempt <= retries; attempt += 1) {
-		try { return await operation(); }
-		catch (error) { lastError = error; }
-	}
-	throw lastError;
-}
-
 async function runCommand(binary: string, args: string[], signal?: AbortSignal): Promise<string> {
 	return await new Promise<string>((resolve, reject) => {
 		let stdout = "";

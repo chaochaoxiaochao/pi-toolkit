@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm, rmdir } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
-import { CliHerdrAutomation, retryBeforePrompt, type HerdrAutomation } from "./herdr.ts";
+import { CliHerdrAutomation, type HerdrAutomation } from "./herdr.ts";
 import { liveAgentName, promptLiveAgent } from "./live-agent.ts";
 import { writeJsonAtomic, writeTextAtomic } from "./state.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
@@ -11,6 +11,7 @@ import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
 import { applyReport, applyTaskStatus, isActiveStatus, readReport, readRunRecord, readTaskRecord, settleAttemptFailure, type PersistedDocument, type PersistedReport, type RunRecord, type RunStatus, type TaskRecord, type TaskStatus } from "./records.ts";
 import { continuationSystemPrompt } from "./protocol.ts";
 import { isAbortError } from "./errors.ts";
+import { findRunDirectory } from "./run-locator.ts";
 
 export interface HistoricalTask { order: number; id: string; name: string; agent: string; status: TaskStatus; summary?: string; question?: string; documents: PersistedDocument[]; recordDirectory: string; sessionFile: string; model?: string; thinking?: string; tools?: string[]; skills: string[]; access?: string; }
 export interface HistoricalRun { id: string; label: string; status: RunStatus; startedAt: string; completedAt?: string; effectiveConcurrency?: number; cleanupPendingTabIds?: string[]; tasks: HistoricalTask[]; recordDirectory: string; }
@@ -98,6 +99,19 @@ export async function cleanSubagentRun(cwd: string, runId: string): Promise<bool
 export interface ResumeHistoricalTaskOptions { herdr?: HerdrAutomation; signal?: AbortSignal; owner?: OwnerIdentity; onCleanupError?: (message: string) => void; stalledWarningSeconds?: number; onStalled?: (message: string) => void; }
 
 export async function resumeHistoricalTask(cwd: string, runId: string, taskNumber: number, prompt: string, options: ResumeHistoricalTaskOptions = {}): Promise<{ runId: string; status: TaskStatus; summary: string; documents: PersistedDocument[]; tabId: string; paneId: string; sessionFile: string }> {
+	const runDirectory = await findRunDirectory(join(cwd, ".pi", "herdr-subagents", "runs"), runId);
+	if (!runDirectory) throw new Error(`Unknown Subagent run '${runId}'.`);
+	const lockDirectory = join(runDirectory, ".resume.lock");
+	try { await mkdir(lockDirectory); }
+	catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error(`Subagent run '${runId}' already has a historical resume in progress (lock: ${lockDirectory}).`);
+		throw error;
+	}
+	try { return await resumeHistoricalTaskLocked(cwd, runId, taskNumber, prompt, options); }
+	finally { await rmdir(lockDirectory); }
+}
+
+async function resumeHistoricalTaskLocked(cwd: string, runId: string, taskNumber: number, prompt: string, options: ResumeHistoricalTaskOptions): Promise<{ runId: string; status: TaskStatus; summary: string; documents: PersistedDocument[]; tabId: string; paneId: string; sessionFile: string }> {
 	const herdr = options.herdr ?? new CliHerdrAutomation();
 	const { signal, onCleanupError } = options;
 	const run = (await listSubagentHistory(cwd)).find((candidate) => candidate.id === runId);
@@ -130,7 +144,7 @@ export async function resumeHistoricalTask(cwd: string, runId: string, taskNumbe
 		let status: "blocked" | "completed" | "failed";
 		try {
 			const env = { PI_HERDR_SUBAGENTS_CHILD: "1", PI_HERDR_SUBAGENTS_TASK_DIR: historical.recordDirectory };
-			tab = await retryBeforePrompt(() => herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID ?? "", cwd, label: `SA · ${run.label}`, env, focus: false, signal: options.signal }));
+			tab = await herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID ?? "", cwd, label: `SA · ${run.label}`, env, focus: false, signal: options.signal });
 			const paneLabel = `${String(historical.order).padStart(2, "0")} · ${historical.name}`;
 			await herdr.renamePane(tab.paneId, paneLabel, options.signal);
 			applyTaskStatus(task, "running");

@@ -68,6 +68,7 @@ async function projectSettledRun(runDirectory: string, runFile: string, run: Run
 	const runStatus = aggregateStatus === "running" ? "blocked" : aggregateStatus;
 	const blockedIndex = finalTasks.findIndex((entry) => entry.status === "blocked");
 	const blockedReport = blockedIndex >= 0 ? finalReports[blockedIndex] : undefined;
+	run = await readRunRecord(runFile);
 	applyRunStatus(run, runStatus, { question: blockedReport?.question });
 	await writeJsonAtomic(runFile, run);
 	if (runStatus !== "blocked" && run.tabId) await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, onError: onCleanupError, failureStatus: "failed" });

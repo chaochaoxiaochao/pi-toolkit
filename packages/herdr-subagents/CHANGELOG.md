@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Preserve newly allocated panes when blocked runs resume, stop blindly retrying Herdr resource-creating commands after uncertain failures, and prevent concurrent historical resumes from writing the same Pi session.
 - Isolate malformed queue/history entries so healthy active runs and durable history remain recoverable, and share durable attempt settlement plus task projection contracts across execution modes.
 - Retain blocked Fleet and dispatcher ownership after stateless response errors, and include public test entrypoints in the published package.
 - Preserve every pending stale-tab cleanup across repeated pane migrations, retry all of them during startup reconciliation, and surface allocator cleanup failures through batch updates.
@@ -16,7 +17,7 @@
 - Give every started task a new on-demand pane, retain completed panes until the batch settles, and then close the whole tab with focus-safe cleanup.
 - Add a flat fully described tool schema with runtime mode validation and a Fleet-style task list with direct keyboard pane navigation.
 - Continue historical sessions as durable turns of the same logical task, and cancel/archive unfinished work when the parent Pi session closes.
-- Persist and reconcile queued/running work across parent shutdown, retry only pre-prompt startup, preserve post-submit failures, warn without timing out stalled children, and atomically replace state snapshots.
+- Persist and reconcile queued/running work across parent shutdown, avoid retrying uncertain startup operations, preserve post-submit failures, warn without timing out stalled children, and atomically replace state snapshots.
 - Add compact project-local history, saved-session follow-ups in new Herdr tabs, explicit per-run cleanup, unlimited retention, and generated-state Git exclusion.
 - Support structured `needs-input` reports, preserve blocked panes and sessions, and resume the original child with `action: respond`.
 - Queue background batches behind one active run, return stable IDs immediately, keep progress visible, and send one compact run-level parent notification.

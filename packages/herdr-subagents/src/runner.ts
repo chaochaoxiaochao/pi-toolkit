@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { CliHerdrAutomation, retryBeforePrompt, type HerdrAutomation } from "./herdr.ts";
+import { CliHerdrAutomation, type HerdrAutomation } from "./herdr.ts";
 import { ensureRuntimeIgnored } from "./history.ts";
 import { liveAgentName, promptLiveAgent } from "./live-agent.ts";
 import { writeJsonAtomic } from "./state.ts";
@@ -164,7 +164,7 @@ export async function runHerdrSubagents(prompt: string, options: HerdrSubagentsO
 
 	let attempt: { status: "blocked" | "completed" | "failed" | "cancelled"; report: PersistedReport; error?: unknown };
 	try {
-		const tab = await retryBeforePrompt(() => herdr.createTab({
+		const tab = await herdr.createTab({
 			workspaceId: process.env.HERDR_WORKSPACE_ID,
 			cwd,
 			label: `SA · ${label}`,
@@ -174,7 +174,7 @@ export async function runHerdrSubagents(prompt: string, options: HerdrSubagentsO
 			},
 			focus: false,
 			signal: options.signal,
-		}));
+		});
 		tabId = tab.tabId;
 		paneId = tab.paneId;
 		const paneLabel = `01 · ${label}`;

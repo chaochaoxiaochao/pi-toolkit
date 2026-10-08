@@ -16,8 +16,9 @@
 - Preserve compact reports, full results, Pi sessions, blocked questions, and historical follow-ups.
 - Recover queued/running work after interruption without retrying post-prompt side effects, including truncated reports and recovery errors.
 - Verify the flat public contract and injectable extension wiring, including Fleet rendering, editor focus ownership, terminal-input passthrough, exact-pane navigation, and stable display while another background run queues.
-- Verify blocked-response live Fleet updates, authoritative stale-field replacement, parent-shutdown cancellation, cleanup notifications, atomic state replacement, startup retries, and stalled warnings.
+- Verify blocked-response live Fleet updates, authoritative stale-field replacement, parent-shutdown cancellation, cleanup notifications, atomic state replacement, non-retried uncertain startup operations, and stalled warnings.
+- Verify resumed batches retain newly allocated pane IDs and historical follow-ups exclude simultaneous session writers.
 
 ## Latest baseline
 
-All 128 deterministic scheduler, recovery, process-boundary, schema-validation, navigation, and persona cases must pass. Release validation also requires extension loading and a real Herdr read-only batch smoke with distinct task panes and final tab cleanup. The latest smoke completed two concurrent tasks, retained its focused run tab through settlement, and closed it automatically after focus moved away.
+All 133 deterministic scheduler, recovery, process-boundary, schema-validation, navigation, and persona cases must pass. Release validation also requires extension loading and a real Herdr read-only batch smoke with distinct task panes and final tab cleanup. The latest smoke completed two concurrent tasks, retained its focused run tab through settlement, and closed it automatically after focus moved away.

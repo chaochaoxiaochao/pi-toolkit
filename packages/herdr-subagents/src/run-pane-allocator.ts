@@ -1,4 +1,4 @@
-import { retryBeforePrompt, type HerdrAutomation } from "./herdr.ts";
+import type { HerdrAutomation } from "./herdr.ts";
 import { writeJsonAtomic } from "./state.ts";
 import type { RunRecord } from "./records.ts";
 import { applyRunStatus } from "./run-status.ts";
@@ -44,7 +44,7 @@ export class RunPaneAllocator {
 			}
 			if (!anchorExists) {
 				const staleTabId = run.tabId;
-				const tab = await retryBeforePrompt(() => herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID ?? "", cwd: run.cwd, label: `SA · ${run.label}`, env, focus: false, signal }));
+				const tab = await herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID ?? "", cwd: run.cwd, label: `SA · ${run.label}`, env, focus: false, signal });
 				run.tabId = tab.tabId;
 				paneId = tab.paneId;
 				this.paneIds.splice(0);
@@ -63,7 +63,7 @@ export class RunPaneAllocator {
 					});
 				}
 			} else {
-				const split = await retryBeforePrompt(() => herdr.splitPane({ paneId: this.lastPaneId as string, cwd: run.cwd, direction: this.paneIds.length % 2 ? "right" : "down", focus: false, env, signal }));
+				const split = await herdr.splitPane({ paneId: this.lastPaneId as string, cwd: run.cwd, direction: this.paneIds.length % 2 ? "right" : "down", focus: false, env, signal });
 				paneId = split.paneId;
 			}
 			this.lastPaneId = paneId;

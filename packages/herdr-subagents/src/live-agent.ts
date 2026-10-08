@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { retryBeforePrompt, type HerdrAutomation } from "./herdr.ts";
+import type { HerdrAutomation } from "./herdr.ts";
 import type { HerdrSubagentsReport } from "./runner.ts";
 import { parseReport } from "./records.ts";
 
@@ -56,13 +56,13 @@ export async function promptLiveAgent(options: {
 	await rm(reportFile, { force: true });
 	const agentName = options.agentName ?? liveAgentName(options.task.id, options.attempt);
 	if (options.start !== false) {
-		await retryBeforePrompt(() => options.herdr.startAgent({
+		await options.herdr.startAgent({
 			name: agentName,
 			kind: "pi",
 			paneId: options.paneId,
 			args: childPiArgs(options.task, options.systemPromptFile),
 			signal: options.signal,
-		}));
+		});
 	}
 	const stalledTimer = options.stalledWarningMs ? setTimeout(() => options.onStalled?.(), options.stalledWarningMs) : undefined;
 	let promptError: unknown;
