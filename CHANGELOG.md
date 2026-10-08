@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-08 - v0.10.1
 
+- bundle herdr-subagents v0.2.1: add default thinking configuration and inline Herdr workflow video
 - remove the bundled `calldiff` skill
 - add merged global/project `defaultThinking` for Herdr Subagents, below persona-specific thinking and above parent-session fallback
 - embed the Herdr workflow video directly in the GitHub README, retain the reproducible WebM source, and remove the GIF preview

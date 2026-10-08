@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-08 - v0.2.1
 
+- add default thinking configuration and inline Herdr workflow video
 - Add merged global/project `defaultThinking`, below persona-specific thinking and above parent-session fallback, with effective source reporting.
 - Embed the workflow video directly in the GitHub README, retain the reproducible WebM source, and remove the GIF preview.
 - Expand the README with every settings and persona option, accepted values, defaults, paths, examples, and exact model, thinking, skills, and definition precedence.
