@@ -1,3 +1,7 @@
+## 2026-10-08 - v0.10.4
+
+- bundle herdr-subagents v0.4.1: targeted cancellation, live token polling, and idempotent tab cleanup
+
 ## 2026-10-08 - v0.10.3
 
 - bundle herdr-subagents v0.4.0: add the live compact Fleet footer with authoritative metrics and refreshed media
