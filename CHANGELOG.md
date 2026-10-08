@@ -1,9 +1,13 @@
+## 2026-10-08 - v0.10.3
+
+- bundle herdr-subagents v0.4.0: add the live compact Fleet footer with authoritative metrics and refreshed media
+- Add the responsive below-editor Herdr Fleet monitor with real personas, task states, cumulative active durations, and authoritative child Pi token totals, including event-driven live updates and safe partial-JSONL handling.
+- Color running Fleet rows yellow and completed rows green, compact the shared metrics column instead of pushing it to the terminal edge, and update the published media with focus restoration after capture.
+
 ## 2026-10-08 - v0.10.2
 
 - bundle herdr-subagents v0.3.0: split execution and control tools and unify task runs
 - Bundle the Herdr Subagents execution/control tool split and unified non-empty `tasks` input for single and multi-task runs.
-- Add the responsive below-editor Herdr Fleet monitor with real personas, task states, cumulative active durations, and authoritative child Pi token totals, including event-driven live updates and safe partial-JSONL handling.
-- Color running Fleet rows yellow and completed rows green, compact the shared metrics column instead of pushing it to the terminal edge, and update the published media with focus restoration after capture.
 
 ## 2026-10-08 - v0.10.1
 

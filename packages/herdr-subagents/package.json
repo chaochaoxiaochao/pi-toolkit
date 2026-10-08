@@ -1,6 +1,6 @@
 {
   "name": "@maxiaochao/pi-herdr-subagents",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Run inspectable interactive Pi subagent batches through Herdr.",
   "type": "module",
   "keywords": [

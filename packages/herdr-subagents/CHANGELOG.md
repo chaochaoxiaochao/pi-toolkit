@@ -1,12 +1,16 @@
+## 2026-10-08 - v0.4.0
+
+- add the live compact Fleet footer with authoritative metrics and refreshed media
+- Replace the below-editor task list with a compact responsive Fleet monitor showing authoritative persona, task status, cumulative active time, and true child Pi usage from assistant, tool-result, standalone usage, compaction, and branch-summary entries.
+- Update Fleet metrics from child-session file events, repaint elapsed time only while work runs, safely ignore malformed or partial JSONL tails, and dispose every watcher and timer with the widget.
+- Preserve exact-pane keyboard focus while extending blocked-response and historical-resume activity projections with durable timing and session metadata.
+- Use warning/yellow indicators for running Fleet rows and success/green indicators for completed rows, compact the shared metrics column instead of pushing it to the terminal edge, and publish media that demonstrates the live parent footer while restoring focus after capture.
+
 ## 2026-10-08 - v0.3.0
 
 - split execution and control tools and unify task runs
 - Split execution and control into `herdr_subagents` and `herdr_subagents_control`; require a non-empty `tasks` array for new runs so one-item runs and batches share background and concurrency semantics.
 - Normalize legacy top-level single-task prompts into one-item task arrays before schema validation.
-- Replace the below-editor task list with a compact responsive Fleet monitor showing authoritative persona, task status, cumulative active time, and true child Pi usage from assistant, tool-result, standalone usage, compaction, and branch-summary entries.
-- Update Fleet metrics from child-session file events, repaint elapsed time only while work runs, safely ignore malformed or partial JSONL tails, and dispose every watcher and timer with the widget.
-- Preserve exact-pane keyboard focus while extending blocked-response and historical-resume activity projections with durable timing and session metadata.
-- Use warning/yellow indicators for running Fleet rows and success/green indicators for completed rows, compact the shared metrics column instead of pushing it to the terminal edge, and publish media that demonstrates the live parent footer while restoring focus after capture.
 
 ## 2026-10-08 - v0.2.1
 
