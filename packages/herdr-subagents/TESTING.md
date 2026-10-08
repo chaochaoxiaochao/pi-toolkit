@@ -6,7 +6,7 @@
 2. `pi -ne -ns --no-session -e ./packages/herdr-subagents/extensions/herdr-subagents.ts` verifies extension loading.
 3. From a visible X11 Herdr client with the GStreamer X11 and VP8 plugins installed, run `HERDR_MEDIA_WINDOW_ID=<window-id> node scripts/capture-package-media.mjs`. The Herdr capture must show a parent Pi conversation, a three-task run tab, each of the three real interactive Agent panes receiving focus in turn, and the final compact parent response.
 4. `npm pack ./packages/herdr-subagents --dry-run` verifies package contents.
-5. Verify the README example and live Herdr UI media `docs/screenshot.png`, `docs/demo.gif`, and `docs/demo.webm` are present in the tarball. Inspect the WebM metadata and play it through once to confirm the parent → three focused children → parent sequence.
+5. Verify the README renders the GitHub attachment video directly and live Herdr UI media `docs/screenshot.png` and `docs/demo.webm` are present in the tarball; `docs/demo.gif` must be absent. Inspect the WebM metadata and play it through once to confirm the parent → three focused children → parent sequence.
 
 ## Cases
 
@@ -22,4 +22,4 @@
 
 ## Latest baseline
 
-All 133 deterministic scheduler, recovery, process-boundary, schema-validation, navigation, and persona cases must pass. Release validation also requires extension loading and a real Herdr read-only batch smoke with distinct task panes and final tab cleanup. The latest smoke completed two concurrent tasks, retained its focused run tab through settlement, and closed it automatically after focus moved away.
+All 136 deterministic scheduler, recovery, process-boundary, schema-validation, navigation, and persona cases must pass. Release validation also requires extension loading and a real Herdr read-only batch smoke with distinct task panes and final tab cleanup. The latest smoke completed two concurrent tasks, retained its focused run tab through settlement, and closed it automatically after focus moved away.

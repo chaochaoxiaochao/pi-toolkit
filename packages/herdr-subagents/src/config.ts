@@ -10,6 +10,7 @@ export interface SubagentConfig {
 	maxConcurrency: number;
 	stalledWarningSeconds: number;
 	defaultModel?: string;
+	defaultThinking?: string;
 	personas: Record<string, PersonaConfig>;
 }
 export interface EffectivePersona extends AgentDefinition {
@@ -33,6 +34,7 @@ interface ConfigFile {
 	maxConcurrency?: number;
 	stalledWarningSeconds?: number;
 	defaultModel?: string;
+	defaultThinking?: string;
 	personas?: Record<string, PersonaConfig>;
 }
 export interface ConfigurationPaths {
@@ -64,9 +66,11 @@ function mergeConfig(base: SubagentConfig, input: ConfigFile, source: string, so
 		result[key] = value as number;
 		sources[key] = source;
 	}
-	if (input.defaultModel !== undefined) {
-		if (typeof input.defaultModel === "string" && input.defaultModel.trim()) { result.defaultModel = input.defaultModel.trim(); sources.defaultModel = source; }
-		else diagnostics.push(`${source} defaultModel must be a non-empty string`);
+	for (const key of ["defaultModel", "defaultThinking"] as const) {
+		const value = input[key];
+		if (value === undefined) continue;
+		if (typeof value === "string" && value.trim()) { result[key] = value.trim(); sources[key] = source; }
+		else diagnostics.push(`${source} ${key} must be a non-empty string`);
 	}
 	if (input.personas !== undefined) {
 		if (!input.personas || typeof input.personas !== "object" || Array.isArray(input.personas)) diagnostics.push(`${source} personas must be an object`);
@@ -115,8 +119,8 @@ export function loadSubagentConfiguration(cwd: string, packageAgentsDirectory: s
 		const projectPersona = projectInput.personas?.[definition.name] ?? {};
 		const model = projectPersona.model ?? globalPersona.model ?? definition.model ?? settings.defaultModel ?? parentModel;
 		const modelSource = projectPersona.model ? "project persona" : globalPersona.model ? "global persona" : definition.model ? `${source} persona` : settings.defaultModel ? settingSources.defaultModel : parentModel ? "parent session" : "unresolved";
-		const thinking = projectPersona.thinking ?? globalPersona.thinking ?? definition.thinking;
-		const thinkingSource = projectPersona.thinking ? "project persona" : globalPersona.thinking ? "global persona" : definition.thinking ? `${source} persona` : "default";
+		const thinking = projectPersona.thinking ?? globalPersona.thinking ?? definition.thinking ?? settings.defaultThinking;
+		const thinkingSource = projectPersona.thinking ? "project persona" : globalPersona.thinking ? "global persona" : definition.thinking ? `${source} persona` : settings.defaultThinking ? settingSources.defaultThinking : "default";
 		const skills = projectPersona.skills ?? globalPersona.skills ?? definition.skills ?? [];
 		const skillsSource = projectPersona.skills ? "project persona" : globalPersona.skills ? "global persona" : definition.skills ? `${source} persona` : "none";
 		return { ...definition, source, access: definition.access ?? "write", model, modelSource, thinking, thinkingSource, skills, skillsSource };

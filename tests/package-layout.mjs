@@ -19,12 +19,18 @@ for (const [slug, name, extension] of children) {
   for (const file of ["package.json", "README.md", "TESTING.md", "CHANGELOG.md"]) {
     assert.equal(existsSync(join(directory, file)), true, `${slug} missing ${file}`);
   }
-  for (const file of ["docs/screenshot.png", "docs/demo.gif"]) {
+  const media = slug === "herdr-subagents" ? ["docs/screenshot.png", "docs/demo.webm"] : ["docs/screenshot.png", "docs/demo.gif"];
+  for (const file of media) {
     assert.equal(existsSync(join(directory, file)), true, `${slug} missing ${file}`);
   }
   const readme = readFileSync(join(directory, "README.md"), "utf8");
   assert.match(readme, /docs\/screenshot\.png/);
-  assert.match(readme, /docs\/demo\.gif/);
+  if (slug === "herdr-subagents") {
+    assert.equal(existsSync(join(directory, "docs/demo.gif")), false, "herdr-subagents must not ship docs/demo.gif");
+    assert.match(readme, /github\.com\/user-attachments\/assets\/8ddf3ae6-a11a-492b-9cae-d9496ba65b67/);
+    assert.match(readme, /docs\/demo\.webm/);
+    assert.doesNotMatch(readme, /docs\/demo\.gif/);
+  } else assert.match(readme, /docs\/demo\.gif/);
   const manifest = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
   assert.equal(manifest.name, name);
   assert.equal(manifest.repository.directory, directory);

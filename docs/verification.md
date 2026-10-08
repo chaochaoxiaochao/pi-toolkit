@@ -8,7 +8,7 @@ This report covers the root bundle and the five independently releasable package
 
 | Check | Expected result |
 |---|---|
-| `node scripts/capture-package-media.mjs` | Regenerates ten real-output media files; each GIF has three distinct frames. |
+| `node scripts/capture-package-media.mjs` | Regenerates real-output media; the four GIF packages have three distinct frames and Herdr retains its screenshot plus WebM. |
 | `npm test` | Root layout, BTW, Todo, all child deterministic tests, Cache Export Chromium E2E, Worktree installer, and CLI integration pass. |
 | `npm run load-test` | Every configured extension entrypoint loads successfully. |
 | `npm pack ./packages/<slug> --dry-run` | Each child tarball contains its runtime, documentation, screenshot, and demo. |
@@ -19,8 +19,8 @@ This report covers the root bundle and the five independently releasable package
 
 - Cache Export: 47 deterministic assertions and 18 Chromium E2E assertions passed, with 0 failures and 0 skips.
 - Codex Edit: 22 Node tests and 12 shared comparison cases passed, including real Pi native-edit versus local Codex Edit, released versus local parser, deterministic report regeneration, and outside-workspace safety comparisons.
-- Herdr Subagents: 133 scheduler, recovery, schema, navigation, persona, and process-boundary tests passed. A real Herdr smoke completed two concurrent interactive Pi Agents in distinct panes, kept the focused shared tab open through settlement, and automatically closed it after focus moved away. Deterministic extension coverage also verifies blocked dispatcher/Fleet ownership, parent-shutdown cleanup, malformed-report repair, and deferred cleanup notifications.
+- Herdr Subagents: 136 scheduler, recovery, schema, navigation, persona, and process-boundary tests passed. A real Herdr smoke completed two concurrent interactive Pi Agents in distinct panes, kept the focused shared tab open through settlement, and automatically closed it after focus moved away. Deterministic extension coverage also verifies blocked dispatcher/Fleet ownership, parent-shutdown cleanup, malformed-report repair, deferred cleanup notifications, and global/project default thinking precedence.
 - Todo, BTW, Worktree installer, and Worktree CLI integration tests passed.
-- Media: all five screenshots are non-empty; Cache Export is a full-page 1440 × 2278 capture; Herdr Subagents includes a live WebM recording that moves from the parent Pi through each of three focused Agent panes and back to the final parent summary, plus a GIF preview; the other four GIFs contain three distinct frames.
+- Media: all five screenshots are non-empty; Cache Export is a full-page 1440 × 2278 capture; Herdr Subagents includes a live WebM recording that moves from the parent Pi through each of three focused Agent panes and back to the final parent summary, with no GIF; the other four GIFs contain three distinct frames.
 
-Open [`package-media-gallery.html`](package-media-gallery.html) to inspect every generated PNG and GIF in one page.
+Open [`package-media-gallery.html`](package-media-gallery.html) to inspect every generated PNG, GIF, and video in one page.

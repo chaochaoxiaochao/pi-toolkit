@@ -8,10 +8,10 @@ A Pi extension that runs focused foreground or background work as normal interac
 
 The recording shows a real Pi conversation invoking a three-task read-only batch, Herdr opening one interactive Agent pane per task, and the compact results returning to the parent.
 
-![Pi opening three interactive Subagents in Herdr](docs/demo.gif)
+https://github.com/user-attachments/assets/8ddf3ae6-a11a-492b-9cae-d9496ba65b67
 
-[Watch the full parent/subagent workflow video](docs/demo.webm) — the parent starts a
-three-agent batch, focuses each live child pane in turn, then returns for the summary.
+The video starts a three-agent batch, focuses each live child pane in turn, then returns
+to the parent summary. The reproducible source recording is retained as [`docs/demo.webm`](docs/demo.webm).
 
 ## Requirements and install
 
@@ -113,7 +113,7 @@ Herdr Subagents loads settings and persona definitions from separate files:
 | Global | `~/.pi/agent/herdr-subagents.json` | `~/.pi/agent/herdr-subagents/agents/*.md` |
 | Package | built-in defaults | installed package `agents/*.md` |
 
-Project JSON values recursively override global JSON values. The built-in setting defaults are `defaultConcurrency: 1`, `maxConcurrency: 4`, and `stalledWarningSeconds: 300`. `defaultModel` is unset, so the parent Pi model is inherited unless another model setting wins.
+Project JSON values recursively override global JSON values. The built-in setting defaults are `defaultConcurrency: 1`, `maxConcurrency: 4`, and `stalledWarningSeconds: 300`. `defaultModel` and `defaultThinking` are unset, so the parent Pi model and its thinking level are inherited unless another setting wins.
 
 A global configuration can establish shared defaults:
 
@@ -123,6 +123,7 @@ A global configuration can establish shared defaults:
   "maxConcurrency": 4,
   "stalledWarningSeconds": 300,
   "defaultModel": "anthropic/claude-sonnet-4-5",
+  "defaultThinking": "medium",
   "personas": {
     "explorer": {
       "model": "anthropic/claude-haiku-4-5",
@@ -143,6 +144,7 @@ The project file can override only the fields that differ. Persona fields are me
 {
   "defaultConcurrency": 3,
   "stalledWarningSeconds": 600,
+  "defaultThinking": "high",
   "personas": {
     "explorer": {
       "model": "openai/gpt-5.2"
@@ -197,7 +199,15 @@ The child model is selected in this exact order:
 5. effective `defaultModel` JSON setting (project overrides global)
 6. parent Pi model
 
-`thinking` and `skills` use the same persona-level order: project persona JSON, global persona JSON, then effective persona Markdown frontmatter. They do not have call-level overrides. A project `skills` array replaces, rather than appends to, the global or Markdown list.
+The child thinking level is selected in this order:
+
+1. project `personas.<name>.thinking` JSON setting
+2. global `personas.<name>.thinking` JSON setting
+3. `thinking` in the effective persona Markdown frontmatter
+4. effective `defaultThinking` JSON setting (project overrides global)
+5. parent Pi thinking level when the child also inherits the parent model
+
+Thinking has no call-level override. `skills` uses the first three persona-level steps and has no global default; a project `skills` array replaces, rather than appends to, the global or Markdown list.
 
 Override the model for one task:
 

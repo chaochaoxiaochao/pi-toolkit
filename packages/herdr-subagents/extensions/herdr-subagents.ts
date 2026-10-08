@@ -92,7 +92,7 @@ async function handleHerdrCommand(args: string, ctx: ExtensionCommandContext, fl
 	}
 	if (section === "settings") {
 		const settings = configuration.settings;
-		const values: Record<string, string | number | undefined> = { defaultConcurrency: settings.defaultConcurrency, maxConcurrency: settings.maxConcurrency, stalledWarningSeconds: settings.stalledWarningSeconds, defaultModel: settings.defaultModel };
+		const values: Record<string, string | number | undefined> = { defaultConcurrency: settings.defaultConcurrency, maxConcurrency: settings.maxConcurrency, stalledWarningSeconds: settings.stalledWarningSeconds, defaultModel: settings.defaultModel, defaultThinking: settings.defaultThinking };
 		const lines = Object.entries(values).map(([key, value]) => `${key}=${String(value ?? "unset")} (${configuration.settingSources[key] ?? "built-in"})`);
 		if (configuration.diagnostics.length) lines.push("Diagnostics:", ...configuration.diagnostics);
 		ctx.ui.notify(lines.join("\n"), "info");

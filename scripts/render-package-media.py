@@ -105,19 +105,7 @@ def render_herdr_subagents():
     docs.mkdir(parents=True, exist_ok=True)
     # The penultimate frame is the settled three-pane run; the last returns to the parent Pi.
     full_frames[-2].save(docs / "screenshot.png", optimize=True)
-    selected = sorted(set([0, 1, 2, *range(3, max(3, len(paths) - 2), 2),
-                           len(paths) - 2, len(paths) - 1]))
-    frames = []
-    for index in selected:
-        image = Image.open(paths[index]).convert("RGB")
-        image.thumbnail((1024, 640), Image.LANCZOS)
-        frames.append(image)
-    paletted = [frame.quantize(colors=96, method=Image.MEDIANCUT,
-                               dither=Image.FLOYDSTEINBERG) for frame in frames]
-    durations = [1400, 1800, 900] + [900] * max(0, len(frames) - 5) + [1600, 2600]
-    paletted[0].save(docs / "demo.gif", save_all=True,
-                     append_images=paletted[1:], duration=durations,
-                     loop=0, optimize=True, disposal=2)
+    (docs / "demo.gif").unlink(missing_ok=True)
     shutil.copyfile(CAPTURE / "herdr-demo.webm", docs / "demo.webm")
 
 
@@ -125,4 +113,4 @@ for package_slug, metadata in PACKAGES.items():
     render_terminal_package(package_slug, *metadata)
 render_herdr_subagents()
 render_cache_export()
-print("Rendered package screenshots and demos, including the Herdr WebM recording")
+print("Rendered package screenshots and demos, including the Herdr screenshot and WebM recording")

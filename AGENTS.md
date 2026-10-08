@@ -34,7 +34,7 @@ pi-toolkit/
 - 用户在完整工具包和对应独立子包之间二选一；同时安装可能重复注册 extension、skill 或 bin。
 - BTW 保留在主包，不发布子包。
 - 每个子包必须包含 `package.json`、`README.md`、`TESTING.md`、`CHANGELOG.md`、确定性测试，以及适合该包的加载或集成检查。
-- 每个子包 README 必须说明功能、来源/设计动机、安装与更新、可复制示例，并引用 `docs/screenshot.png` 和 `docs/demo.gif`。媒体必须来自真实实现运行：执行 `node scripts/capture-package-media.mjs` 统一重生成并进入 tarball。Herdr Subagents 还必须包含完整的 `docs/demo.webm` 录屏。
+- 每个子包 README 必须说明功能、来源/设计动机、安装与更新、可复制示例，并引用真实实现生成的媒体。除 Herdr Subagents 外，每个子包包含 `docs/screenshot.png` 和 `docs/demo.gif`；Herdr Subagents 包含 `docs/screenshot.png` 和完整的 `docs/demo.webm`，README 通过 GitHub attachment URL 直接显示视频，不保留 GIF。执行 `node scripts/capture-package-media.mjs` 统一重生成媒体并进入 tarball。
 
 ## 开发与验证
 
@@ -42,7 +42,7 @@ pi-toolkit/
 - 运行 `node scripts/capture-package-media.mjs` 后通过 `docs/package-media-gallery.html` 检查全部真实截图与动画；完整验收结果记录在 `docs/verification.md`。
 - 修改根入口、BTW、主题、全局指令或组合清单时运行 `npm test`、`npm run load-test` 和根目录 `npm pack --dry-run`。
 - Codex Edit 必须加载 `packages/codex-edit/extensions/codex-edit.ts`；parser/matcher 改动必须覆盖重复 HTML/Markdown 区域、同路径多 update、多 hunk、多文件 patch，以及空 chunk、stale context 和冲突路径的安全失败。每个新生产问题先加入 `tests/comparison-cases.mjs`，且 native/released 两组对比都必须通过。`npm --prefix packages/codex-edit test` 必须从测试结果生成 `docs/test-report.md`，再转换为自包含 `docs/test-report.html`；提交和发版必须包含最新报告。冻结的 released baseline 保持不变。
-- Herdr Subagents 必须运行全部确定性测试、加载 `packages/herdr-subagents/extensions/herdr-subagents.ts`，并在真实 Herdr 中验证只读并发批次和 tab 清理；媒体必须通过 `HERDR_MEDIA_WINDOW_ID=<window-id> node scripts/capture-package-media.mjs` 录制父 Pi 对话、逐一聚焦三个真实 Agent pane 和最终父会话结果，同时保留 GIF 预览和完整 WebM 视频。
+- Herdr Subagents 必须运行全部确定性测试、加载 `packages/herdr-subagents/extensions/herdr-subagents.ts`，并在真实 Herdr 中验证只读并发批次和 tab 清理；媒体必须通过 `HERDR_MEDIA_WINDOW_ID=<window-id> node scripts/capture-package-media.mjs` 录制父 Pi 对话、逐一聚焦三个真实 Agent pane 和最终父会话结果，同时保留截图和完整 WebM 视频。
 - Cache Export 的发布验收要求确定性测试通过，并在有 Chrome 的环境中跑浏览器 E2E；skip 不算发布验收通过。
 - `packages/cache-export/src/tau-assets.ts` 来自 `huggingface/tau` 的 `session_usage.py`，只能重生成，不能手改。
 - Herdr Subagents 的实现可能存在并行工作；重构 package 接线时保留其未提交实现改动。
