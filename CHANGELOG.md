@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-08 - v0.10.0
 
+- bundle herdr-subagents v0.2.0: replace Tiny Subagent with visible interactive Herdr agents and durable batch workflows
 - replace Tiny Subagent's hidden print/shell execution with Herdr Subagents: visible interactive Pi Agents, one exclusive on-demand pane per task, Fleet keyboard navigation, durable blocked/history continuation, parent-session cancellation, and focus-safe batch tab cleanup
 - fix Herdr Subagents Fleet state after blocked responses, preserve the active task widget while later background runs queue, and share ownership, pane-allocation, and status-reduction logic across recovery paths
 

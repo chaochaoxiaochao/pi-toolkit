@@ -1,6 +1,6 @@
 {
   "name": "@maxiaochao/pi-herdr-subagents",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Run inspectable interactive Pi subagent batches through Herdr.",
   "type": "module",
   "keywords": [
@@ -37,7 +37,7 @@
   },
   "scripts": {
     "test": "node --experimental-strip-types tests/run-tests.mjs",
-		"load-test": "env -u PI_HERDR_SUBAGENTS_CHILD pi -ne -ns --no-session -e ./tests/extension-contract.ts && env -u PI_HERDR_SUBAGENTS_CHILD pi -ne -ns --no-session -e ./extensions/herdr-subagents.ts"
+    "load-test": "env -u PI_HERDR_SUBAGENTS_CHILD pi -ne -ns --no-session -e ./tests/extension-contract.ts && env -u PI_HERDR_SUBAGENTS_CHILD pi -ne -ns --no-session -e ./extensions/herdr-subagents.ts"
   },
   "publishConfig": {
     "access": "public"

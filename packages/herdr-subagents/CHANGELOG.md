@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-08 - v0.2.0
 
+- replace Tiny Subagent with visible interactive Herdr agents and durable batch workflows
 - Skip tool and command registration outside a Herdr workspace so unavailable Subagent capabilities do not enter the model context.
 - Preserve newly allocated panes when blocked runs resume, stop blindly retrying Herdr resource-creating commands after uncertain failures, and prevent concurrent historical resumes from writing the same Pi session.
 - Isolate malformed queue/history entries so healthy active runs and durable history remain recoverable, and share durable attempt settlement plus task projection contracts across execution modes.
