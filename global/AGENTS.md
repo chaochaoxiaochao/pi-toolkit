@@ -4,71 +4,50 @@ Behavioral guidelines to reduce common LLM coding mistakes. Project-specific ins
 
 ## 1. Think Before Coding
 
-**Surface tradeoffs. Name confusion instead of resolving it silently.**
+- Surface material assumptions, interpretations, and tradeoffs.
+- If unresolved ambiguity would materially change the result, ask. When no human is reachable, choose a defensible interpretation, state it, and proceed with verifiable criteria.
+- Prefer the simpler approach. Name conflicting requirements rather than silently compromising between them.
 
-- State your material assumptions explicitly.
-- If multiple interpretations exist, present them rather than picking one silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If requirements conflict (durability vs latency, correctness vs speed), name the conflict explicitly. Never average conflicting requirements into something that satisfies neither.
-- When unresolved ambiguity would materially change the result, ask. When no human is reachable (headless, async, subagent), choose the interpretation you can defend, state it as an assumption, and proceed under Rule 4.
+## 2. Minimal Solution
 
-## 2. Simplicity First
+Understand the problem and relevant code flow before choosing the first rung that works:
 
-**YAGNI cuts what you don't need; KISS keeps what remains simple.**
+1. Skip functionality that is speculative or was not requested.
+2. Reuse an existing project abstraction when it encodes the required semantics.
+3. Otherwise use the standard library or a native platform feature.
+4. Otherwise use a direct dependency already declared by the project.
+5. Only then write the minimum custom code that works.
 
-- Build what was asked, for the callers that exist today.
-- Introduce an abstraction after repeated use reveals a stable concept.
+- Introduce abstractions only after repeated use reveals a stable concept.
+- Prefer boring, focused code; review long or deeply nested functions for splitting.
+- Never simplify away explicit requirements, trust-boundary validation, data-loss protection, security, or accessibility.
 - For states excluded by enforced invariants, fail visibly instead of inventing fallback behavior.
-- Each function you write does one thing. If it runs past a couple of screens or nests past three levels, review whether splitting it improves clarity.
+- State the ceiling and upgrade trigger of any deliberate simplification that cuts a real corner.
 
-## 3. Surgical Changes
+## 3. Read, Then Change Surgically
 
-**Touch only what you must. Clean up only your own mess.**
+Before editing, read the affected public API and its immediate callers. For a bug, find every statically discoverable caller and relevant implementation.
 
-The test: every changed line traces to the user's request, or to a defect that request reveals.
+Every changed line traces to the user's request or to a defect that request reveals.
 
-- Match existing style, even if you'd do it differently.
-- Remove imports, variables, and functions that YOUR changes made unused. Leave pre-existing dead code in place and mention it.
-
-When fixing a bug, fix the root cause, not the symptom. Find where the defect actually lives:
-- Find every statically discoverable caller and relevant implementation; a report names a symptom, and patching only the path the ticket mentions leaves sibling callers still broken.
-- If the shared function is wrong, fix it once - do not scatter per-caller guards. Name the sibling callers the fix now affects.
-- If one caller is wrong, fix that caller - do not add defensive handling to a correct shared function.
+- Match existing style.
+- Remove imports, variables, and functions that your changes make unused. Leave pre-existing dead code in place and mention it.
+- Fix a faulty shared function once and name affected sibling callers; if only one caller is wrong, fix that caller instead of guarding a correct shared function.
 
 ## 4. Goal-Driven Execution
 
-**Define success criteria. Loop until verified.**
+- Turn work into checkable outcomes: reproduce bugs before fixing them, preserve behavior during refactors, and optimize against a tested reference implementation.
+- For multi-step or materially ambiguous work, state a brief plan and give every step its own verification.
+- Leave the smallest relevant runnable check for new or changed non-trivial logic. Do not introduce a test framework solely for that check.
 
-Transform tasks into verifiable goals:
-- "Add validation" -> "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" -> "Write a test that reproduces it, then make it pass"
-- "Refactor X" -> "Ensure tests pass before and after"
-- "Make X fast" -> "Write and test a simple reference implementation, then optimize against its results"
+## 5. Fail Visibly
 
-For multi-step or materially ambiguous tasks, state a brief plan where every step carries its own check:
-1. [Step] -> verify: [check]
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
-## 5. Read Before You Write
-
-**Understand adjacent code before changing it. "Looks orthogonal" is a dangerous assumption.**
-
-Before changing a file:
-- Read the file's exports and public API.
-- Read the immediate callers of the function you're modifying.
-
-## 6. Fail Visibly, Not Silently
-
-**Silent skips are failures.**
-
-- "Completed" is wrong if anything was silently skipped.
+- "Completed" is wrong if anything required was silently skipped.
 - "Tests pass" is wrong if any required test was skipped or not run.
-- If a required input, file, or tool is missing (or a step is impossible under the stated constraints), do NOT fabricate it to make a check pass. Report what is missing and what you need.
+- If a required input, file, or tool is missing, or a step is impossible under the stated constraints, report what is missing and what you need. Never fabricate it to make a check pass.
 
-## 7. Reuse Before Writing
+## 6. Worktree Isolation
 
-**Before writing new code, check in order:**
-1. Reuse an existing project abstraction when it encodes project semantics. (If it is itself the bug, fix it once - see Rule 3.)
-2. Otherwise use the standard library or a direct dependency already declared by the project.
-3. Only then write it yourself.
+For a Git-repository task that coordinates substantial changes across multiple files or modules, or implements a feature intended for release, ask before editing whether to isolate it in a worktree. Skip the question when already in a linked worktree.
+
+If the user agrees, read the `pi-worktree` skill and establish the worktree before changing code. When no human is reachable, create a worktree only when the task explicitly requests one.
