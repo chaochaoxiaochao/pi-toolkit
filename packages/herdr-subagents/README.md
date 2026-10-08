@@ -103,49 +103,125 @@ The complete result is not copied into the parent model context. Each run is ret
 
 The task directory contains the full result, structured report, task metadata, system prompt, and persistent Pi session. Run-level metadata is stored in the parent run directory.
 
-## Personas
+## Configuration and personas
 
-The package includes `worker` (write access), `explorer` (read access), and `reviewer` (read access). Persona definitions are discovered in this order, with the first available higher-precedence definition replacing the lower one:
+Herdr Subagents loads settings and persona definitions from separate files:
 
-1. `.pi/herdr-subagents/agents/*.md` in the project
-2. `~/.pi/agent/herdr-subagents/agents/*.md` globally
-3. this package's `agents/*.md`
+| Scope | Settings | Persona definitions |
+| --- | --- | --- |
+| Project | `.pi/herdr-subagents.json` | `.pi/herdr-subagents/agents/*.md` |
+| Global | `~/.pi/agent/herdr-subagents.json` | `~/.pi/agent/herdr-subagents/agents/*.md` |
+| Package | built-in defaults | installed package `agents/*.md` |
 
-A custom persona without `access` is treated as write-capable. Definitions may set `access`, `model`, `thinking`, `tools`, and `skills` in frontmatter.
+Project JSON values recursively override global JSON values. The built-in setting defaults are `defaultConcurrency: 1`, `maxConcurrency: 4`, and `stalledWarningSeconds: 300`. `defaultModel` is unset, so the parent Pi model is inherited unless another model setting wins.
 
-The default `agents/worker.md` uses this format:
-
-```md
----
-name: worker
-description: General-purpose worker for one focused task
-tools: read, bash, edit, write, grep, find, ls
----
-
-You are a focused worker subagent.
-```
-
-Supported frontmatter:
-
-- `name` and `description` are required.
-- `model` optionally selects a child model. A call-level `model` overrides it; otherwise the current session model is inherited.
-- `tools` optionally restricts built-in tools. `subagent_report` is always added so the child can settle the task.
-- `access` is `read` or `write`; omitted custom values default to `write`.
-- `thinking` and `skills` provide persona defaults.
-
-Global settings live at `~/.pi/agent/herdr-subagents.json`; project overrides live at `.pi/herdr-subagents.json`. Both support `defaultConcurrency`, `maxConcurrency`, `stalledWarningSeconds`, `defaultModel`, and a `personas` object whose entries can override `model`, `thinking`, and `skills`.
+A global configuration can establish shared defaults:
 
 ```json
 {
-  "defaultModel": "provider/model",
-  "maxConcurrency": 3,
+  "defaultConcurrency": 2,
+  "maxConcurrency": 4,
+  "stalledWarningSeconds": 300,
+  "defaultModel": "anthropic/claude-sonnet-4-5",
   "personas": {
-    "reviewer": { "thinking": "high", "skills": ["code-review"] }
+    "explorer": {
+      "model": "anthropic/claude-haiku-4-5",
+      "thinking": "medium",
+      "skills": ["code-search"]
+    },
+    "reviewer": {
+      "thinking": "high",
+      "skills": ["code-review"]
+    }
   }
 }
 ```
 
-Project values override global values recursively. Model resolution is: task override, project persona setting, global persona setting, persona frontmatter, global/project default model, then parent model. Run `/herdr-subagents agents`, `/herdr-subagents models`, or `/herdr-subagents settings` to inspect effective values and their sources.
+The project file can override only the fields that differ. Persona fields are merged by persona name:
+
+```json
+{
+  "defaultConcurrency": 3,
+  "stalledWarningSeconds": 600,
+  "personas": {
+    "explorer": {
+      "model": "openai/gpt-5.2"
+    },
+    "reviewer": {
+      "skills": ["security-review", "code-review"]
+    }
+  }
+}
+```
+
+The package includes these personas:
+
+| Persona | Access | Built-in tools | Intended use |
+| --- | --- | --- | --- |
+| `worker` | write | `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls` | Focused implementation work |
+| `explorer` | read | `read`, `bash`, `grep`, `find`, `ls` | Fast codebase investigation |
+| `reviewer` | read | `read`, `bash`, `grep`, `find`, `ls` | Correctness and maintainability review |
+
+Persona definitions use Markdown frontmatter followed by the child system prompt. For example, save this as `.pi/herdr-subagents/agents/security-reviewer.md`:
+
+```md
+---
+name: security-reviewer
+description: Read-only reviewer for security risks
+access: read
+model: anthropic/claude-sonnet-4-5
+thinking: high
+tools: read, bash, grep, find, ls
+skills: security-review, code-review
+---
+
+Review the assigned scope without modifying files. Report concrete risks and evidence.
+```
+
+`name` and `description` are required. `access` accepts `read` or `write`; a custom persona that omits it defaults to **write access**, which also forces its batch to concurrency one. `tools` restricts the built-in tools, but `subagent_report` is always added so the child can settle its task. `model`, `thinking`, and `skills` provide persona defaults.
+
+Persona Markdown definitions use replacement precedence, not field merging. A same-name project definition replaces the entire global or package definition:
+
+1. project `.pi/herdr-subagents/agents/*.md`
+2. global `~/.pi/agent/herdr-subagents/agents/*.md`
+3. package built-ins
+
+### Model and persona-option precedence
+
+The child model is selected in this exact order:
+
+1. `model` on the task or call
+2. project `personas.<name>.model` JSON setting
+3. global `personas.<name>.model` JSON setting
+4. `model` in the effective persona Markdown frontmatter
+5. effective `defaultModel` JSON setting (project overrides global)
+6. parent Pi model
+
+`thinking` and `skills` use the same persona-level order: project persona JSON, global persona JSON, then effective persona Markdown frontmatter. They do not have call-level overrides. A project `skills` array replaces, rather than appends to, the global or Markdown list.
+
+Override the model for one task:
+
+```text
+herdr_subagents({
+  agent: "reviewer",
+  model: "anthropic/claude-opus-4-1:high",
+  prompt: "Review the authorization boundary"
+})
+```
+
+Each task in a batch can select its own model:
+
+```text
+herdr_subagents({
+  concurrency: 2,
+  tasks: [
+    { name: "map", agent: "explorer", model: "anthropic/claude-haiku-4-5", prompt: "Map the request flow" },
+    { name: "review", agent: "reviewer", model: "anthropic/claude-sonnet-4-5", prompt: "Review input validation" }
+  ]
+})
+```
+
+Run `/herdr-subagents agents`, `/herdr-subagents models`, or `/herdr-subagents settings` to inspect effective values and their sources.
 
 ## Recovery and failures
 

@@ -1,5 +1,6 @@
 ## Unreleased
 
+- document Herdr Subagents configuration paths and examples, built-in and custom personas, and exact model and persona-option precedence
 - add a full real-time Herdr Subagents WebM recording that focuses every child Agent pane before returning to the parent summary, while retaining the README GIF preview
 
 - replace the rendered Herdr transcript demo with a real UI recording of a parent Pi conversation opening and completing three concurrent interactive Agent panes

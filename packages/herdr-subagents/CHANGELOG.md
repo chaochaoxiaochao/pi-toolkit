@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Expand the README with complete settings paths and examples, built-in and custom persona guidance, and exact model, thinking, skills, and definition precedence.
 - Add a full WebM recording that focuses all three live child Agent panes before returning to the parent summary, while retaining the GIF preview.
 - Replace the rendered transcript media with a real Herdr UI recording that follows a parent Pi conversation through a three-Agent batch and final compact response.
 
