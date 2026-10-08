@@ -1,3 +1,7 @@
+## Unreleased
+
+- replace the rendered Herdr transcript demo with a real UI recording of a parent Pi conversation opening and completing three concurrent interactive Agent panes
+
 ## 2026-10-08 - v0.10.0
 
 - bundle herdr-subagents v0.2.0: replace Tiny Subagent with visible interactive Herdr agents and durable batch workflows

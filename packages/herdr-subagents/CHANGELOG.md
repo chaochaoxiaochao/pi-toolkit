@@ -1,3 +1,7 @@
+## Unreleased
+
+- Replace the rendered transcript media with a real Herdr UI recording that follows a parent Pi conversation through a three-Agent batch and final compact response.
+
 ## 2026-10-08 - v0.2.0
 
 - replace Tiny Subagent with visible interactive Herdr agents and durable batch workflows

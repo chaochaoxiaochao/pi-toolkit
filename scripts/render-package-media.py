@@ -17,7 +17,6 @@ FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
 PACKAGES = {
     "todo": ("Pi Todo", "Production state-machine output"),
     "codex-edit": ("Pi Codex Edit", "Production parser and patch application"),
-    "herdr-subagents": ("Pi Herdr Subagents", "Inspectable bounded batches in visible Herdr sessions"),
     "worktree": ("Pi Worktree", "Shipped CLI running in a temporary Git repository"),
 }
 
@@ -91,7 +90,37 @@ def render_cache_export():
                    loop=0, optimize=True)
 
 
+def render_herdr_subagents():
+    source = CAPTURE / "herdr-live"
+    paths = sorted(source.glob("frame-*.png"))
+    if len(paths) < 5:
+        raise RuntimeError("Herdr UI capture must contain parent, running panes, and final response frames")
+    full_frames = []
+    for path in paths:
+        image = Image.open(path).convert("RGB")
+        image.thumbnail((1280, 800), Image.LANCZOS)
+        full_frames.append(image)
+    docs = ROOT / "packages" / "herdr-subagents" / "docs"
+    docs.mkdir(parents=True, exist_ok=True)
+    # The penultimate frame is the settled three-pane run; the last returns to the parent Pi.
+    full_frames[-2].save(docs / "screenshot.png", optimize=True)
+    selected = sorted(set([0, 1, 2, *range(3, max(3, len(paths) - 2), 2),
+                           len(paths) - 2, len(paths) - 1]))
+    frames = []
+    for index in selected:
+        image = Image.open(paths[index]).convert("RGB")
+        image.thumbnail((1024, 640), Image.LANCZOS)
+        frames.append(image)
+    paletted = [frame.quantize(colors=96, method=Image.MEDIANCUT,
+                               dither=Image.FLOYDSTEINBERG) for frame in frames]
+    durations = [1400, 1800, 900] + [900] * max(0, len(frames) - 5) + [1600, 2600]
+    paletted[0].save(docs / "demo.gif", save_all=True,
+                     append_images=paletted[1:], duration=durations,
+                     loop=0, optimize=True, disposal=2)
+
+
 for package_slug, metadata in PACKAGES.items():
     render_terminal_package(package_slug, *metadata)
+render_herdr_subagents()
 render_cache_export()
 print("Rendered screenshot.png and demo.gif for all child packages")

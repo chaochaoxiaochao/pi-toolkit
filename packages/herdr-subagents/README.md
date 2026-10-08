@@ -2,11 +2,13 @@
 
 A Pi extension that runs focused foreground or background work as normal interactive Pi Agents in visible Herdr panes. Full answers and sessions stay in project-local records while the parent receives only concise summaries and document paths.
 
-![Herdr Subagents production runner screenshot](docs/screenshot.png)
+![A parent Pi conversation running three visible Herdr Subagents panes](docs/screenshot.png)
 
 ## Demo
 
-![Herdr Subagents demo](docs/demo.gif)
+The recording shows a real Pi conversation invoking a three-task read-only batch, Herdr opening one interactive Agent pane per task, and the compact results returning to the parent.
+
+![Pi opening three interactive Subagents in Herdr](docs/demo.gif)
 
 ## Requirements and install
 
