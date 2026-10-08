@@ -8,7 +8,7 @@ import { cleanupRunTab } from "./tab-cleanup.ts";
 import type { OwnerIdentity } from "./ownership.ts";
 import { ownerRecord } from "./ownership.ts";
 import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
-import { applyReport, applyTaskStatus, isActiveStatus, readReport, readRunRecord, readTaskRecord, settleAttemptFailure, type PersistedDocument, type PersistedReport, type RunRecord, type RunStatus, type TaskRecord, type TaskStatus } from "./records.ts";
+import { applyReport, applyTaskStatus, isActiveStatus, projectTaskActivity, readReport, readRunRecord, readTaskRecord, settleAttemptFailure, type PersistedDocument, type PersistedReport, type RunRecord, type RunStatus, type TaskActivity, type TaskRecord, type TaskStatus } from "./records.ts";
 import { continuationSystemPrompt } from "./protocol.ts";
 import { isAbortError } from "./errors.ts";
 import { findRunDirectory } from "./run-locator.ts";
@@ -96,9 +96,10 @@ export async function cleanSubagentRun(cwd: string, runId: string): Promise<bool
 	return true;
 }
 
-export interface ResumeHistoricalTaskOptions { herdr?: HerdrAutomation; signal?: AbortSignal; owner?: OwnerIdentity; onCleanupError?: (message: string) => void; stalledWarningSeconds?: number; onStalled?: (message: string) => void; }
+export interface ResumeHistoricalTaskOptions { herdr?: HerdrAutomation; signal?: AbortSignal; owner?: OwnerIdentity; onCleanupError?: (message: string) => void; stalledWarningSeconds?: number; onStalled?: (message: string) => void; onUpdate?: (result: ResumeHistoricalTaskResult) => void; }
+export interface ResumeHistoricalTaskResult { runId: string; label: string; status: TaskStatus; summary: string; documents: PersistedDocument[]; tabId: string; paneId: string; sessionFile: string; activity: TaskActivity[]; }
 
-export async function resumeHistoricalTask(cwd: string, runId: string, taskNumber: number, prompt: string, options: ResumeHistoricalTaskOptions = {}): Promise<{ runId: string; status: TaskStatus; summary: string; documents: PersistedDocument[]; tabId: string; paneId: string; sessionFile: string }> {
+export async function resumeHistoricalTask(cwd: string, runId: string, taskNumber: number, prompt: string, options: ResumeHistoricalTaskOptions = {}): Promise<ResumeHistoricalTaskResult> {
 	const runDirectory = await findRunDirectory(join(cwd, ".pi", "herdr-subagents", "runs"), runId);
 	if (!runDirectory) throw new Error(`Unknown Subagent run '${runId}'.`);
 	const lockDirectory = join(runDirectory, ".resume.lock");
@@ -111,7 +112,7 @@ export async function resumeHistoricalTask(cwd: string, runId: string, taskNumbe
 	finally { await rmdir(lockDirectory); }
 }
 
-async function resumeHistoricalTaskLocked(cwd: string, runId: string, taskNumber: number, prompt: string, options: ResumeHistoricalTaskOptions): Promise<{ runId: string; status: TaskStatus; summary: string; documents: PersistedDocument[]; tabId: string; paneId: string; sessionFile: string }> {
+async function resumeHistoricalTaskLocked(cwd: string, runId: string, taskNumber: number, prompt: string, options: ResumeHistoricalTaskOptions): Promise<ResumeHistoricalTaskResult> {
 	const herdr = options.herdr ?? new CliHerdrAutomation();
 	const { signal, onCleanupError } = options;
 	const run = (await listSubagentHistory(cwd)).find((candidate) => candidate.id === runId);
@@ -158,6 +159,8 @@ async function resumeHistoricalTaskLocked(cwd: string, runId: string, taskNumber
 				writeJsonAtomic(turnFile, { attempt, prompt, status: "running", sessionFile: historical.sessionFile, tabId: tab.tabId, paneId: tab.paneId, agentName, startedAt: new Date().toISOString() }),
 				writeJsonAtomic(activeRunFile, activeRunRecord),
 			]);
+			const runningActivity = await Promise.all(run.tasks.map(async (entry, index) => projectTaskActivity(await readTaskRecord(join(entry.recordDirectory, "task.json")), index)));
+			options.onUpdate?.({ runId, label: run.label, status: "running", summary: `${historical.name} is continuing.`, documents: [], tabId: tab.tabId, paneId: tab.paneId, sessionFile: historical.sessionFile, activity: runningActivity });
 			report = (await promptLiveAgent({ herdr, task: { ...task, id: historical.id, sessionFile: historical.sessionFile }, paneId: tab.paneId, prompt, systemPromptFile: followupPrompt, agentName, signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => options.onStalled?.(`${historical.name} appears stalled; it is still running.`) })).report;
 			status = applyReport(task, report);
 		} catch (error) {
@@ -182,7 +185,8 @@ async function resumeHistoricalTaskLocked(cwd: string, runId: string, taskNumber
 		if (status !== "blocked") {
 			await cleanupRunTab({ herdr, tabId: tab.tabId, runFile: join(run.recordDirectory, "run.json"), runRecord, signal, onError: onCleanupError, failureStatus: "failed" });
 		}
-		return { runId, status, summary: report.summary, documents: report.documents ?? [], tabId: tab.tabId, paneId: tab.paneId, sessionFile: historical.sessionFile };
+		const activity = await Promise.all(run.tasks.map(async (entry, index) => projectTaskActivity(await readTaskRecord(join(entry.recordDirectory, "task.json")), index)));
+		return { runId, label: run.label, status, summary: report.summary, documents: report.documents ?? [], tabId: tab.tabId, paneId: tab.paneId, sessionFile: historical.sessionFile, activity };
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		const completedAt = new Date().toISOString();
@@ -204,6 +208,8 @@ async function resumeHistoricalTaskLocked(cwd: string, runId: string, taskNumber
 			writeJsonAtomic(turnFile, { attempt, prompt, status, summary: report.summary, documents: report.documents, error: message, sessionFile: historical.sessionFile, ...(tab ? { tabId: tab.tabId, paneId: tab.paneId } : {}), completedAt }),
 			writeJsonAtomic(join(run.recordDirectory, "run.json"), runRecord),
 		]);
+		const activity = await Promise.all(run.tasks.map(async (entry, index) => projectTaskActivity(await readTaskRecord(join(entry.recordDirectory, "task.json")), index)));
+		options.onUpdate?.({ runId, label: run.label, status, summary: report.summary, documents: report.documents, tabId: tab?.tabId ?? "", paneId: tab?.paneId ?? "", sessionFile: historical.sessionFile, activity });
 		if (tab) await cleanupRunTab({ herdr, tabId: tab.tabId, runFile: join(run.recordDirectory, "run.json"), runRecord, signal, onError: onCleanupError, failureStatus: "failed" });
 		throw error;
 	}

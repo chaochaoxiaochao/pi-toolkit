@@ -12,7 +12,7 @@ import { cancelActiveSubagentRuns, reconcileSubagentRuns } from "../src/reconcil
 import { executeHerdrSubagents, executeHerdrSubagentsControl, type HerdrSubagentsBatchDetails, type HerdrSubagentsControlToolParams, type HerdrSubagentsDetails, type HerdrSubagentsRunParams } from "../src/tool.ts";
 import { HerdrSubagentsControlParams, HerdrSubagentsParams } from "../src/parameters.ts";
 import { HERDR_ACTIONS } from "../src/validation.ts";
-import { FleetController } from "../src/fleet-controller.ts";
+import { FleetController, type FleetWidgetRuntime } from "../src/fleet-controller.ts";
 import { isSettledRunStatus } from "../src/records.ts";
 
 const packageAgentsDir = fileURLToPath(new URL("../agents/", import.meta.url));
@@ -121,6 +121,7 @@ export interface HerdrSubagentsExtensionDependencies {
 	executeControl?: typeof executeHerdrSubagentsControl;
 	isEditor?: (value: unknown) => boolean;
 	createFleetWidget?: (lines: string[]) => Container;
+	fleetWidgetRuntime?: FleetWidgetRuntime;
 }
 
 async function recoverParentSession(cwd: string, herdr: HerdrAutomation, owner: { sessionId?: string; processId: number }, notify: (message: string) => void): Promise<void> {
@@ -157,7 +158,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 	const executeControl = dependencies.executeControl ?? executeHerdrSubagentsControl;
 	const isEditorComponent = dependencies.isEditor ?? ((value: unknown) => value instanceof Editor);
 	const dispatcher = new RunDispatcher();
-	const fleet = new FleetController(herdr, isEditorComponent, dependencies.createFleetWidget);
+	const fleet = new FleetController(herdr, isEditorComponent, dependencies.createFleetWidget, dependencies.fleetWidgetRuntime);
 	const runControllers = new Map<string, AbortController>();
 	const inFlight = new Set<Promise<unknown>>();
 	let sessionController = new AbortController();

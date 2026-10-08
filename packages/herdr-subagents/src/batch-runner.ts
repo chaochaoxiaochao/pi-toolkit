@@ -10,7 +10,7 @@ import { writeJsonAtomic } from "./state.ts";
 import type { OwnerIdentity } from "./ownership.ts";
 import { ownerRecord } from "./ownership.ts";
 import { RunPaneAllocator } from "./run-pane-allocator.ts";
-import { applyReport, applyTaskStatus, settleAttemptFailure, type PersistedReport, type RunRecord, type TaskRecord, type TaskStatus } from "./records.ts";
+import { applyReport, applyTaskStatus, projectTaskActivity, settleAttemptFailure, type PersistedReport, type RunRecord, type TaskActivity, type TaskRecord, type TaskStatus } from "./records.ts";
 import { reportProtocolPrompt } from "./protocol.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
 import { applyRunStatus } from "./run-status.ts";
@@ -63,7 +63,7 @@ export interface BatchResult {
 	requestedConcurrency: number;
 	effectiveConcurrency: number;
 	tasks: BatchTaskResult[];
-	activity: Array<{ index: number; name: string; status: BatchTaskStatus; paneId?: string }>;
+	activity: TaskActivity[];
 	summary: string;
 	documents: HerdrSubagentsDocument[];
 	recordDirectory: string;
@@ -114,7 +114,7 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 	await writeJsonAtomic(runFile, runRecord);
 	const herdr = options.herdr ?? new CliHerdrAutomation();
 	const results = new Array<BatchTaskResult>(tasks.length);
-	const activity: BatchResult["activity"] = tasks.map((task, index) => ({ index, name: task.name, status: "queued" }));
+	const activity: BatchResult["activity"] = contexts.map((context, index) => projectTaskActivity(context.taskRecord, index));
 	let tabId: string | undefined;
 	const paneAllocator = new RunPaneAllocator({ herdr, run: runRecord, runFile, signal: options.signal, onCleanupError: options.onCleanupError });
 	const emit = (status: BatchResult["status"], summary: string) => options.onUpdate?.({
@@ -146,7 +146,7 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 				applyTaskStatus(context.taskRecord, "running");
 				Object.assign(context.taskRecord, { tabId, paneId, paneLabel, agentName, startedAt: timestamp() });
 				await writeJsonAtomic(context.taskFile, context.taskRecord);
-				activity[index] = { index, name: task.name, status: "running", paneId };
+				activity[index] = projectTaskActivity(context.taskRecord, index);
 				emit("running", `${settled}/${tasks.length} tasks settled.`);
 				const prompted = await promptLiveAgent({ herdr, task: { ...task, id: context.taskId, sessionFile: context.sessionFile }, paneId, prompt: task.prompt, systemPromptFile: context.systemPromptFile, agentName, signal: options.signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => emit("running", `${task.name} appears stalled; it is still running.`) });
 				agentName = prompted.agentName;
@@ -164,7 +164,7 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 			Object.assign(context.taskRecord, { paneId, agentName });
 			await writeJsonAtomic(context.taskFile, context.taskRecord);
 			results[index] = { index, name: task.name, status, summary: report.summary, documents: report.documents, ...(report.error ? { error: report.error } : {}), ...(report.question ? { question: report.question } : {}), paneId, recordDirectory: context.taskDirectory, sessionFile: context.sessionFile };
-			activity[index] = { index, name: task.name, status, ...(paneId ? { paneId } : {}) };
+			activity[index] = projectTaskActivity(context.taskRecord, index);
 			settled += 1;
 			emit("running", `${settled}/${tasks.length} tasks settled.`);
 		};

@@ -129,6 +129,7 @@ const actionHandlers = {
 		try {
 			const result = await resumeHistoricalTask(ctx.cwd, params.runId as string, params.task as number, (params.prompt as string).trim(), {
 				herdr: dependencies.herdr, signal, owner: dependencies.owner, stalledWarningSeconds: discovery.settings.stalledWarningSeconds,
+				onUpdate: (partial) => onUpdate?.({ content: [{ type: "text", text: partial.summary }], details: partial }),
 				onStalled: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "resume", runId: params.runId, stalled: true } }),
 				onCleanupError: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "resume", runId: params.runId, cleanupError: text } }),
 			});

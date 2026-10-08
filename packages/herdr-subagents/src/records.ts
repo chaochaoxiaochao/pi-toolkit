@@ -64,6 +64,8 @@ export interface TaskRecord {
 	systemPrompt?: string;
 	sessionFile?: string;
 	startedAt?: string;
+	activeStartedAt?: string;
+	elapsedMs?: number;
 	updatedAt?: string;
 	completedAt?: string;
 	tabId?: string;
@@ -74,6 +76,38 @@ export interface TaskRecord {
 	currentTurnFile?: string;
 	question?: string;
 	error?: string;
+}
+
+export interface TaskActivity {
+	index: number;
+	name: string;
+	status: TaskStatus;
+	agent: string;
+	prompt?: string;
+	paneId?: string;
+	sessionFile?: string;
+	startedAt?: string;
+	activeStartedAt?: string;
+	elapsedMs?: number;
+	completedAt?: string;
+	updatedAt?: string;
+}
+
+export function projectTaskActivity(task: TaskRecord, index = task.order - 1): TaskActivity {
+	return {
+		index,
+		name: String(task.name ?? task.agent ?? `Task ${index + 1}`),
+		status: task.status,
+		agent: String(task.agent ?? "worker"),
+		...(task.prompt ? { prompt: task.prompt } : {}),
+		...(task.paneId ? { paneId: task.paneId } : {}),
+		...(task.sessionFile ? { sessionFile: task.sessionFile } : {}),
+		...(task.startedAt ? { startedAt: task.startedAt } : {}),
+		...(task.activeStartedAt ? { activeStartedAt: task.activeStartedAt } : {}),
+		...(typeof task.elapsedMs === "number" ? { elapsedMs: task.elapsedMs } : {}),
+		...(task.completedAt ? { completedAt: task.completedAt } : {}),
+		...(task.updatedAt ? { updatedAt: task.updatedAt } : {}),
+	};
 }
 
 export interface TurnRecord {
@@ -184,7 +218,25 @@ export function applyLifecycleStatus<T extends { status: string; question?: stri
 }
 
 export function applyTaskStatus<T extends TaskRecord | TurnRecord>(record: T, status: TaskStatus, options: { question?: string; error?: string; at?: string } = {}): T {
-	return applyLifecycleStatus(record, status, options);
+	const at = options.at ?? new Date().toISOString();
+	if ("order" in record) {
+		if (record.status === "running" && status !== "running") {
+			const activeStarted = Date.parse(record.activeStartedAt ?? record.startedAt ?? "");
+			const ended = Date.parse(at);
+			if (Number.isFinite(activeStarted) && Number.isFinite(ended) && ended >= activeStarted) record.elapsedMs = Math.max(0, Number(record.elapsedMs ?? 0)) + (ended - activeStarted);
+			delete record.activeStartedAt;
+		} else if (status === "running" && record.status !== "running") {
+			if (!(typeof record.elapsedMs === "number" && Number.isFinite(record.elapsedMs))) {
+				const frozenAt = record.status === "blocked" ? record.updatedAt : isSettledRunStatus(record.status) ? record.completedAt : undefined;
+				const started = Date.parse(record.startedAt ?? "");
+				const ended = Date.parse(frozenAt ?? "");
+				if (Number.isFinite(started) && Number.isFinite(ended) && ended >= started) record.elapsedMs = ended - started;
+			}
+			record.startedAt ??= at;
+			record.activeStartedAt = at;
+		}
+	}
+	return applyLifecycleStatus(record, status, { ...options, at });
 }
 
 export async function settleAttemptFailure<T extends TaskRecord | TurnRecord>(

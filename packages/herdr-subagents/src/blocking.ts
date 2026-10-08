@@ -9,7 +9,7 @@ import { cleanupRunTab } from "./tab-cleanup.ts";
 import type { OwnerIdentity } from "./ownership.ts";
 import { ownerRecord } from "./ownership.ts";
 import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
-import { applyReport, applyTaskStatus, isActiveStatus, persistFailureReport, readReport, readRunRecord, readTaskRecord, readTurnRecord, settleAttemptFailure, type PersistedDocument, type PersistedReport, type RunRecord, type TaskRecord, type TaskStatus, type TurnRecord } from "./records.ts";
+import { applyReport, applyTaskStatus, isActiveStatus, persistFailureReport, projectTaskActivity, readReport, readRunRecord, readTaskRecord, readTurnRecord, settleAttemptFailure, type PersistedDocument, type PersistedReport, type RunRecord, type TaskActivity, type TaskRecord, type TaskStatus, type TurnRecord } from "./records.ts";
 import { isAbortError } from "./errors.ts";
 import { continuationSystemPrompt } from "./protocol.ts";
 import { RunPaneAllocator } from "./run-pane-allocator.ts";
@@ -28,7 +28,7 @@ export interface ResumeBlockedResult {
 	requestedConcurrency: number;
 	effectiveConcurrency: number;
 	tasks?: Array<{ index: number; name: string; status: TaskStatus; summary: string; documents: PersistedDocument[]; error?: string; question?: string; paneId: string; recordDirectory: string; sessionFile: string }>;
-	activity?: Array<{ index: number; name: string; status: TaskStatus; paneId?: string }>;
+	activity?: TaskActivity[];
 	tabId?: string;
 }
 
@@ -45,7 +45,7 @@ async function emitProgress(options: RespondToBlockedTaskOptions, runDirectory: 
 		recordDirectory: runDirectory,
 		requestedConcurrency: Number(run.requestedConcurrency ?? 1),
 		effectiveConcurrency: Number(run.effectiveConcurrency ?? 1),
-		activity: tasks.map((entry, index) => ({ index, name: String(entry.name ?? entry.agent ?? `Task ${index + 1}`), status: entry.status, ...(entry.paneId ? { paneId: entry.paneId } : {}) })),
+		activity: tasks.map((entry, index) => projectTaskActivity(entry, index)),
 		...(run.tabId ? { tabId: run.tabId } : {}),
 	});
 }
@@ -73,7 +73,7 @@ async function projectSettledRun(runDirectory: string, runFile: string, run: Run
 	await writeJsonAtomic(runFile, run);
 	if (runStatus !== "blocked" && run.tabId) await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, onError: onCleanupError, failureStatus: "failed" });
 	const summary = runStatus === "completed" ? "All tasks completed after the answer." : runStatus === "blocked" ? `${finalTasks[blockedIndex]?.name ?? "Task"} needs input: ${blockedReport?.question ?? "Input required."}` : finalReports.map((entry, index) => `${finalTasks[index].name}: ${entry.summary}`).join("\n");
-	const activity = finalTasks.map((entry, index) => ({ index, name: String(entry.name ?? entry.agent ?? `Task ${index + 1}`), status: entry.status, ...(entry.paneId ? { paneId: String(entry.paneId) } : {}) }));
+	const activity = finalTasks.map((entry, index) => projectTaskActivity(entry, index));
 	const tasks = finalTasks.map((entry, index) => ({ index, name: activity[index].name, status: entry.status, summary: String(finalReports[index].summary ?? "Task has no report."), documents: finalReports[index].documents ?? [], ...(entry.error ? { error: String(entry.error) } : {}), ...(entry.question ? { question: String(entry.question) } : {}), paneId: String(entry.paneId ?? ""), recordDirectory: taskDirectories[index], sessionFile: String(entry.sessionFile ?? "") }));
 	return { ok: runStatus === "completed", runId: run.id, label: String(run.label ?? "batch"), status: runStatus, summary, ...(blockedReport?.question ? { question: blockedReport.question } : {}), documents: finalReports.flatMap((entry) => entry.documents ?? []), recordDirectory: runDirectory, requestedConcurrency: Number(run.requestedConcurrency ?? run.effectiveConcurrency ?? 1), effectiveConcurrency: Number(run.effectiveConcurrency ?? 1), tasks, activity, ...(run.tabId ? { tabId: String(run.tabId) } : {}) };
 }

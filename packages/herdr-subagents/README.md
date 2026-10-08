@@ -73,7 +73,9 @@ A child missing required information reports `needs-input` with an exact questio
 herdr_subagents_control({ action: "respond", runId: "<run-id>", answer: "Use the main branch." })
 ```
 
-While a batch is active, its task rows stay below the editor. With an empty editor, press `↓` to enter the list, `↑`/`↓` to choose a task, `Enter` to focus its exact pane, and `Esc` to return. `/herdr-subagents focus <task-number>` remains available as a fallback.
+While a batch is active, a compact Fleet monitor stays below the editor. Its divider/title row summarizes the run, and each task row shows a hollow or filled status circle, the real persona and task name, status, live active duration, and cumulative child Pi token usage aligned at the right. Token totals use the child session's persisted assistant, tool-result, standalone usage, compaction, and branch-summary usage; they are never estimated. Queued tasks show neither fabricated time nor tokens. The monitor follows Pi theme semantics, truncates by visible terminal columns, and updates session usage from file events while one lightweight repaint timer advances running durations.
+
+With an empty editor, press `↓` to enter the list, `↑`/`↓` to choose a task, `Enter` to focus its exact pane, and `Esc` to return. `/herdr-subagents focus <task-number>` remains available as a fallback.
 
 ## History
 
@@ -83,7 +85,7 @@ Continue a saved conversation in a new Herdr tab with `herdr_subagents_control({
 
 Read-only tasks start FIFO up to the configured concurrency limit. A pane is created only when its task starts, belongs exclusively to that task, and is never reused. Completed panes remain inspectable while another task in the batch is unsettled. Results remain in input order, and one failed task does not cancel its siblings. Any batch containing a write-capable persona is forced to concurrency one.
 
-The widget shows one row per queued, running, blocked, failed, or completed task. Answering a blocked task refreshes rows and pane IDs as that task resumes and queued siblings start. Completed rows remain selectable until the whole batch settles. `/herdr-subagents active` shows the same compact state. Native labels stay short: `SA · <batch>` for the tab and `<order> · <task>` for each pane. When all tasks settle, the tab closes immediately if unfocused or after the user leaves it; a deferred close failure is persisted and shown as a warning.
+The widget shows one row per queued, running, blocked, failed, or completed task. Answering a blocked task or resuming saved history refreshes authoritative persona, timing, session, status, and pane projections as work advances. Active duration accumulates only while the task is running, excluding time spent queued or waiting for an answer. Completed rows remain selectable until the whole batch settles. `/herdr-subagents active` shows the same compact state. Native labels stay short: `SA · <batch>` for the tab and `<order> · <task>` for each pane. When all tasks settle, the tab closes immediately if unfocused or after the user leaves it; a deferred close failure is persisted and shown as a warning.
 
 Foreground calls block until all children report completion, failure, or a request for input. Every child is started with Herdr's Agent lifecycle as a normal Pi TUI and prompted with wait semantics; no print-mode command or completion marker is injected into the pane.
 
