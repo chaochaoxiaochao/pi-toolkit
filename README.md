@@ -22,7 +22,7 @@ The root package embeds the child-package source snapshots listed below. Install
 
 | Package | Capability | Install | Update |
 |---|---|---|---|
-| [pi-todo](packages/todo/README.md) | Session plans, automatic task advancement, `/todos` | `pi install npm:@maxiaochao/pi-todo` | `pi update npm:@maxiaochao/pi-todo` |
+| [pi-todo](packages/todo/README.md) | Branch-local execution plans, guarded advancement, `/todos` history | `pi install npm:@maxiaochao/pi-todo` | `pi update npm:@maxiaochao/pi-todo` |
 | [pi-cache-export](packages/cache-export/README.md) | Tau-aligned interactive cache dashboard for Pi sessions | `pi install npm:@maxiaochao/pi-cache-export` | `pi update npm:@maxiaochao/pi-cache-export` |
 | [pi-codex-edit](packages/codex-edit/README.md) | Codex-harness `apply_patch` routing for selected GPT models | `pi install npm:@maxiaochao/pi-codex-edit` | `pi update npm:@maxiaochao/pi-codex-edit` |
 | [pi-herdr-subagents](packages/herdr-subagents/README.md) | Interactive Herdr Pi Agents with bounded concurrency, direct navigation, and recovery | `pi install npm:@maxiaochao/pi-herdr-subagents` | `pi update npm:@maxiaochao/pi-herdr-subagents` |

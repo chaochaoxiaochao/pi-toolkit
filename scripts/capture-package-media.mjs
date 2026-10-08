@@ -125,12 +125,12 @@ function table(state) {
 {
   const { applyTodoAction } = await import(join(root, "packages/todo/src/todo-state.ts"));
   let state = { todos: [], nextId: 1 };
-  state = applyTodoAction(state, { action: "replace", items: ["Inspect the failure", "Implement the fix", "Run verification"] });
-  const first = [`$ todo replace`, table(state), ``, `One active task; stable IDs start at 1.`].join("\n");
-  state = applyTodoAction(state, { action: "update", id: 1, status: "done" });
-  const second = [first, ``, `$ todo update 1 done`, table(state), ``, `Completing #1 automatically advances #2.`].join("\n");
-  state = applyTodoAction(state, { action: "update", id: 2, status: "done" });
-  const third = [second, ``, `$ todo update 2 done`, table(state), ``, `Closed work remains in history; #3 is now active.`].join("\n");
+  state = applyTodoAction(state, { action: "plan", items: ["Inspect the failure", "Implement the fix", "Run verification"] });
+  const first = [`$ todo plan`, table(state), ``, `One current step; stable IDs start at 1.`].join("\n");
+  state = applyTodoAction(state, { action: "complete_current", expected_current_id: 1 });
+  const second = [first, ``, `$ todo complete_current 1`, table(state), ``, `Completing #1 advances exactly one step.`].join("\n");
+  state = applyTodoAction(state, { action: "plan", items: ["Investigate new direction", "Verify new direction"] });
+  const third = [second, ``, `$ todo plan  # changed direction`, table(state), ``, `Replanning preserves closed history and cancels old unfinished work.`].join("\n");
   pages("todo", [first, second, third]);
 }
 

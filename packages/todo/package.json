@@ -1,7 +1,7 @@
 {
   "name": "@maxiaochao/pi-todo",
   "version": "0.1.0",
-  "description": "Session checklist and todo lifecycle extension for Pi.",
+  "description": "Branch-local execution-plan lifecycle and history extension for Pi.",
   "type": "module",
   "keywords": ["pi-package", "pi-extension", "todo"],
   "files": ["extensions", "src", "docs", "README.md", "TESTING.md", "CHANGELOG.md"],
@@ -18,7 +18,7 @@
     "typebox": "*"
   },
   "scripts": {
-    "test": "node --experimental-strip-types tests/todo-state.mjs",
+    "test": "node --experimental-strip-types tests/todo-state.mjs && node --experimental-strip-types tests/todo-extension.mjs",
     "load-test": "pi -ne -e ./extensions/todo.ts"
   },
   "publishConfig": { "access": "public" }

@@ -183,6 +183,7 @@
 
 ## Unreleased
 
+- redesign bundled Todo as a branch-local execution plan with lifecycle-only model actions, expected-current guards, serialized calls, preserved branch history, and a live current-plan widget
 - let `/cache_export` switch between all history and individual compaction-defined Context segments, defaulting to the latest segment; cache-hit cumulative lines reset at compaction or model boundaries
 - add the independent `@maxiaochao/pi-codex-edit` package with model-aware Codex-style `apply_patch`
 - include the benchmark summary and interactive HTML architecture explainer

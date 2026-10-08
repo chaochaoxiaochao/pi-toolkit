@@ -1,5 +1,5 @@
 export type TodoStatus = "todo" | "doing" | "done" | "cancelled";
-export type TodoAction = "list" | "replace" | "add" | "update" | "remove" | "clear";
+export type TodoAction = "plan" | "add_step" | "complete_current" | "cancel_current" | "list";
 
 export interface Todo {
 	id: number;
@@ -26,10 +26,9 @@ export interface ActiveTodoRow {
 
 export interface TodoActionInput {
 	action: TodoAction;
-	text?: string;
 	items?: string[];
-	id?: number;
-	status?: TodoStatus;
+	text?: string;
+	expected_current_id?: number;
 }
 
 export interface TodoActionResult extends TodoState {
@@ -75,11 +74,24 @@ export function countTodoStatuses(todos: Todo[]): TodoCounts {
 }
 
 export function activeTodos(todos: Todo[]): Todo[] {
-	return todos.filter((todo) => todo.status === "doing" || todo.status === "todo");
+	return [
+		...todos.filter((todo) => todo.status === "doing"),
+		...todos.filter((todo) => todo.status === "todo"),
+	];
 }
 
 export function activeTodoRows(todos: Todo[]): ActiveTodoRow[] {
 	return activeTodos(todos).map((todo, index) => ({ position: index + 1, todo }));
+}
+
+export function currentTodo(todos: Todo[]): Todo | undefined {
+	return todos.find((todo) => todo.status === "doing");
+}
+
+export function formatCurrentPlan(todos: Todo[]): string {
+	const current = activeTodos(todos);
+	if (current.length === 0) return "CURRENT plan: none";
+	return ["CURRENT plan", ...current.map((todo) => `#${todo.id} [${todo.status}] ${todo.text}`)].join("\n");
 }
 
 function cloneState(state: TodoState): TodoState {
@@ -95,8 +107,18 @@ function cleanText(text: string | undefined): string | undefined {
 	return cleaned ? cleaned : undefined;
 }
 
-function hasActiveDuplicate(todos: Todo[], text: string): boolean {
-	return todos.some((todo) => (todo.status === "todo" || todo.status === "doing") && todo.text === text);
+function closeCurrentAndAdvance(next: TodoState, expectedId: number | undefined, status: "done" | "cancelled"): TodoActionResult {
+	const current = next.todos.filter((todo) => todo.status === "doing");
+	if (expectedId === undefined) return fail(next, "expected_current_id is required");
+	if (current.length !== 1 || current[0].id !== expectedId) {
+		const actual = current.length === 1 ? `#${current[0].id}` : "none";
+		return fail(next, `expected current #${expectedId}, but current is ${actual}`);
+	}
+
+	current[0].status = status;
+	const following = next.todos.find((todo) => todo.status === "todo");
+	if (following) following.status = "doing";
+	return { ...next, message: `${status === "done" ? "Completed" : "Cancelled"} current step #${expectedId}` };
 }
 
 export function applyTodoAction(state: TodoState, input: TodoActionInput): TodoActionResult {
@@ -104,57 +126,34 @@ export function applyTodoAction(state: TodoState, input: TodoActionInput): TodoA
 
 	switch (input.action) {
 		case "list":
-			return { ...next, message: next.todos.length ? "Listed todos" : "No todos" };
+			return { ...next, message: "Listed current plan" };
 
-		case "replace": {
-			if (!input.items?.length) return fail(state, "items required for replace");
+		case "plan": {
+			if (!input.items) return fail(state, "items is required for plan");
 			const items = input.items.map(cleanText);
-			if (items.some((item) => item === undefined)) return fail(state, "replace items must not be empty");
+			if (items.some((item) => item === undefined)) return fail(state, "plan items must not be empty");
+			for (const todo of next.todos) {
+				if (todo.status === "doing" || todo.status === "todo") todo.status = "cancelled";
+			}
 			const texts = items as string[];
-			if (new Set(texts).size !== texts.length) return fail(state, "replace items must be unique");
-			const firstId = next.nextId;
-			next.todos = texts.map((text, index) => ({ id: firstId + index, text, status: index === 0 ? "doing" : "todo" }));
-			next.nextId += next.todos.length;
-			return { ...next, message: `Replaced plan with ${next.todos.length} tasks` };
+			for (const [index, text] of texts.entries()) {
+				next.todos.push({ id: next.nextId++, text, status: index === 0 ? "doing" : "todo" });
+			}
+			return { ...next, message: texts.length === 0 ? "Cancelled all unfinished work" : `Planned ${texts.length} steps` };
 		}
 
-		case "add": {
+		case "add_step": {
 			const text = cleanText(input.text);
-			if (!text) return fail(state, "text required for add");
-			if (hasActiveDuplicate(next.todos, text)) return fail(state, `active task already exists: ${text}`);
-			if (input.status === "doing") {
-				for (const todo of next.todos) if (todo.status === "doing") todo.status = "todo";
-			}
-			const todo: Todo = { id: next.nextId++, text, status: input.status ?? "todo" };
+			if (!text) return fail(state, "text is required for add_step");
+			const todo: Todo = { id: next.nextId++, text, status: currentTodo(next.todos) ? "todo" : "doing" };
 			next.todos.push(todo);
-			normalizeTodoFlow(next.todos);
-			return { ...next, message: `Added todo #${todo.id} [${todo.status}]: ${todo.text}` };
+			return { ...next, message: `Added step #${todo.id}` };
 		}
 
-		case "update": {
-			if (input.id === undefined || input.status === undefined) return fail(state, "id and status required for update");
-			const todo = next.todos.find((item) => item.id === input.id);
-			if (!todo) return fail(state, `#${input.id} not found`);
-			if (input.status === "doing") {
-				for (const item of next.todos) if (item.status === "doing") item.status = "todo";
-			}
-			todo.status = input.status;
-			normalizeTodoFlow(next.todos);
-			return { ...next, message: `Todo #${todo.id} is now ${todo.status}` };
-		}
+		case "complete_current":
+			return closeCurrentAndAdvance(next, input.expected_current_id, "done");
 
-		case "remove": {
-			if (input.id === undefined) return fail(state, "id required for remove");
-			const index = next.todos.findIndex((item) => item.id === input.id);
-			if (index < 0) return fail(state, `#${input.id} not found`);
-			const [removed] = next.todos.splice(index, 1);
-			normalizeTodoFlow(next.todos);
-			return { ...next, message: `Removed todo #${removed.id}: ${removed.text}` };
-		}
-
-		case "clear": {
-			const count = next.todos.length;
-			return { todos: [], nextId: 1, message: `Cleared ${count} todos` };
-		}
+		case "cancel_current":
+			return closeCurrentAndAdvance(next, input.expected_current_id, "cancelled");
 	}
 }
