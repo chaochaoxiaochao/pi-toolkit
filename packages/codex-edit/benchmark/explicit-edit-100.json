@@ -1,0 +1,2824 @@
+{
+  "version": 1,
+  "criterion": "frozen-proportional-80-plus-declared-challenge-20-v1",
+  "profiles": [
+    "native-edit",
+    "released-codex-edit",
+    "local-codex-edit"
+  ],
+  "source": {
+    "repository": "https://github.com/alexshpunt/explicit-edit-benchmark",
+    "commit": "5827e3fb65845f4b76adb06e5919d94ec4ffd5cf",
+    "taskCount": 226
+  },
+  "selection": {
+    "seed": "pi-toolkit-codex-edit-100-v1",
+    "neutral": {
+      "language-replace": 13,
+      "language-select": 13,
+      "language-insert": 13,
+      "literal": 4,
+      "replace-all": 3,
+      "select-one": 3,
+      "unicode-fix": 3,
+      "unique": 2,
+      "multi-file": 2,
+      "select-subset": 2,
+      "delete-subset": 2,
+      "insert-subset": 2,
+      "distinct-edits": 2,
+      "replace-block": 2,
+      "delete-block": 2,
+      "move-block": 2,
+      "copy-block": 2,
+      "insert-block": 2,
+      "insert-payload": 2,
+      "copy-within": 2,
+      "move-between": 2
+    },
+    "challenge": {
+      "select-one": 1,
+      "select-subset": 2,
+      "delete-subset": 1,
+      "insert-subset": 1,
+      "multi-file": 2,
+      "move-between": 2,
+      "distinct-edits": 2,
+      "replace-block": 1,
+      "delete-block": 1,
+      "move-block": 1,
+      "copy-block": 1,
+      "insert-block": 1,
+      "insert-payload": 1,
+      "copy-within": 1,
+      "literal": 1,
+      "unicode-fix": 1
+    },
+    "challengeOrdering": "descending scale, Unicode first, then seeded SHA-256 rank",
+    "scheduling": "four-neutral-then-one-challenge-v1"
+  },
+  "included": [
+    {
+      "id": "copy-block-10-plain",
+      "fixtureSha256": "9499dd4c2b9f9ae23fc681c705e275d916959e42c64b5dc9436ec9ebf63c2e11",
+      "category": "copy-block",
+      "scale": 10,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "copy-block-10-unicode",
+      "fixtureSha256": "7507642c869a5dbe4c438f38542cdc1716e9b30f89c269562bcbbefa17763460",
+      "category": "copy-block",
+      "scale": 10,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "copy-within-100-plain",
+      "fixtureSha256": "5168e8893850d4154b01276cf2d6dd81c4dd2b0d2b430a7fe826d6c532e300ef",
+      "category": "copy-within",
+      "scale": 100,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "copy-within-100-unicode",
+      "fixtureSha256": "38dd6cc6d0b3c1053e1966cf2dea7ea227e48f4b0446ba3210d9581762f3edfe",
+      "category": "copy-within",
+      "scale": 100,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "copy-block-1000-unicode",
+      "fixtureSha256": "6ea4ff2861596068d873f0629f08314ed93e560aaa3ba5f425618ed1f5044e79",
+      "category": "copy-block",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "delete-block-10-plain",
+      "fixtureSha256": "6df61382957ac92ab6902603c199f5dc7d780f9e8eab56bdb744f7de9989ec41",
+      "category": "delete-block",
+      "scale": 10,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "delete-block-10-unicode",
+      "fixtureSha256": "56f0cbf867a186ab80277d5ef4774d6d228adb5e1632351c80f2a64eae06258d",
+      "category": "delete-block",
+      "scale": 10,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "delete-subset-100-unicode",
+      "fixtureSha256": "0276f60a2a1ce8929132ebbaf52803821e8ae82e07217fa300c7ff2a076c7584",
+      "category": "delete-subset",
+      "scale": 100,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "delete-subset-1000-plain",
+      "fixtureSha256": "c5210f469175334972c65695272011279b0ae30a629db59e6df563d74038a67d",
+      "category": "delete-subset",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "copy-within-1000-unicode",
+      "fixtureSha256": "e8a6ac22cb8ba083937d98182d0fec2f10323e3461ba119990f2fdb4ac19076c",
+      "category": "copy-within",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "distinct-edits-1-plain",
+      "fixtureSha256": "85b26d2c0289febca349e976b64a67068f7c761046ae91d114ba585ea99572d3",
+      "category": "distinct-edits",
+      "scale": 1,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "distinct-edits-10-plain",
+      "fixtureSha256": "5bf500f9ed244f4039a72a50cb37b9cf435bdf78c39f8147dad7ff37322f039f",
+      "category": "distinct-edits",
+      "scale": 10,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-block-100-plain",
+      "fixtureSha256": "8392bca643aad8789bb4f78898b7203c9fa78352befd870ff6474c2daceb4436",
+      "category": "insert-block",
+      "scale": 100,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-block-1000-plain",
+      "fixtureSha256": "58803f354ed62f896cd76fa1959ba7ef2947a5beb35203def100322452778eac",
+      "category": "insert-block",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "delete-block-1000-unicode",
+      "fixtureSha256": "53f9e32b7312b1dafc76629fc48cbedb0b106f08e781c5704b95f75565d94db7",
+      "category": "delete-block",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-payload-10-plain",
+      "fixtureSha256": "2cdf99d070acc77e04a9ad6e38953d725cfd673a735a09c84c10663754914fb1",
+      "category": "insert-payload",
+      "scale": 10,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-payload-100-plain",
+      "fixtureSha256": "5c3ec15519e2b0c04f3e36806dc65ce91970354396ed1ef47ada4369d8b8538a",
+      "category": "insert-payload",
+      "scale": 100,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-subset-10-unicode",
+      "fixtureSha256": "0cb73294d54697f77120ff6b711412d385823c3e02ad8270906500aa908638a8",
+      "category": "insert-subset",
+      "scale": 10,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-subset-1000-unicode",
+      "fixtureSha256": "7b5ed5e2fcbda13292b4c1219a6684d05be81b36cfa140b3fb73e015137ce97d",
+      "category": "insert-subset",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "delete-subset-1000-unicode",
+      "fixtureSha256": "8d968cf360d9a359b888e4e96c42118178e9da983a35a145cd9ea0208873d3f1",
+      "category": "delete-subset",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-csharp-unicode",
+      "fixtureSha256": "00c6f092e5dd612ca77f416e77df0a74e7928d52d1035a02b32d310bc20eb7c3",
+      "category": "language-insert",
+      "scale": 1,
+      "language": "csharp",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-java-plain",
+      "fixtureSha256": "7891d63fbc2c148506dee95f1539ef659c6741288d020d304ae4f077e318a576",
+      "category": "language-insert",
+      "scale": 1,
+      "language": "java",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-markdown-arabic-unicode",
+      "fixtureSha256": "8dbbc859693eb55ff836e3c52975d174f1d91e9406effc7ce832542e121185a8",
+      "category": "language-insert",
+      "scale": 1,
+      "language": "markdown",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-markdown-chinese-plain",
+      "fixtureSha256": "2fbc5db48300ad0e7db31d5de0440b53997ba25c381915e01cd386b394a22a41",
+      "category": "language-insert",
+      "scale": 1,
+      "language": "markdown",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "distinct-edits-30-plain",
+      "fixtureSha256": "68c391c8229aa189446dc49b441b397d8520cb31346bda7391bc0db9e45ee68b",
+      "category": "distinct-edits",
+      "scale": 30,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-markdown-latin-plain",
+      "fixtureSha256": "e010a2045c34b320fb5bfa0e3277dfe25e8f7754338230cc5a842a82cdca0aab",
+      "category": "language-insert",
+      "scale": 1,
+      "language": "markdown",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-markdown-latin-unicode",
+      "fixtureSha256": "6db9f5a029b31f6b11533fc053df7ac581b89a88cf3e2318e8ebf3c43444fae5",
+      "category": "language-insert",
+      "scale": 1,
+      "language": "markdown",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-markdown-russian-unicode",
+      "fixtureSha256": "df305aa9205b385225a9b3787d15dd049edea2f248581cd05233f6526cc25b8f",
+      "category": "language-insert",
+      "scale": 1,
+      "language": "markdown",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-markdown-unicode",
+      "fixtureSha256": "ef571c94d06ca609d78875e3d468030d4ba9a27cfed088e1765280b0ff38acf5",
+      "category": "language-insert",
+      "scale": 1,
+      "language": "markdown",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "distinct-edits-30-unicode",
+      "fixtureSha256": "64af2529acd800147d5cf70c9f952b358d06f65852c29b6d496841310fb99593",
+      "category": "distinct-edits",
+      "scale": 30,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-rust-unicode",
+      "fixtureSha256": "2df8ff234e42a688dc7164a76787d419e6daf60f4bc152024547cf9373b2561c",
+      "category": "language-insert",
+      "scale": 1,
+      "language": "rust",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-shell-plain",
+      "fixtureSha256": "94d10846815c6cb31a826fadd4c00bb4f862499c99079465bb69672996a74269",
+      "category": "language-insert",
+      "scale": 1,
+      "language": "shell",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-sql-plain",
+      "fixtureSha256": "068df07e05127dd602246e593800cfd7c29ceba34fc1d424147ff2c4988aab08",
+      "category": "language-insert",
+      "scale": 1,
+      "language": "sql",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-typescript-unicode",
+      "fixtureSha256": "72f06bd3dd4480cdfefa6dab06c23cda9d97d9fdfb873b9de16482564701177b",
+      "category": "language-insert",
+      "scale": 1,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-block-1000-unicode",
+      "fixtureSha256": "14a724f157d4f1a3687c5aa9c8f8c2cc2dc899d0a63934e3b3afbb984b329679",
+      "category": "insert-block",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-yaml-unicode",
+      "fixtureSha256": "019f966c5089eeff760b563e32467c6a9405d4c0b1300023868268fedf605dd5",
+      "category": "language-insert",
+      "scale": 1,
+      "language": "yaml",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-go-unicode",
+      "fixtureSha256": "13175b8c015f2310a4c6f569ba4e98a97340670ec51e0dafef830f8fa08b4c3f",
+      "category": "language-replace",
+      "scale": 10,
+      "language": "go",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-json-plain",
+      "fixtureSha256": "0f9fafc99a8972a4dc9618ca198f78535d95f0b295b08cf85e96e9d0b1fec67a",
+      "category": "language-replace",
+      "scale": 10,
+      "language": "json",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-markdown-arabic-unicode",
+      "fixtureSha256": "9167bd4de4d30bf1aacc595f07f9fc6f06b732f062d62b187730b1464a888a01",
+      "category": "language-replace",
+      "scale": 10,
+      "language": "markdown",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-payload-1000-unicode",
+      "fixtureSha256": "d058b0bd087789a53e3eb1e30359ecb0aef33023a06eaf77a2a08f326ae5c715",
+      "category": "insert-payload",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-markdown-chinese-plain",
+      "fixtureSha256": "5ad35e598a07feeac189ba9c58a34d489a24fc1ea489e707bfae5cdbbae60dc7",
+      "category": "language-replace",
+      "scale": 10,
+      "language": "markdown",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-markdown-latin-plain",
+      "fixtureSha256": "8a4064c026297c9608ffb9bd1b7910ad6ec9ef687434bdba1b9ba9ab3a6d4a46",
+      "category": "language-replace",
+      "scale": 10,
+      "language": "markdown",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-markdown-mixed-plain",
+      "fixtureSha256": "53482bb683c2cad192b446b737765bc2eb9cd110486521154ca0c8c8b1707c65",
+      "category": "language-replace",
+      "scale": 10,
+      "language": "markdown",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-markdown-russian-unicode",
+      "fixtureSha256": "91e6521931f7455272cd62fee49d84cfc2aa6db32ecadc1d9c5e83b5561e8e4a",
+      "category": "language-replace",
+      "scale": 10,
+      "language": "markdown",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-subset-1000-plain",
+      "fixtureSha256": "04f03702b0174e3e8b3e480d70f909c1a43e8c2fe4f4b6817b5e95a78f5bc119",
+      "category": "insert-subset",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-markdown-unicode",
+      "fixtureSha256": "d6e2d873de5c7646e3a9e8fbb4f2cd5bd3888c8657257d4e450882d76d6a0f80",
+      "category": "language-replace",
+      "scale": 10,
+      "language": "markdown",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-python-unicode",
+      "fixtureSha256": "f192dc5c47d74b6732aaa7df8cd6af258d393d2b02df07bf2924e2834008d2c0",
+      "category": "language-replace",
+      "scale": 10,
+      "language": "python",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-rust-unicode",
+      "fixtureSha256": "c3f10585c31d6cb7fb844de5335b9cd3ecd84011d3709d3ae3a435593571e072",
+      "category": "language-replace",
+      "scale": 10,
+      "language": "rust",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-shell-unicode",
+      "fixtureSha256": "ca20dc1b064a4b09ab4112c70708861f12a2fe4dcbcb3dc96acaa442f2680987",
+      "category": "language-replace",
+      "scale": 10,
+      "language": "shell",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "literal-1-tabs-unicode",
+      "fixtureSha256": "ccc0bdafd98b2ab3c2b60e7cc8a260d2ccab2ed5645a52488fdb5837295056b6",
+      "category": "literal",
+      "scale": 1,
+      "language": "text",
+      "variant": "unicode",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-sql-plain",
+      "fixtureSha256": "32f17348254bc74099d8919c8166e6583684500502b81589842f76173a114bc3",
+      "category": "language-replace",
+      "scale": 10,
+      "language": "sql",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-sql-unicode",
+      "fixtureSha256": "05c9a5983d0f7c4574dc814bac16303a0b62e429fcc244a5ebf937669f91f365",
+      "category": "language-replace",
+      "scale": 10,
+      "language": "sql",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-csharp-unicode",
+      "fixtureSha256": "7d879926055e6cb8eb9745c37aa97aa437a453fb353b48c66848386f477e2193",
+      "category": "language-select",
+      "scale": 10,
+      "language": "csharp",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-json-plain",
+      "fixtureSha256": "744a072433ce45f32fbcbcee0b26a7647b83abc2302ac6dc4a487482fcbc0519",
+      "category": "language-select",
+      "scale": 10,
+      "language": "json",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "move-between-100-plain",
+      "fixtureSha256": "001094521c9663230edfa30a75aede9f61871ec8e4faa43afed58469de74e648",
+      "category": "move-between",
+      "scale": 100,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-json-unicode",
+      "fixtureSha256": "3b68ad622e1def41b82eb51df194d75470682aa1383990b182c4f4c7361f63dc",
+      "category": "language-select",
+      "scale": 10,
+      "language": "json",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-kotlin-unicode",
+      "fixtureSha256": "140494571e08946af549b36e3e56975545c11c07d7556bf97b83939efba45cbb",
+      "category": "language-select",
+      "scale": 10,
+      "language": "kotlin",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-markdown-arabic-unicode",
+      "fixtureSha256": "fc42ba61ea97923a43b9fb59b6c38ec99f99f96105c7a85d87caa38324197876",
+      "category": "language-select",
+      "scale": 10,
+      "language": "markdown",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-markdown-russian-unicode",
+      "fixtureSha256": "68267bb85d6086d4018a405e4f9d6bbcac7a9037a411fadc34b4306aef5ecbc7",
+      "category": "language-select",
+      "scale": 10,
+      "language": "markdown",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "move-between-1000-plain",
+      "fixtureSha256": "8df46cb2db14bb951146484290eee2e4d50fa226159ee951f7fbb11e0ac92684",
+      "category": "move-between",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-python-plain",
+      "fixtureSha256": "c7cf428b12eddf79b56da871524e2195a38d7985bdd486c97196b1e32c6aa3db",
+      "category": "language-select",
+      "scale": 10,
+      "language": "python",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-rust-plain",
+      "fixtureSha256": "6c91105ea2df3b0c4c69dc96f9ce1141fa3a8204a1b0602e3689f4fb8308d437",
+      "category": "language-select",
+      "scale": 10,
+      "language": "rust",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-shell-unicode",
+      "fixtureSha256": "3f96268a8004b63c293453708d52416f5f6fa6906e1cbc400049ef7e6150164f",
+      "category": "language-select",
+      "scale": 10,
+      "language": "shell",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-sql-plain",
+      "fixtureSha256": "a14c0567cd331e633584c009b24244c3444bb8c8b7174cf93b3d18416bc46c5b",
+      "category": "language-select",
+      "scale": 10,
+      "language": "sql",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "move-block-1000-unicode",
+      "fixtureSha256": "7c30ac713be8998d415e4081726d49cec3b8d8bd9a9fafe4564b9855a190b001",
+      "category": "move-block",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-sql-unicode",
+      "fixtureSha256": "57d0210771c7029ab38da6033634dcb770f8a5c416a2de2ed1c8db97d5c2f1fb",
+      "category": "language-select",
+      "scale": 10,
+      "language": "sql",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-tsx-plain",
+      "fixtureSha256": "88bee48e00c18ba53676ad76596fbf4ce7ed9f62f5e919507a83718cb19bd597",
+      "category": "language-select",
+      "scale": 10,
+      "language": "tsx",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-tsx-unicode",
+      "fixtureSha256": "d11eca2d0ca75f293d6a6f9d7dddd0d767d7f4d9696ab76f524a75b72450e749",
+      "category": "language-select",
+      "scale": 10,
+      "language": "tsx",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "literal-1-crlf-unicode",
+      "fixtureSha256": "b360e5baf0bfc3625c06cb9c025ea1b2da92593faf8470249b157c091b1c4228",
+      "category": "literal",
+      "scale": 1,
+      "language": "text",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "multi-file-100-plain",
+      "fixtureSha256": "530645f5264d2287ddb8246813cd464ef9100fd7c685816a98db8d4de1ecd451",
+      "category": "multi-file",
+      "scale": 100,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "literal-1-no-final-newline-plain",
+      "fixtureSha256": "ef3305ece2675cf95ce75e3c0d554957fdeb57e63e597cfa87052ca626b9677c",
+      "category": "literal",
+      "scale": 1,
+      "language": "text",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "literal-1-quotes-unicode",
+      "fixtureSha256": "b1b7e887360385323702b5b168c1e825f1b0a6c94d5ec67cef41ade7eafe1445",
+      "category": "literal",
+      "scale": 1,
+      "language": "text",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "literal-1-regex-plain",
+      "fixtureSha256": "6b3097aeb9b505ba09d189c09aeae957e77b5fdb0dc1e7012b537ee63760c37d",
+      "category": "literal",
+      "scale": 1,
+      "language": "text",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "move-between-100-unicode",
+      "fixtureSha256": "49e05478271b98a442fc0652ff249a6f4df162a1ffbe8650922a08479bb955d1",
+      "category": "move-between",
+      "scale": 100,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "multi-file-100-unicode",
+      "fixtureSha256": "04d4c26c113f79de2e0f7cb1bb399581a956abdd459f958cdc41ad8d637f6efe",
+      "category": "multi-file",
+      "scale": 100,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "move-between-1000-unicode",
+      "fixtureSha256": "bf364946459ea55bf154e874def5bd671e581212d4bf2fbb84ac118bbf59f682",
+      "category": "move-between",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "move-block-10-plain",
+      "fixtureSha256": "4a7699fe453aaf3afc8a1489dc8977fd4285162b0442f87b7379a8289e07f76a",
+      "category": "move-block",
+      "scale": 10,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "move-block-1000-plain",
+      "fixtureSha256": "e97564f07f22299dd23b51d81d21f878fce261b08b9dc40512fb57d9efc0648f",
+      "category": "move-block",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "multi-file-1-plain",
+      "fixtureSha256": "46281bdc576b2dedccc06c32f0e47ebd02a9009baf0edd95a458b33ce79ce3fd",
+      "category": "multi-file",
+      "scale": 1,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "replace-block-1000-unicode",
+      "fixtureSha256": "a5f558208f112d6e82bbe8c3721f11ced8e527c12d7104a065e8122fe11e197c",
+      "category": "replace-block",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "multi-file-10-unicode",
+      "fixtureSha256": "7e061f4a4943370831e1d046162c5339da181144275a9cdaf1301caa11d6e429",
+      "category": "multi-file",
+      "scale": 10,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "replace-all-100-plain",
+      "fixtureSha256": "fd79030cd2544445ab0256a0a829c79ceb830b9f26b9229af0f6f038723d79d3",
+      "category": "replace-all",
+      "scale": 100,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "replace-all-100-unicode",
+      "fixtureSha256": "2ff4773a615d2c8383c088df0b5f3dd10dd088dfdddcd66a7dbf9c5e976bb605",
+      "category": "replace-all",
+      "scale": 100,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "replace-all-1000-plain",
+      "fixtureSha256": "5a63ef1f668424a0d829a8c530a76f50e2a8f432d9ac2ed30f3314d50c1d20b1",
+      "category": "replace-all",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "select-one-1000-unicode",
+      "fixtureSha256": "66eae8c6ecee816bbd69fcc2691f13a9755b9e23d08907d5c9664d1d794f7d2b",
+      "category": "select-one",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "replace-block-100-plain",
+      "fixtureSha256": "80177ee5e10fc896c0c5e457fc11f37dafda4571c5188b5a4a2119d56dddbb02",
+      "category": "replace-block",
+      "scale": 100,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "replace-block-1000-plain",
+      "fixtureSha256": "a42ca49df5b03b08b56231dd9068488cc49c2c6f9451ff8424a18ad2e981d296",
+      "category": "replace-block",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "select-one-1-plain",
+      "fixtureSha256": "423f831a361d395dbfd3afd4946c1217e27cbfd952ff3776f193d4d5a6b8f381",
+      "category": "select-one",
+      "scale": 1,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "select-one-1-unicode",
+      "fixtureSha256": "f5d2a2ebafdff0619bf37dfbd4a1a2e964caaaafcb772fa80dc5324184f741c5",
+      "category": "select-one",
+      "scale": 1,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "select-subset-100-plain",
+      "fixtureSha256": "119941afd2e7e526a7239425f00b849bab0e997f0505c7641d356f27216e2941",
+      "category": "select-subset",
+      "scale": 100,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "select-one-100-plain",
+      "fixtureSha256": "e8acf99d8ccd08755759d4a5253d5506425c635bcd4e2a0d417c967481bfd193",
+      "category": "select-one",
+      "scale": 100,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "select-subset-100-unicode",
+      "fixtureSha256": "a8f7513468db9ecd16746da1d5a7950ff4fc36ffedbfc8f6a39c1ed9dacaa9a8",
+      "category": "select-subset",
+      "scale": 100,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "select-subset-1000-unicode",
+      "fixtureSha256": "e036f3e3a00a7f8e7ec59acfa2b34bd43b2907e7a1c38878a9597075e3d9a763",
+      "category": "select-subset",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "unicode-fix-1-cyrillic-a-unicode",
+      "fixtureSha256": "fa7fccf850f99e22e1bfb2ae016be4f8d25bd3aedb0b88bf1a980594a2a07ad4",
+      "category": "unicode-fix",
+      "scale": 1,
+      "language": "text",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "select-subset-1000-plain",
+      "fixtureSha256": "da466bf6d676805f057ecd7cba75e544e5ddb43b35b3244a984a8c51fb36e698",
+      "category": "select-subset",
+      "scale": 1000,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "unicode-fix-1-nbsp-unicode",
+      "fixtureSha256": "3000e438470748b69eb4734c12f3dc78e65318ed86a66335da06b52cae7be5a2",
+      "category": "unicode-fix",
+      "scale": 1,
+      "language": "text",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "unicode-fix-1-zero-width-unicode",
+      "fixtureSha256": "3f6afb06e00646feab310d7a76305eb213862d06f58535acc97a1081a1c83e20",
+      "category": "unicode-fix",
+      "scale": 1,
+      "language": "text",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "unique-10-plain",
+      "fixtureSha256": "88f52fad009b18ec78f232bb04d368a2cdea43262b49b809363dc352b387733d",
+      "category": "unique",
+      "scale": 10,
+      "language": "typescript",
+      "variant": "plain",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "unique-100-unicode",
+      "fixtureSha256": "30ae3946bed587548d84195df0df9fbd8e544a92f50b0061e86babdbc8d75880",
+      "category": "unique",
+      "scale": 100,
+      "language": "typescript",
+      "variant": "unicode",
+      "cohort": "neutral",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "neutral-cohort-v1"
+        }
+      ]
+    },
+    {
+      "id": "unicode-fix-1-decomposed-unicode",
+      "fixtureSha256": "368f09fa3a869d3503e7ee3ee890de8c0629517256bb5f3378aa223253a76ab0",
+      "category": "unicode-fix",
+      "scale": 1,
+      "language": "text",
+      "variant": "unicode",
+      "cohort": "challenge",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "challenge-cohort-v1"
+        }
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "id": "copy-block-100-plain",
+      "fixtureSha256": "ef6b739fec76c4d95dfbebbdd5528478c18f64443a79e99c542dd6e95a61ef54",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "copy-block-100-unicode",
+      "fixtureSha256": "4e09588a83564871eafecc16056f0da7f561fe210a854f5d358e2d57732757bd",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "copy-block-1000-plain",
+      "fixtureSha256": "7a970073fbdb1f6610f139cfad05876332949b477002d23381165f219dced399",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "copy-within-10-plain",
+      "fixtureSha256": "e938c77dc57528fd7bdfe18be9951a4e3dda30c1b02dcb24e7bb28db9eb5e1f7",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "copy-within-10-unicode",
+      "fixtureSha256": "0dc741e80b157bb9ed9a3c11414a7e65324276354db64aa5ac5520ef46d757c2",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "copy-within-1000-plain",
+      "fixtureSha256": "411a8a641120b2de5e1de1a22fcf519bf62cb2d468bb5964f66fffec8d19af50",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "delete-block-100-plain",
+      "fixtureSha256": "6367b5281810abae409c04ba24f53a5e7c34e8cea9c7da90757d35e735156e90",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "delete-block-100-unicode",
+      "fixtureSha256": "4f1228c64468598e0afc9c092cb04ff69496f42d4e1821e6c8b782c31297e2a0",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "delete-block-1000-plain",
+      "fixtureSha256": "12cabcb3824f2809cd4b6713564ad3fefd9f085f51994269d35d00e8e4e81b07",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "delete-subset-10-plain",
+      "fixtureSha256": "977a5245647994c7649c4d88bb266462229c6ed2c9d26ddd5d05e8f2e04a3285",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "delete-subset-10-unicode",
+      "fixtureSha256": "a8d741305083c1616079ec13e4f76900ba460c0070ddd3ea28a2067b86892169",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "delete-subset-100-plain",
+      "fixtureSha256": "ce8ec249f3ee6c29e69fe79cd0d84b1e4ea032c97daaf6793a91dd7aeffe3825",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "distinct-edits-1-unicode",
+      "fixtureSha256": "2061ba39a7e6530b53d9274f9f23eadb3f63ad905bbe02827bcd0d89102f0132",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "distinct-edits-10-unicode",
+      "fixtureSha256": "3f082f9eeb8a8549fc2d0d371fb127e92e356c571683df40bd3ab525bfa90843",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-block-10-plain",
+      "fixtureSha256": "6405b5031a9fc80f4f77a0fbdce4bbff602a379d1a102ed7c6e6638e7edd52fd",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-block-10-unicode",
+      "fixtureSha256": "5b28e617242b7729b6563a447ed801b314ddcfb5ba200015a1f5a7dfc4188f52",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-block-100-unicode",
+      "fixtureSha256": "07d4752de3018deb28a36f25e86e3f3ced3f9e916ffc4126b5651c9c8d46a168",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-payload-10-unicode",
+      "fixtureSha256": "97bcd420fd62ec28fa5fe4920eaacc81e2d576a87ce56ca5727d1cbbdcda9888",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-payload-100-unicode",
+      "fixtureSha256": "61d53b9fa1a1ba1bc8bbcce88e2631a85aee520ecf8510d51156ba5a7e851677",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-payload-1000-plain",
+      "fixtureSha256": "f1a68cdea2ac8a4d9a7b683b6f7674dca5f7db45fd04ecf37e2a884f6ecbe03e",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-subset-10-plain",
+      "fixtureSha256": "28d2997db15fb010fd778df226db8a4f2c3e59bacc7eaa6507955ccc574bc6b7",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-subset-100-plain",
+      "fixtureSha256": "54d656653c32861ab7109ae54fd9eac5c4f9499537bf801d4250f5f91f7a5a9f",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "insert-subset-100-unicode",
+      "fixtureSha256": "260082a0ef20868528ca3dbd2d265451c3144531e6cc42229f8dbcbce333df1c",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-csharp-plain",
+      "fixtureSha256": "e7a093407febc5821138c62bf840ed6772528fbf1f36b1ce0185df952c619e67",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-go-plain",
+      "fixtureSha256": "a17e25e8295ea06af20bc32d3109d41c1a6076fc9c50966732e7d8644d7f6636",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-go-unicode",
+      "fixtureSha256": "34fbf69f1dbb571945eb44c62ad97aa5f5539a6a8d9c49121aa65aa876f0c759",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-java-unicode",
+      "fixtureSha256": "1609feba2550736238cc8db8628ff05bbcdbde4d38897e879e583316ea10921e",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-json-plain",
+      "fixtureSha256": "3b8d0bdd9db3122879aa3dafd49a5a01611db1463792406087ab55718ea4bf70",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-json-unicode",
+      "fixtureSha256": "64de08fc27d0e9493e4f6513e84d534d38c408a900a39cf6077a0872776bec5f",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-kotlin-plain",
+      "fixtureSha256": "c58df341626835751328d412995e7847bfac5a04e0dc2f162992183e53571abe",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-kotlin-unicode",
+      "fixtureSha256": "77f6effbab00b7e2f3c866e637e2370f9e05dcb125dc21724070db62398ee03a",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-markdown-arabic-plain",
+      "fixtureSha256": "c9362dd4fbca2b50263abca4b2df377537ad63a935743b9ab035b26815d6f613",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-markdown-chinese-unicode",
+      "fixtureSha256": "a7c37ba7c229b14cd67ec8b7d6503f20fd409d4783227641b3fdde294d418479",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-markdown-mixed-plain",
+      "fixtureSha256": "ad5e26894f4c8a1991ac2d593a6b74b1ab0fb5babdb514bab6a058d844f3607f",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-markdown-mixed-unicode",
+      "fixtureSha256": "8290f85e0df644cf70ee73db873a90ce081cb1f335e5c98d13258745e6d24f43",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-markdown-plain",
+      "fixtureSha256": "2a808d23b4d65e7ae16977b3ecab95f62c365e5967cf6ef9baafaf11eed61551",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-markdown-russian-plain",
+      "fixtureSha256": "40e98d7bc2922fdc2e0cf944c0a47a14a7ba6f4847c99ca19a25904a37a93767",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-python-plain",
+      "fixtureSha256": "7f3f185a9bd7dde9ccc2f6333808e8f965f06bd8330734873816625f7f7d6c48",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-python-unicode",
+      "fixtureSha256": "b31c2c39ca4a65b6370fe10bd7f681419004b425dc8ca95dd75903fbd193a4be",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-rust-plain",
+      "fixtureSha256": "ec7d6466543aaa28b5c9c92be0ee0c9d84452dd22aafd20a3072f36afaba7f9b",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-shell-unicode",
+      "fixtureSha256": "84fdfbbb342a24bccc1cba26b700375f581cfbb138e066080453df527a932af2",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-sql-unicode",
+      "fixtureSha256": "0fc0b676b380a94a7b1e432d47d88adebbae86d0d16bbc1b2aeb70b2b2fa1373",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-tsx-plain",
+      "fixtureSha256": "a11db2f6861fb624b4b2847d9d80c4f2de92f1e67d307b8155a3db876205af51",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-tsx-unicode",
+      "fixtureSha256": "e31a0fb903869fbeec7e7b831d95fa657b7ec1b6f04bc3100f18436b811a2b3e",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-typescript-plain",
+      "fixtureSha256": "d54689899099542d0d5cb48e79af71de98cb8cfa0df28c4a61b1a3b89c957f12",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-insert-1-yaml-plain",
+      "fixtureSha256": "e2961474a683be93a2e5968812dd633fd59c9aedeefb980c98c2b5e2f71627a1",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-csharp-plain",
+      "fixtureSha256": "bc46d1d716c526450dc02cddee7c06d67780ddb83a0b52784d5af613eba58c83",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-csharp-unicode",
+      "fixtureSha256": "c41fa680128b65032fed9e7f304bfbb2d82168901b3844239e849b12b747bbb1",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-go-plain",
+      "fixtureSha256": "6aaacff7ed7cfddd38f497c123d1f9cb1a288121208d79017375c388c1235bcf",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-java-plain",
+      "fixtureSha256": "a050b277005e4c02216e73f7d7d146f72f4ea29c7b2fa8c26bad0c21d84227d2",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-java-unicode",
+      "fixtureSha256": "75757079463ff4bcc5d1d38d997f18ac68a5c88a22747e685f3cd627bf6cebf8",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-json-unicode",
+      "fixtureSha256": "d525b51ae094e56d8b51ac2da585143e152008e663224577768417f118e96a86",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-kotlin-plain",
+      "fixtureSha256": "9af4e231006bdf7c994dbaf572e343e42b87fc726c01ae56bf124ffedeefc3a0",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-kotlin-unicode",
+      "fixtureSha256": "4f4535a67a1f88ec48aec22d1430bd8242a834211f8a03d9e14824d64403cac4",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-markdown-arabic-plain",
+      "fixtureSha256": "481e515f0bac2044c501f656cab062d1d019dc01823684e82be606f6a9779291",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-markdown-chinese-unicode",
+      "fixtureSha256": "bf76d19337b0479b412c35488b14b4e5a92d072445e301f0f876604eb5490cfd",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-markdown-latin-unicode",
+      "fixtureSha256": "884ed223931d769f044d8f908bd1d36289e8100717f87c682dd13a6f4c3af091",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-markdown-mixed-unicode",
+      "fixtureSha256": "ec5956a930d7057da5555fda2acbd8bc316c8bcb22aeb30fc7dc136338fe4026",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-markdown-plain",
+      "fixtureSha256": "36549dd32d7f9a0c47ba36aa9dd2bd1476ff38c6a885524a2223f893258beef9",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-markdown-russian-plain",
+      "fixtureSha256": "605133fa71a9b0a07c1d6df84d0fe0e9f2c1941965e6c33c1f9c54e055fd875d",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-python-plain",
+      "fixtureSha256": "2a24744e49a896651833c682a7c17cddd8711970b56ceff7248a47bdcdb16e12",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-rust-plain",
+      "fixtureSha256": "be36ecf8dd23e59c85b13eb18fd6e74032d9a809f4a3f01dba1d17af79b221f8",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-shell-plain",
+      "fixtureSha256": "1003d59dd49238e5b55e109f0ff1a225c9095874b1f808cca2f392b04cd11ee0",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-tsx-plain",
+      "fixtureSha256": "12a13095f5cb9127d002f2fcc1d8461108fc8813e04f26452eccc9acb4699787",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-tsx-unicode",
+      "fixtureSha256": "892320cd22483aa61a3e3d03e58a9576bf3cd503f3e485ae0e67f23982133aa5",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-typescript-plain",
+      "fixtureSha256": "6574705b76778f3f71215d33791f6191c66bbef85e4fa9253755f8967b3f1878",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-typescript-unicode",
+      "fixtureSha256": "af283ec59691a4de4a5ee53c4f1cc8b2a8ad5591de1e7c24069cc95627b3e1be",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-yaml-plain",
+      "fixtureSha256": "270406f47c75df925103885bf2ff9cfdfe9986842de50f45947286a8bf724e20",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-replace-10-yaml-unicode",
+      "fixtureSha256": "5991845bd3097a71da2ce10755e3e9f03112c4f94b15ebf2ba8ccb32f91b4512",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-csharp-plain",
+      "fixtureSha256": "2f35827c964c65d4df7d5c2baa6f2f5ced4605a4542142bc75061184206c0b12",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-go-plain",
+      "fixtureSha256": "884cb5d438f84b28a672484bea067f602f422c764bde3f00053789e53f6ad994",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-go-unicode",
+      "fixtureSha256": "a0f067c7ab95b8fd70a4e77d3f275df6602bcb5d1db0fb2ae2fbd28aee163085",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-java-plain",
+      "fixtureSha256": "09a25e1ac42f60c0006e92f1f391f284e66cb5c86a17848cea92712e72177938",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-java-unicode",
+      "fixtureSha256": "c029fb296475d38f9a79e99de3ae8604df1caaa00519e5bb37d494c49e608c38",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-kotlin-plain",
+      "fixtureSha256": "0ecb03ac0b29bc3f78679384016a447fa329bec4c7cc63d2eaf9f0f88e611422",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-markdown-arabic-plain",
+      "fixtureSha256": "0815bbf790090ee0acfe678f35b7399008ac4e2ec69686bd3682bab24e9711b5",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-markdown-chinese-plain",
+      "fixtureSha256": "790c6103ebd66302b40c9af0e359136c95432dcfde00a68af6521950dbcec142",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-markdown-chinese-unicode",
+      "fixtureSha256": "8eed84713f8bcc46081d221d7acd585666796b9d3a45abc7e6a77c3f6fe9f52d",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-markdown-latin-plain",
+      "fixtureSha256": "9ddfe14795972219bca6489babe64df94c9a83863fb646e0defc8bf8931551f7",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-markdown-latin-unicode",
+      "fixtureSha256": "de2fc7051db53d036c6b0ac31a18b103429e44acf4ff36ee26e9de240cebe480",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-markdown-mixed-plain",
+      "fixtureSha256": "505444bb1993839debc16b31e40b2b23c48913e989ad4f6582abe4780838772d",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-markdown-mixed-unicode",
+      "fixtureSha256": "74283c76bb37c9a4c383da13e75fb1e779b5edeb34f63b0ad4f27e4c2108ad25",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-markdown-plain",
+      "fixtureSha256": "1290043aafe06dcd4ca3b52db274cf282ae0c54257473920ef9c56e63aee34bc",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-markdown-russian-plain",
+      "fixtureSha256": "2cfc5849219c77fccf416deca07f262049e251aab01d34f6661c30aae5db6ea4",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-markdown-unicode",
+      "fixtureSha256": "5aa493c8a229781485038252d9a0dc8b75cea03fc571f9fd4021be73a23a2572",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-python-unicode",
+      "fixtureSha256": "6cead412ec32521b17277b71a01f2ecdfd3c649f67b5ada13f142487b23616c5",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-rust-unicode",
+      "fixtureSha256": "e21ee3f6b11b31c6cf42c50613754dbfe36b52ffd0f19c74be6af813ffe70182",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-shell-plain",
+      "fixtureSha256": "6c5d74daeaba620f3163b11bedc7d5855a01e351d76699c138fe1900597dae16",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-typescript-plain",
+      "fixtureSha256": "e41d8ff94dcb34db05e0971b3283e8adb61a1c9fa4b6c2d6856ca8106d501491",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-typescript-unicode",
+      "fixtureSha256": "969b83a172bf35ee75584652035f07fb4b9e641424176de439ee2c7cb4bb8bfe",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-yaml-plain",
+      "fixtureSha256": "cce46ddf00aa58797fd526dfe92da0064246b724a308777144a1abdc53e1fa03",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "language-select-10-yaml-unicode",
+      "fixtureSha256": "90a8a59219f6d07bfc8ec579cd2f911eb22f489543b78563dfb10c47aed89aaf",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "literal-1-crlf-plain",
+      "fixtureSha256": "683470b1b0449ee1e0be6495b3a760b183ddd1a70e8db1240185b4adcdf688ce",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "literal-1-no-final-newline-unicode",
+      "fixtureSha256": "8bc3544136b064197735f8d59eb7792e40d4474c29601cbc098112eb87676695",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "literal-1-quotes-plain",
+      "fixtureSha256": "ed1871d42da6b581218694062e15cdecfe16c1bb170c7cc7ebc80d2b69ec0e81",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "literal-1-regex-unicode",
+      "fixtureSha256": "93a5a8f8e8030eb6a0a3385117777cf7616e26fda33939fd61b752af4fcdce82",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "literal-1-tabs-plain",
+      "fixtureSha256": "e030ad212bb33267a063ec3b082b0576145ddef63f3a06335f926cf086b06920",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "move-between-10-plain",
+      "fixtureSha256": "21512060622c4e35cc03d7a2c2756505c93f2d8b52aac6adb9d557259e8e62bc",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "move-between-10-unicode",
+      "fixtureSha256": "b1ea777b52cdeedd23620f120f59f3df1c583309285e99168be813081de25d2f",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "move-block-10-unicode",
+      "fixtureSha256": "8d9eb5dbdc385b99e41e859b8dcaf8c94cda9af782f44bf79851d41833ceec2c",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "move-block-100-plain",
+      "fixtureSha256": "8a39af35f82e9734c2532ccd922de5e562d24b078e641f2968cf35038bf670ed",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "move-block-100-unicode",
+      "fixtureSha256": "9cd764ccd7dff70c4282142abf932fed9694de5a10849c507d970e0c47baaf03",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "multi-file-1-unicode",
+      "fixtureSha256": "29c30bb32eb552ffe7c6ab0008612ab28bc03d77f77b0c25dcc8f4e4b428e65d",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "multi-file-10-plain",
+      "fixtureSha256": "1856c995a4fd07a77e987ead7941dc55b704fc934527bb010e3b0eab7969cb70",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "replace-all-1-plain",
+      "fixtureSha256": "74148ec6c62caeafe051c9d3db1196cb003989fae5b49ca206d80fc76f4a7a7b",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "replace-all-1-unicode",
+      "fixtureSha256": "9d3ff1fbadee1acb503c38732c14cf1280dec46683018e97806e05351fcf5fab",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "replace-all-10-plain",
+      "fixtureSha256": "708825411165eabaf10d5827757ab2b4f64bfcb2828f89843e1594528a28ae58",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "replace-all-10-unicode",
+      "fixtureSha256": "d4c31e882ebc89ace882be7af844ef49d1e65a8ea50bc4422acf597c881dd0f3",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "replace-all-1000-unicode",
+      "fixtureSha256": "52c9352c71244d19fe43771854dd01e9dd22e35b0dfae157af3cd76198c6494f",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "replace-block-10-plain",
+      "fixtureSha256": "84fca38e6715264123513052f90853af1bfa3687625526c5f20aebe11978b7e9",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "replace-block-10-unicode",
+      "fixtureSha256": "1b46dca9751179e377ea45fbd3e6760e6e18ef2d89817f64b8bb8450bd2dcad6",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "replace-block-100-unicode",
+      "fixtureSha256": "842cb9deb8f3aa10526eab15a698db5b2927ac128829186ee0523cee6d5be6b4",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "select-one-10-plain",
+      "fixtureSha256": "1d1190ac2dc1b5e4b67cd2aa89f47512f276d6f54ddddd3bd827c0b065f6699d",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "select-one-10-unicode",
+      "fixtureSha256": "bfb9b1cca4e704aa83d078c783e8febb8b756f0f72d8c1765bc5115a4aa1379c",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "select-one-100-unicode",
+      "fixtureSha256": "e028ac3326389b2f8a9bd93dcc732c83d6812cc0cce2dbf0a66a99907f2dd6f3",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "select-one-1000-plain",
+      "fixtureSha256": "eeedf04fcd6bcc22706c86eff346ad7f9d7a8f04655fa4c4f000a2259ae570c6",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "select-subset-10-plain",
+      "fixtureSha256": "a6903468eed2b359d0ffd2a82d733961067c1540c21e8a749dfb7549d7badd29",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "select-subset-10-unicode",
+      "fixtureSha256": "bbf7ff16443627efd4ca13d40fad4052d74c795d7c931db2a676dbb150442527",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "unicode-fix-1-minus-unicode",
+      "fixtureSha256": "60401e9c6b3741f9fd8a6bf7cf6e6974aca8d725ac967711019698e33a49bdb6",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "unicode-fix-1-narrow-space-unicode",
+      "fixtureSha256": "0414c0a0fe82d53a1799def579b744b1dfb4eac5fe06ffc42eec726e7a660c02",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "unicode-fix-1-nonbreaking-hyphen-unicode",
+      "fixtureSha256": "982fa16e35cc4307993c4b11f293a19d70c16a8292e79f641a556c3ab339bb38",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "unicode-fix-1-word-joiner-unicode",
+      "fixtureSha256": "45c2dbe1dd3f954f56931323c9d2b98ebcc0cbebbe171b389b5dc1e8be0afb4c",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "unique-10-unicode",
+      "fixtureSha256": "cb65f88322bb865a95377f1f30da52d09b20eafd305f5bf17f8844d8018721ad",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "unique-100-plain",
+      "fixtureSha256": "555b3fba4fd843296a26f47381ee3aa62ef8b3e9e84953cf9bfb0532eab25d31",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "unique-1000-plain",
+      "fixtureSha256": "985ca9aa2250e9bd81405ecb7b0797da98f9f3a9902936aab86f087da05ecccc",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    },
+    {
+      "id": "unique-1000-unicode",
+      "fixtureSha256": "e483bf5edf560e7e2260f2cd1caf0285367ee24f17b26fa1bc16cefbb4fdf988",
+      "reasons": [
+        {
+          "profile": "pi-toolkit",
+          "reason": "not-selected-v1"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codex Edit 测试报告</title>
+<style>
+:root{--ink:#17221f;--muted:#65736d;--paper:#f5f7f2;--panel:#fff;--line:#d9e1db;--green:#0e6b50;--green-soft:#dcefe7;--amber:#a96518;--amber-soft:#fff0d9;--red:#a33c32;--blue:#245f8c;--blue-soft:#e2eff8;--shadow:0 12px 32px rgba(23,34,31,.08);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:var(--paper);line-height:1.58}.topbar{position:sticky;top:0;z-index:5;background:rgba(245,247,242,.94);border-bottom:1px solid var(--line);backdrop-filter:blur(12px)}.topbar-inner{max-width:1180px;margin:auto;padding:14px 26px;display:flex;align-items:center;justify-content:space-between;gap:18px}.brand{font-weight:800;letter-spacing:.02em}.brand span{color:var(--green)}.nav{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.nav a{color:var(--muted);text-decoration:none;padding:6px 10px;border-radius:7px;font-size:13px}.nav a:hover,.nav a:focus-visible{color:var(--green);background:var(--green-soft);outline:none}.status{color:var(--amber);background:var(--amber-soft);padding:5px 10px;border-radius:999px;font-weight:800;font-size:12px;white-space:nowrap}main{max-width:1180px;margin:auto;padding:58px 26px 90px}.eyebrow{color:var(--green);font-size:12px;text-transform:uppercase;letter-spacing:.14em;font-weight:800}h1{font-size:clamp(38px,6vw,70px);line-height:1.03;max-width:900px;margin:12px 0 24px;letter-spacing:-.04em}h2{font-size:28px;line-height:1.12;margin:70px 0 20px;padding-top:12px;letter-spacing:-.025em;border-top:3px solid var(--green)}h3{margin:34px 0 12px;font-size:18px;color:var(--green)}p{max-width:860px;color:#42514a}main>p:first-of-type{font-size:18px;color:var(--ink);background:var(--amber-soft);border-left:4px solid var(--amber);padding:18px 20px}strong{color:var(--amber)}code{font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;background:#edf1ee;padding:2px 5px;border-radius:4px;font-size:.92em}a{color:var(--green);overflow-wrap:anywhere}.table-wrap{overflow-x:auto;margin:20px 0 32px;border:1px solid var(--line);box-shadow:var(--shadow);background:var(--panel)}table{width:100%;border-collapse:collapse;min-width:760px;font-size:14px}th,td{text-align:left;vertical-align:top;padding:14px 16px;border-bottom:1px solid var(--line)}th{position:sticky;top:58px;background:#edf3ee;color:#405148;font-size:12px;text-transform:uppercase;letter-spacing:.05em}tr:last-child td{border-bottom:0}tbody tr:hover{background:#f3f8f4}ul{max-width:920px;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow);padding:18px 22px 18px 42px}li{margin:8px 0;color:#42514a}
+@media(max-width:820px){.topbar-inner{padding:12px 17px;align-items:flex-start;flex-direction:column}.nav{justify-content:flex-start}.status{position:absolute;right:17px;top:12px}.nav a{padding-left:0;margin-right:8px}main{padding:40px 17px 70px}h1{font-size:40px}.table-wrap{margin-left:-17px;margin-right:-17px;border-left:0;border-right:0}th{top:101px}}
+@media print{.topbar{position:static}.nav{display:none}main{padding-top:30px}.table-wrap{overflow:visible;box-shadow:none}table{min-width:0;font-size:10px}h2{break-after:avoid}.table-wrap,ul{break-inside:avoid;box-shadow:none}}
+</style>
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner"><div class="brand">Pi <span>Codex Edit</span> 测试报告</div><nav class="nav" aria-label="页面导航"><a href="#summary">摘要</a><a href="#benchmark">真实模型</a><a href="#protocol">协议</a><a href="#safety">安全</a><a href="#incidents">事故</a><a href="#comparison">对比</a><a href="#reproducibility">复现</a></nav><span class="status">通过，有共同例外</span></div></header>
+<main><div class="eyebrow">GPT-5.6 Sol / Pi 0.85.1 / Explicit Edit Benchmark</div><h1 id="top">Codex Edit 测试报告</h1>
+<p><strong>回归检查：通过；Agent Benchmark：通过（有共同例外）</strong></p>
+<p>被测包：<code>@maxiaochao/pi-codex-edit</code>（当前工作区）</p>
+<p>本报告严格区分真实模型基准、确定性协议回归和安全回归，三类成功率不会混算。</p>
+<h2 id="summary">执行摘要</h2>
+<ul><li>Agent Benchmark：<strong>通过（有共同例外）</strong> — 已完成 300/300 条 chain；本地版 First Exact 92/100、Final Exact 92/100，全部正式门槛通过。</li><li>协议/包回归：<strong>通过</strong> — 4/4 项检查通过。</li><li>安全回归：<strong>5/5 正确拒绝且零写入</strong>，包括工作区外路径。</li><li>下文提供 Agent、协议、安全、效率、版本、integrity 和任务来源的完整证据。</li></ul>
+<h2 id="benchmark">Agent Benchmark：真实模型基准</h2>
+<p><strong>状态：通过（有共同例外）</strong></p>
+<p>三个测试臂均完成全部 100 个配对任务（共 300 条 chain），实际成本为 $12.388。本地版满足全部正式验收门槛；8 个最终失败均为三臂共同失败，不是本地版独有回归。</p>
+<div class="table-wrap"><table><thead><tr><th>测试臂</th><th>覆盖率</th><th>First Exact</th><th>Final Exact</th><th>恢复次数 / 净增益</th><th>Score v2</th><th>成本</th><th>Token</th><th>耗时</th><th>工具调用</th><th>失败调用</th><th>Provider 失败</th></tr></thead><tbody>
+<tr><td>原生 edit</td><td>100/100</td><td>91/100 (91.00%)</td><td>92/100 (92.00%)</td><td>41 / +1</td><td>91.25%</td><td>$4.104</td><td>1,253,279</td><td>2887.2s</td><td>225</td><td>0</td><td>0</td></tr>
+<tr><td>发布版 0.1.7</td><td>100/100</td><td>91/100 (91.00%)</td><td>92/100 (92.00%)</td><td>41 / +1</td><td>91.25%</td><td>$4.139</td><td>1,080,588</td><td>2777.4s</td><td>198</td><td>0</td><td>0</td></tr>
+<tr><td>本地修改版</td><td>100/100</td><td>92/100 (92.00%)</td><td>92/100 (92.00%)</td><td>40 / +0</td><td>92.00%</td><td>$4.145</td><td>1,049,619</td><td>2838.0s</td><td>194</td><td>0</td><td>0</td></tr>
+</tbody></table></div>
+<p>Score v2 = <code>覆盖率 ×（0.75 × 首次精确率 + 0.25 × 最终精确率）</code>。本地版为 92.00%，严格高于原生 edit 和发布版的 91.25%。</p>
+<h3 id="section-1">完整配对结果</h3>
+<div class="table-wrap"><table><thead><tr><th>对比</th><th>指标</th><th>本地版胜</th><th>本地版负</th><th>持平</th></tr></thead><tbody>
+<tr><td>本地版 vs 原生 edit</td><td>首次精确</td><td>1</td><td>0</td><td>99</td></tr>
+<tr><td>本地版 vs 原生 edit</td><td>最终精确</td><td>0</td><td>0</td><td>100</td></tr>
+<tr><td>本地版 vs 发布版</td><td>首次精确</td><td>1</td><td>0</td><td>99</td></tr>
+<tr><td>本地版 vs 发布版</td><td>最终精确</td><td>0</td><td>0</td><td>100</td></tr>
+</tbody></table></div>
+<p>首次精确的两个本地版净胜任务分别是：相对原生 edit 的 <code>delete-subset-1000-plain</code>，以及相对发布版的 <code>copy-block-10-plain</code>。最终精确没有配对差异。</p>
+<h3 id="section-2">正式验收门槛</h3>
+<div class="table-wrap"><table><thead><tr><th>门槛</th><th>结果</th></tr></thead><tbody>
+<tr><td>本地 Score v2 严格高于原生 edit</td><td>通过</td></tr>
+<tr><td>本地 First Exact 不低于原生 edit</td><td>通过</td></tr>
+<tr><td>本地 Final Exact 距最佳对照不超过 2/100</td><td>通过</td></tr>
+<tr><td>相对发布版的改善数不少于回归数</td><td>通过</td></tr>
+<tr><td>本地独有最终回归不超过 2 个</td><td>通过</td></tr>
+<tr><td>四项效率至少三项不差于原生，且单项恶化不超过 10%</td><td>通过</td></tr>
+</tbody></table></div>
+<h3 id="edit">相对原生 edit 的效率</h3>
+<div class="table-wrap"><table><thead><tr><th>指标</th><th>原生 edit</th><th>本地版</th><th>变化</th><th>判定</th></tr></thead><tbody>
+<tr><td>成本</td><td>$4.104</td><td>$4.145</td><td>1.01%</td><td>轻微恶化，低于 10% 上限</td></tr>
+<tr><td>Token</td><td>1,253,279</td><td>1,049,619</td><td>-16.25%</td><td>改善</td></tr>
+<tr><td>耗时</td><td>2887.2s</td><td>2838.0s</td><td>-1.70%</td><td>改善</td></tr>
+<tr><td>工具调用</td><td>225</td><td>194</td><td>-13.78%</td><td>改善</td></tr>
+</tbody></table></div>
+<p>本地版四项效率中三项优于原生 edit；成本增加约 1%，没有任何指标恶化超过 10%，也没有超过 20% 的警告项。</p>
+<h3 id="cohort">Cohort 覆盖</h3>
+<div class="table-wrap"><table><thead><tr><th>Cohort</th><th>计划任务</th><th>已完成配对任务</th><th>原生 First / Final</th><th>发布版 First / Final</th><th>本地版 First / Final</th></tr></thead><tbody>
+<tr><td>neutral</td><td>80</td><td>80</td><td>73/74</td><td>73/74</td><td>74/74</td></tr>
+<tr><td>challenge</td><td>20</td><td>20</td><td>18/18</td><td>18/18</td><td>18/18</td></tr>
+</tbody></table></div>
+<h3 id="first-final">任务类别明细（First / Final / 总数）</h3>
+<div class="table-wrap"><table><thead><tr><th>类别</th><th>配对任务</th><th>原生 edit</th><th>发布版</th><th>本地版</th></tr></thead><tbody>
+<tr><td>copy-block</td><td>3</td><td>3/3/3</td><td>2/3/3</td><td>3/3/3</td></tr>
+<tr><td>copy-within</td><td>3</td><td>3/3/3</td><td>3/3/3</td><td>3/3/3</td></tr>
+<tr><td>delete-block</td><td>3</td><td>3/3/3</td><td>3/3/3</td><td>3/3/3</td></tr>
+<tr><td>delete-subset</td><td>3</td><td>2/3/3</td><td>3/3/3</td><td>3/3/3</td></tr>
+<tr><td>distinct-edits</td><td>4</td><td>4/4/4</td><td>4/4/4</td><td>4/4/4</td></tr>
+<tr><td>insert-block</td><td>3</td><td>3/3/3</td><td>3/3/3</td><td>3/3/3</td></tr>
+<tr><td>insert-payload</td><td>3</td><td>3/3/3</td><td>3/3/3</td><td>3/3/3</td></tr>
+<tr><td>insert-subset</td><td>3</td><td>3/3/3</td><td>3/3/3</td><td>3/3/3</td></tr>
+<tr><td>language-insert</td><td>13</td><td>13/13/13</td><td>13/13/13</td><td>13/13/13</td></tr>
+<tr><td>language-replace</td><td>13</td><td>13/13/13</td><td>13/13/13</td><td>13/13/13</td></tr>
+<tr><td>language-select</td><td>13</td><td>13/13/13</td><td>13/13/13</td><td>13/13/13</td></tr>
+<tr><td>literal</td><td>5</td><td>5/5/5</td><td>5/5/5</td><td>5/5/5</td></tr>
+<tr><td>move-between</td><td>4</td><td>4/4/4</td><td>4/4/4</td><td>4/4/4</td></tr>
+<tr><td>move-block</td><td>3</td><td>3/3/3</td><td>3/3/3</td><td>3/3/3</td></tr>
+<tr><td>multi-file</td><td>4</td><td>4/4/4</td><td>4/4/4</td><td>4/4/4</td></tr>
+<tr><td>replace-all</td><td>3</td><td>3/3/3</td><td>3/3/3</td><td>3/3/3</td></tr>
+<tr><td>replace-block</td><td>3</td><td>3/3/3</td><td>3/3/3</td><td>3/3/3</td></tr>
+<tr><td>select-one</td><td>4</td><td>4/4/4</td><td>4/4/4</td><td>4/4/4</td></tr>
+<tr><td>select-subset</td><td>4</td><td>2/2/4</td><td>2/2/4</td><td>2/2/4</td></tr>
+<tr><td>unicode-fix</td><td>4</td><td>0/0/4</td><td>0/0/4</td><td>0/0/4</td></tr>
+<tr><td>unique</td><td>2</td><td>0/0/2</td><td>0/0/2</td><td>0/0/2</td></tr>
+</tbody></table></div>
+<h3 id="section-3">共同例外</h3>
+<p>三臂最终均失败的 8 个任务为：<code>select-subset-1000-unicode</code>、<code>select-subset-1000-plain</code>、4 个 <code>unicode-fix-*</code> 任务，以及 <code>unique-10-plain</code>、<code>unique-100-unicode</code>。它们不构成本地修改版回归；本地独有最终回归为 0。</p>
+<h3 id="reproducibility">可复现信息</h3>
+<ul><li>数据源：<a href="https://github.com/alexshpunt/explicit-edit-benchmark">https://github.com/alexshpunt/explicit-edit-benchmark</a>，commit <code>5827e3fb65845f4b76adb06e5919d94ec4ffd5cf</code>。</li><li>冻结任务：80 Neutral + 20 Challenge；seed 为 <code>pi-toolkit-codex-edit-100-v1</code>。</li><li>模型：<code>openai-codex/gpt-5.6-sol</code>；reasoning：<code>low</code>；Pi：<code>0.85.1</code>；最多 5 次 Oracle recovery。</li><li>发布版：<code>@maxiaochao/pi-codex-edit@0.1.7 (sha512-hfNfx20h51FLCueXaMqBUAVYnxoCakuI306rzuFPI/lS0HT1jE/wQ8xkKl9PwEXboVVD6ZzS/YB0VVrd67V7cw==)</code>。</li><li>本地版：<code>@maxiaochao/pi-codex-edit@0.1.7+local (sha512-Mf21ZfSwOOgaH2lSiF/DpoA8Jk5jH84MaZUX1abkMop3HST3xt2YtCw2NKwrRJpvmJB02bl9wwYyFlAVI68Qwg==)</code>。</li><li>Run ID：<code>explicit-edit-100-sol-low-v3-complete</code>；运行完整性：300/300。</li><li>Identity：task manifest <code>cab0278f530271c7bb3de3e4dba6ab252fa2b748d00164e749ecdbd8f9f7f431</code>；config <code>739bb323275fdcead7709f19a894b0dee57062f40064c04d182d96474535328c</code>；verifier <code>8bd4be15c886bba84e8a6fa46576c43f2ca0f02d2536d98403f97361914a166d</code>。</li><li>Provider 失败：0；失败工具调用：0。</li></ul>
+<h2 id="protocol">协议与包验证摘要</h2>
+<div class="table-wrap"><table><thead><tr><th>检查项</th><th>结果</th><th>命令</th></tr></thead><tbody>
+<tr><td>Node 回归测试</td><td>通过</td><td><code>node --experimental-strip-types --test tests/package.test.mjs tests/parser.test.mjs tests/released-vs-local.test.mjs tests/benchmark.test.mjs</code></td></tr>
+<tr><td>原生 edit 与本地 Codex Edit 对比</td><td>通过</td><td><code>pi -ne -e ./tests/native-vs-codex.ts</code></td></tr>
+<tr><td>扩展加载</td><td>通过</td><td><code>pi -ne -e ./extensions/codex-edit.ts</code></td></tr>
+<tr><td>独立包 tarball</td><td>通过</td><td><code>npm pack --dry-run --json</code></td></tr>
+</tbody></table></div>
+<h2 id="section-4">确定性回归基线</h2>
+<ul><li>Node 测试：预期 22 个，覆盖 parser、matcher、路由、包契约、resolved-path 防护、发布版对比、分层调度和生产事故语料。</li><li>共享对比 corpus：12 个 case。</li><li>原生 edit：5 通过 / 2 失败或正确拒绝 / 5 不适用。</li><li>Codex Edit 发布版 v0.1.7：6 通过 / 6 失败或正确拒绝。</li><li>Codex Edit 本地版：7 通过 / 5 正确安全拒绝。</li></ul>
+<p>“正确拒绝”表示无效或陈旧操作被拒绝，且工作区没有变化。“不适用”表示 Pi 原生 <code>edit</code> 无法用一次编辑协议调用表达该操作，不计为工具缺陷。</p>
+<h2 id="safety">安全回归</h2>
+<p>本地版 5/5 个安全 case 均正确拒绝，且工作区零写入。特别是 <code>outside-workspace-absolute-path</code> 的结果为 <strong>工作区外路径 — 正确拒绝</strong>；放行该操作会允许任意写入 benchmark sandbox 之外。安全拒绝不计入编辑失败率。</p>
+<h2 id="incidents">生产事故回归</h2>
+<p>这些 case 来自实际报告过的问题。Agent-and-protocol case 使用不包含工具语法提示的用户任务，可进入后续付费模型运行；protocol-only case 只验证指定工具形态，不用于宣称模型质量提升。</p>
+<div class="table-wrap"><table><thead><tr><th>Incident</th><th>层级</th><th>对应回归</th><th>问题</th></tr></thead><tbody>
+<tr><td><code>incident-repeated-markdown-context</code></td><td>agent-and-protocol</td><td><code>repeated-markdown-separator</code></td><td>重复 Markdown 分隔符曾触发 ambiguous match</td></tr>
+<tr><td><code>incident-repeated-update-same-path</code></td><td>protocol-only</td><td><code>repeated-update-same-path</code></td><td>同一个 raw path 的多个 Update File 块在发布版中冲突</td></tr>
+<tr><td><code>incident-runner-type-rename</code></td><td>agent-and-protocol</td><td><code>ordered-runner-type-renames</code></td><td>runner.ts 中重复类型名的大范围重命名曾触发 ambiguous match</td></tr>
+<tr><td><code>incident-multi-file-structural-edit</code></td><td>agent-and-protocol</td><td><code>multi-file-add-delete-move</code></td><td>一次 patch 中的 add/delete/move 需要原子预校验和执行</td></tr>
+<tr><td><code>incident-bom-crlf</code></td><td>agent-and-protocol</td><td><code>bom-and-crlf</code></td><td>UTF-8 BOM 与 CRLF 曾导致原生精确文本匹配失败</td></tr>
+</tbody></table></div>
+<p>冻结的 100-task 清单按每 5 个任务包含 4 Neutral + 1 Challenge 的顺序调度；本次完整运行覆盖全部 80 个 Neutral 和 20 个 Challenge。</p>
+<h2 id="comparison">确定性对比结论</h2>
+<p>每个测试臂运行同一组 12 个 case。对比 1 执行 24 次工具调用（原生 + 本地）；对比 2 执行 24 次 parser/执行评估（发布版 + 本地）。下表以 7 个有效编辑任务为完成率分母；5 个故意无效或危险的 patch 单独计入安全检查。</p>
+<h3 id="1-pi-edit-vs-codex-edit">1. Pi 原生 edit vs Codex Edit 本地版</h3>
+<div class="table-wrap"><table><thead><tr><th>指标</th><th>Pi 原生 edit</th><th>Codex Edit 本地版</th><th>变化</th></tr></thead><tbody>
+<tr><td>有效任务完成</td><td>5/7</td><td>7/7</td><td>+2 个</td></tr>
+<tr><td>有效任务完成率</td><td>71.4%</td><td>100.0%</td><td>+28.6 pp</td></tr>
+<tr><td>有效任务失败</td><td>1/7</td><td>0/7</td><td>减少 1 个</td></tr>
+<tr><td>有效任务不适用</td><td>1/7</td><td>0/7</td><td>减少 1 个</td></tr>
+<tr><td>正确拒绝适用的危险/陈旧 patch</td><td>1/1 (100.0%)</td><td>5/5 (100.0%)</td><td>Codex 覆盖全部 5 个</td></tr>
+</tbody></table></div>
+<h3 id="2-codex-edit-v0-1-7-vs">2. Codex Edit 发布版 v0.1.7 vs 本地修改版</h3>
+<div class="table-wrap"><table><thead><tr><th>指标</th><th>发布版 v0.1.7</th><th>本地修改版</th><th>变化</th></tr></thead><tbody>
+<tr><td>有效任务完成</td><td>6/7</td><td>7/7</td><td>+1 个</td></tr>
+<tr><td>有效任务完成率</td><td>85.7%</td><td>100.0%</td><td>+14.3 pp</td></tr>
+<tr><td>安全 case 正确拒绝</td><td>5/5 (100.0%)</td><td>5/5 (100.0%)</td><td>无变化</td></tr>
+<tr><td>保留原有通过任务</td><td>6/6</td><td>6/6</td><td>100% 保留</td></tr>
+</tbody></table></div>
+<p>这些是确定性协议/执行成功率，不是独立模型采样成功率。Agent 质量、token、成本和耗时只在 Agent Benchmark 章节报告。</p>
+<h2 id="case-edit-vs-codex-edit">逐 case：原生 edit vs 本地 Codex Edit</h2>
+<p>该对比在隔离临时工作区中执行 Pi 导出的 <code>createEditToolDefinition</code>，以及本地扩展实际注册的 <code>apply_patch</code>。</p>
+<div class="table-wrap"><table><thead><tr><th>Case</th><th>原生 edit</th><th>本地 Codex Edit</th><th>说明</th></tr></thead><tbody>
+<tr><td><code>unique-replacement</code></td><td>通过</td><td>通过</td><td>预期行为一致</td></tr>
+<tr><td><code>disjoint-edits-one-file</code></td><td>通过</td><td>通过</td><td>预期行为一致</td></tr>
+<tr><td><code>repeated-markdown-separator</code></td><td>正确拒绝/失败</td><td>通过</td><td>Codex 协议可处理该形态</td></tr>
+<tr><td><code>repeated-update-same-path</code></td><td>通过</td><td>通过</td><td>预期行为一致</td></tr>
+<tr><td><code>ordered-runner-type-renames</code></td><td>通过</td><td>通过</td><td>预期行为一致</td></tr>
+<tr><td><code>multi-file-add-delete-move</code></td><td>不适用</td><td>通过</td><td>Codex 协议可处理该形态</td></tr>
+<tr><td><code>stale-expected-lines</code></td><td>正确拒绝/失败</td><td>正确拒绝/失败</td><td>预期行为一致</td></tr>
+<tr><td><code>conflicting-targets</code></td><td>不适用</td><td>正确拒绝/失败</td><td>两者均避免危险写入</td></tr>
+<tr><td><code>empty-update-chunk</code></td><td>不适用</td><td>正确拒绝/失败</td><td>两者均避免危险写入</td></tr>
+<tr><td><code>resolved-path-alias-conflict</code></td><td>不适用</td><td>正确拒绝/失败</td><td>两者均避免危险写入</td></tr>
+<tr><td><code>outside-workspace-absolute-path</code></td><td>不适用</td><td>正确拒绝/失败</td><td>两者均避免危险写入</td></tr>
+<tr><td><code>bom-and-crlf</code></td><td>通过</td><td>通过</td><td>预期行为一致</td></tr>
+</tbody></table></div>
+<p>关键结果：本地 Codex Edit 可以处理重复 Markdown 上下文和多文件 add/delete/move；原生精确替换无法用一次调用安全表达这些形态。两者都会拒绝陈旧的预期文本。</p>
+<h2 id="case-v0-1-7-vs-codex-edit">逐 case：发布版 v0.1.7 vs 本地 Codex Edit</h2>
+<p>发布版测试臂使用从 tag <code>codex-edit-v0.1.7</code> 冻结的语义基线（source blob <code>e2896b59d40b5f6f01b3a4a7918476f4acc28cd8</code>）。</p>
+<div class="table-wrap"><table><thead><tr><th>Case</th><th>发布版 v0.1.7</th><th>本地版</th><th>回归状态</th></tr></thead><tbody>
+<tr><td><code>unique-replacement</code></td><td>通过</td><td>通过</td><td>已保留</td></tr>
+<tr><td><code>disjoint-edits-one-file</code></td><td>通过</td><td>通过</td><td>已保留</td></tr>
+<tr><td><code>repeated-markdown-separator</code></td><td>通过</td><td>通过</td><td>已保留</td></tr>
+<tr><td><code>repeated-update-same-path</code></td><td>正确拒绝/失败</td><td>通过</td><td>已修复</td></tr>
+<tr><td><code>ordered-runner-type-renames</code></td><td>通过</td><td>通过</td><td>已保留</td></tr>
+<tr><td><code>multi-file-add-delete-move</code></td><td>通过</td><td>通过</td><td>已保留</td></tr>
+<tr><td><code>stale-expected-lines</code></td><td>正确拒绝/失败</td><td>正确拒绝/失败</td><td>已保留</td></tr>
+<tr><td><code>conflicting-targets</code></td><td>正确拒绝/失败</td><td>正确拒绝/失败</td><td>已保留</td></tr>
+<tr><td><code>empty-update-chunk</code></td><td>正确拒绝/失败</td><td>正确拒绝/失败</td><td>已保留</td></tr>
+<tr><td><code>resolved-path-alias-conflict</code></td><td>正确拒绝/失败</td><td>正确拒绝/失败</td><td>已保留</td></tr>
+<tr><td><code>outside-workspace-absolute-path</code></td><td>正确拒绝/失败</td><td>正确拒绝/失败</td><td>已保留</td></tr>
+<tr><td><code>bom-and-crlf</code></td><td>通过</td><td>通过</td><td>已保留</td></tr>
+</tbody></table></div>
+<p>关键结果：<code>repeated-update-same-path</code> 从 v0.1.7 的失败变为本地版通过。既有成功 case 全部保留；陈旧、空 chunk、冲突和 resolved-alias 目标仍会被安全拒绝。</p>
+<h2 id="coverage">已报告错误覆盖</h2>
+<div class="table-wrap"><table><thead><tr><th>错误形态</th><th>当前策略</th><th>Corpus 覆盖</th></tr></thead><tbody>
+<tr><td>重复 Markdown/HTML 区域或重复类型名（<code>Ambiguous ... match</code>）</td><td>从当前 hunk cursor 起选择第一个匹配，hunk 按源位置排序</td><td><code>repeated-markdown-separator</code>、<code>ordered-runner-type-renames</code> 及 parser HTML 测试</td></tr>
+<tr><td>同一 raw path 出现多个普通 <code>Update File</code></td><td>合并后按顺序执行</td><td><code>repeated-update-same-path</code></td></tr>
+<tr><td>Add/delete/move 或 resolved path alias 冲突</td><td>写入前拒绝</td><td><code>conflicting-targets</code>、<code>resolved-path-alias-conflict</code></td></tr>
+<tr><td>工作区外绝对路径</td><td>读取或写入前正确拒绝</td><td><code>outside-workspace-absolute-path</code></td></tr>
+<tr><td>空 update chunk</td><td>拒绝，不猜测意图</td><td><code>empty-update-chunk</code></td></tr>
+<tr><td>陈旧预期行</td><td>拒绝；调用方必须重新读取并生成 patch</td><td><code>stale-expected-lines</code></td></tr>
+<tr><td>缺少 <code>patch</code> 参数</td><td>必填 TypeBox schema 在扩展执行前拒绝</td><td>包契约测试</td></tr>
+</tbody></table></div>
+<h2 id="section-5">上游实现对齐</h2>
+<p>报告结构遵循 OpenAI Codex 的 scenario-test 模式：输入文件 + patch + 精确预期的最终文件系统。新旧 parser 对比采用 Codex 统一 streaming parser 时使用的差分测试方法。</p>
+<p>本地 repeated-header 支持是有意加入的兼容扩展。当前 Codex 已验证实现会拒绝多个操作解析到同一路径，并推荐在一个 <code>Update File</code> 下使用多个 <code>@@</code> chunk。本实现只容忍 raw path 完全相同的重复普通 update；resolved alias 和破坏性操作冲突仍会拒绝。</p>
+<p>来源：</p>
+<ul><li>OpenAI Codex scenario tests: <a href="https://github.com/openai/codex/blob/9a8730f3/codex-rs/apply-patch/tests/suite/scenarios.rs">https://github.com/openai/codex/blob/9a8730f3/codex-rs/apply-patch/tests/suite/scenarios.rs</a></li><li>OpenAI Codex parser differential validation: <a href="https://github.com/openai/codex/commit/e26f734f919819bdd802b1b67ad653863c7a90e5">https://github.com/openai/codex/commit/e26f734f919819bdd802b1b67ad653863c7a90e5</a></li><li>Duplicate resolved-path guard: <a href="https://github.com/openai/codex/pull/37867">https://github.com/openai/codex/pull/37867</a></li></ul>
+<h2 id="section-6">维护规则</h2>
+<p>每个新的生产失败都必须先转化为 <code>tests/comparison-cases.mjs</code> 中的最小 case，并明确原生、发布版和本地版预期。已有 case 保持不变。发布前运行两组对比并重新生成本报告。模型路由、prompt 或 schema 变化还必须运行独立的真实模型 A/B benchmark。</p></main>
+</body>
+</html>

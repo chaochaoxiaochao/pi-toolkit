@@ -1,3 +1,9 @@
+## Unreleased
+
+- harden bundled Codex Edit for repeated updates to one path and add mandatory native-vs-Codex and released-vs-local comparisons over a growing regression corpus
+- generate and bundle the latest Codex Edit Markdown and self-contained HTML test report on every test run
+- commit the completed 100-task benchmark evidence and make report generation deterministic on clean checkouts
+
 ## 2026-09-30 - v0.9.4
 
 - retain Codex Edit in the root toolkit while restoring `@maxiaochao/pi-codex-edit` as an independently installable child package; both distributions share the implementation under `packages/codex-edit`

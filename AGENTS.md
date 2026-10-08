@@ -41,7 +41,7 @@ pi-toolkit/
 - 修改子包时先运行 `npm --prefix packages/<slug> test`，再运行其 README/TESTING 指定的 load test 和 `npm pack ./packages/<slug> --dry-run`。
 - 运行 `node scripts/capture-package-media.mjs` 后通过 `docs/package-media-gallery.html` 检查全部真实截图与动画；完整验收结果记录在 `docs/verification.md`。
 - 修改根入口、BTW、主题、全局指令或组合清单时运行 `npm test`、`npm run load-test` 和根目录 `npm pack --dry-run`。
-- Codex Edit 必须加载 `packages/codex-edit/extensions/codex-edit.ts`；matcher 改动必须覆盖重复 HTML/Markdown 区域、多 hunk 和多文件 patch。
+- Codex Edit 必须加载 `packages/codex-edit/extensions/codex-edit.ts`；parser/matcher 改动必须覆盖重复 HTML/Markdown 区域、同路径多 update、多 hunk、多文件 patch，以及空 chunk、stale context 和冲突路径的安全失败。每个新生产问题先加入 `tests/comparison-cases.mjs`，且 native/released 两组对比都必须通过。`npm --prefix packages/codex-edit test` 必须从测试结果生成 `docs/test-report.md`，再转换为自包含 `docs/test-report.html`；提交和发版必须包含最新报告。冻结的 released baseline 保持不变。
 - Cache Export 的发布验收要求确定性测试通过，并在有 Chrome 的环境中跑浏览器 E2E；skip 不算发布验收通过。
 - `packages/cache-export/src/tau-assets.ts` 来自 `huggingface/tau` 的 `session_usage.py`，只能重生成，不能手改。
 - Tiny Subagent 的实现可能存在并行工作；重构 package 接线时保留其未提交实现改动。

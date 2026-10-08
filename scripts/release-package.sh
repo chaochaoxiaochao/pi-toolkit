@@ -66,20 +66,10 @@ git rev-parse --verify --quiet "refs/tags/$ROOT_TAG" >/dev/null && {
 }
 
 echo "==> 6/9 child changelog"
-TMP_CHILD_CHANGELOG=$(mktemp)
-{
-  printf '## %s - v%s\n\n- %s\n\n' "$(date +%F)" "$CHILD_VERSION" "$NOTE"
-  cat "$PACKAGE_DIR/CHANGELOG.md"
-} > "$TMP_CHILD_CHANGELOG"
-mv "$TMP_CHILD_CHANGELOG" "$PACKAGE_DIR/CHANGELOG.md"
+node scripts/update-release-changelog.mjs "$PACKAGE_DIR/CHANGELOG.md" "$CHILD_VERSION" "$NOTE"
 
 echo "==> 7/9 root changelog"
-TMP_ROOT_CHANGELOG=$(mktemp)
-{
-  printf '## %s - v%s\n\n- bundle %s v%s: %s\n\n' "$(date +%F)" "$ROOT_VERSION" "$SLUG" "$CHILD_VERSION" "$NOTE"
-  cat CHANGELOG.md
-} > "$TMP_ROOT_CHANGELOG"
-mv "$TMP_ROOT_CHANGELOG" CHANGELOG.md
+node scripts/update-release-changelog.mjs CHANGELOG.md "$ROOT_VERSION" "bundle $SLUG v$CHILD_VERSION: $NOTE"
 
 echo "==> 8/9 one commit, two tags"
 git add package.json CHANGELOG.md "$PACKAGE_DIR/package.json" "$PACKAGE_DIR/CHANGELOG.md"

@@ -13,6 +13,8 @@
   "files": [
     "extensions",
     "src",
+    "tests",
+    "benchmark",
     "docs",
     "config.json",
     "summary.md",
@@ -39,7 +41,11 @@
     "typebox": "*"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "test": "node tests/generate-test-report.mjs",
+    "test:regression": "node --experimental-strip-types --test tests/package.test.mjs tests/parser.test.mjs tests/released-vs-local.test.mjs tests/benchmark.test.mjs",
+    "test:compare-native": "pi -ne -e ./tests/native-vs-codex.ts",
+    "test:compare-released": "node --experimental-strip-types --test tests/released-vs-local.test.mjs",
+    "test:report": "node tests/generate-test-report.mjs",
     "load-test": "pi -ne -e ./extensions/codex-edit.ts"
   },
   "publishConfig": {

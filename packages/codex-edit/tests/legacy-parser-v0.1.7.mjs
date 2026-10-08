@@ -1,22 +1,9 @@
-import { relative, resolve, sep } from "node:path";
+// Frozen semantic baseline from @maxiaochao/pi-codex-edit v0.1.7.
+// Source blob: codex-edit-v0.1.7:packages/codex-edit/src/parser.ts
+// Git blob ID: e2896b59d40b5f6f01b3a4a7918476f4acc28cd8
+// Keep this file unchanged; add cases to comparison-cases.mjs instead.
 
-export const APPLY_PATCH_LARK_GRAMMAR = `start: begin_patch hunk+ end_patch
-begin_patch: "*** Begin Patch" LF
-end_patch: "*** End Patch" LF?
-hunk: add_hunk | delete_hunk | update_hunk
-add_hunk: "*** Add File: " filename LF add_line+
-delete_hunk: "*** Delete File: " filename LF
-update_hunk: "*** Update File: " filename LF change_move? change?
-filename: /(.+)/
-add_line: "+" /(.*)/ LF -> line
-change_move: "*** Move to: " filename LF
-change: (change_context | change_line)+ eof_line?
-change_context: ("@@" | "@@ " /(.+)/) LF
-change_line: ("+" | "-" | " ") /(.*)/ LF
-eof_line: "*** End of File" LF
-%import common.LF`;
-
-export function parsePatch(patch) {
+export function parseLegacyPatch(patch) {
   const lines = patch.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim().split("\n");
   if (lines[0]?.trim() !== "*** Begin Patch") throw new Error("The first line of the patch must be '*** Begin Patch'");
   if (lines.at(-1)?.trim() !== "*** End Patch") throw new Error("The last line of the patch must be '*** End Patch'");
@@ -88,32 +75,9 @@ export function parsePatch(patch) {
     throw new Error(`Invalid hunk header on line ${index + 1}: ${line}`);
   }
   if (operations.length === 0) throw new Error("Patch contains no file operations");
-  const coalesced = [];
-  const targetOwners = new Map();
-  for (const operation of operations) {
-    const prior = targetOwners.get(operation.path);
-    if (
-      prior?.action === "update" &&
-      !prior.moveTo &&
-      operation.action === "update" &&
-      !operation.moveTo
-    ) {
-      prior.chunkGroups.push(operation.chunks);
-      continue;
-    }
-    const targets = [operation.path, operation.moveTo].filter(Boolean);
-    if (targets.some((target) => targetOwners.has(target))) {
-      throw new Error("Multiple operations target the same path");
-    }
-    if (operation.action === "update") operation.chunkGroups = [operation.chunks];
-    coalesced.push(operation);
-    for (const target of targets) targetOwners.set(target, operation);
-  }
-  return coalesced;
-}
-
-function normalizeLineEndings(text) {
-  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const targets = operations.flatMap((operation) => [operation.path, operation.moveTo].filter(Boolean));
+  if (new Set(targets).size !== targets.length) throw new Error("Multiple operations target the same path");
+  return operations;
 }
 
 function findCandidates(lines, pattern, start, eof, compare) {
@@ -139,11 +103,11 @@ function locate(lines, pattern, start, eof, label) {
   throw new Error(`Failed to find expected lines${label ? ` in ${label}` : ""}: ${pattern.join("\\n")}`);
 }
 
-export function applyUpdate(content, chunks, path) {
+export function applyLegacyUpdate(content, chunks, path) {
   const bom = content.startsWith("\ufeff") ? "\ufeff" : "";
   const withoutBom = bom ? content.slice(1) : content;
   const ending = withoutBom.includes("\r\n") ? "\r\n" : "\n";
-  const normalized = normalizeLineEndings(withoutBom);
+  const normalized = withoutBom.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const hadFinalNewline = normalized.endsWith("\n");
   const lines = normalized === "" ? [] : normalized.split("\n");
   if (hadFinalNewline) lines.pop();
@@ -161,16 +125,4 @@ export function applyUpdate(content, chunks, path) {
   if (hadFinalNewline || next.length > 0) next += "\n";
   if (ending === "\r\n") next = next.replace(/\n/g, "\r\n");
   return bom + next;
-}
-
-export function applyUpdateGroups(content, chunkGroups, path) {
-  return chunkGroups.reduce((current, chunks) => applyUpdate(current, chunks, path), content);
-}
-
-export function resolveWorkspacePath(cwd, rawPath) {
-  if (!rawPath || rawPath.includes("\0")) throw new Error(`Unsafe patch path: ${rawPath}`);
-  const absolute = resolve(cwd, rawPath);
-  const rel = relative(cwd, absolute);
-  if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`)) throw new Error(`Patch path escapes workspace: ${rawPath}`);
-  return absolute;
 }

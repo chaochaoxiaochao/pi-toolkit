@@ -306,13 +306,13 @@ else:
     <div class="section-head"><div><div class="eyebrow">Files</div><h2>实现位置</h2></div></div>
     <div class="panel">
       <p><code>packages/codex-edit/extensions/codex-edit.ts</code>：工具注册、执行、防护、renderer 和模型路由。</p>
-      <p><code>packages/codex-edit/src/parser.ts</code>：patch grammar 对应的 parser、hunk matcher 和 workspace path resolver。</p>
-      <p><code>packages/codex-edit/tests/parser.test.mjs</code>：12 个 parser、matcher、路径与结构重构测试，当前全部通过。</p>
-      <p><code>/home/maxiaochao/.pi/agent/evaluations/gpt-edit-benchmark/report-final.md</code>：最终 benchmark 报告。</p>
+      <p><code>packages/codex-edit/src/parser.ts</code>：patch grammar 对应的 parser、顺序 hunk matcher、同路径 update 合并和 workspace path resolver。</p>
+      <p><code>packages/codex-edit/tests/</code>：22 个 Node 测试与 12 个共享对比 case，覆盖 native edit vs local Codex Edit、released v0.1.7 vs local parser、matcher、路径、结构重构、报告重建和工作区边界。</p>
+      <p><code>packages/codex-edit/docs/test-report.html</code>：当前自包含测试报告；同目录 Markdown 是权威中间源。</p>
     </div>
   </section>
 </main>
-<footer>说明页基于 Pi 0.84.4、Codex apply_patch 源码分析和 20-case GPT-5.6 benchmark。页面内没有包含任何 API key。</footer>
+<footer>说明页基于 Pi 0.85.1、Codex apply_patch 源码分析、历史 20-case 证据和已完成的 100-task 三臂基准。正式运行完成 300/300 条 chain，本地版满足全部验收门槛；页面内没有包含任何 API key。</footer>
 <script>
 const tabs = [...document.querySelectorAll('.tab')];
 const panels = [...document.querySelectorAll('.tab-panel')];

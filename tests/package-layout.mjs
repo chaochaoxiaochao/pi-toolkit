@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const root = JSON.parse(readFileSync("package.json", "utf8"));
@@ -48,4 +49,17 @@ execFileSync("bash", ["-n", "scripts/release-package.sh"]);
 assert.match(releaseScript, /git push --atomic origin main "\$CHILD_TAG" "\$ROOT_TAG"/);
 assert.match(releaseScript, /git commit -m "release \$SLUG v\$\{CHILD_VERSION\} and toolkit v\$\{ROOT_VERSION\}"/);
 assert.match(releaseScript, /npm pack "\.\/packages\/\$SLUG" --dry-run/);
+assert.match(releaseScript, /update-release-changelog\.mjs/);
+const releaseTestDirectory = mkdtempSync(join(tmpdir(), "release-changelog-"));
+try {
+  const changelog = join(releaseTestDirectory, "CHANGELOG.md");
+  writeFileSync(changelog, "## Unreleased\n\n- existing change\n\n## 2026-01-01 - v1.0.0\n\n- old release\n");
+  execFileSync(process.execPath, ["scripts/update-release-changelog.mjs", changelog, "1.0.1", "release note", "2026-10-08"]);
+  assert.equal(
+    readFileSync(changelog, "utf8"),
+    "## 2026-10-08 - v1.0.1\n\n- release note\n- existing change\n\n## 2026-01-01 - v1.0.0\n\n- old release\n",
+  );
+} finally {
+  rmSync(releaseTestDirectory, { recursive: true, force: true });
+}
 console.log("Package layout tests passed");

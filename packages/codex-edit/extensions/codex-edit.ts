@@ -10,7 +10,7 @@ import {
 import { Type } from "typebox";
 import {
   APPLY_PATCH_LARK_GRAMMAR,
-  applyUpdate,
+  applyUpdateGroups,
   parsePatch,
   resolveWorkspacePath,
 } from "../src/parser.ts";
@@ -140,7 +140,9 @@ export default async function (pi) {
           } else {
             await fileInfo(operation.source, `Source file ${operation.path}`);
             const before = await readFile(operation.source, "utf8");
-            const after = operation.action === "delete" ? "" : applyUpdate(before, operation.chunks, operation.path);
+            const after = operation.action === "delete"
+              ? ""
+              : applyUpdateGroups(before, operation.chunkGroups, operation.path);
             if (operation.destination && await pathExists(operation.destination)) {
               throw new Error(`Cannot move over existing file ${operation.moveTo}`);
             }

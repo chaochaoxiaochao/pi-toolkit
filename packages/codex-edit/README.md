@@ -63,9 +63,14 @@ The tool accepts raw Codex patch text between `*** Begin Patch` and `*** End Pat
 - `Update File`
 - `Move to`
 - multiple update hunks with `@@` context
+- repeated `Update File` blocks for the same path, applied in patch order
 - EOF-oriented insertions
 
 Before writing, it parses the complete patch, resolves paths, rejects workspace escapes and unsafe symlink/parent paths, reads all source files, and computes every update in memory. Only after preflight succeeds does it mutate files. It returns per-file diff details and reports committed paths if a later filesystem operation fails.
+
+Repeated plain updates to one file are coalesced into one file operation and each block sees the result of the previous block. Conflicting reuse of a path by add/delete/move operations is still rejected. Empty update chunks, missing `patch` arguments, and stale expected lines fail without guessing or partially applying the patch.
+
+This repeated-header tolerance is a deliberate Pi-side extension: current Codex verified invocation rejects multiple operations resolving to one path and expects multiple `@@` chunks under one `Update File` header. Codex Edit accepts repeated headers only when they are plain updates to the exact same raw path, because this malformed-but-unambiguous shape has occurred in real model output. Resolved aliases such as `src/a.ts` and `src/./a.ts`, moves, adds, and deletes remain conflicting.
 
 ## Configuration
 
@@ -116,8 +121,10 @@ Edit `config.json` in the standalone installed package, or `packages/codex-edit/
 
 ## Documentation
 
-- `summary.md`: benchmark summary and decision record.
+- `summary.md`: historical 20-case benchmark and decision record.
 - `codex-edit-explainer.html`: self-contained interactive architecture and configuration explainer.
-- `TESTING.md`: deterministic test flow, regression fixtures, and latest baseline.
+- `TESTING.md`: deterministic test flow, mandatory native-vs-Codex and released-vs-local comparisons, growing regression corpus, and latest baseline.
+- `docs/test-summary.md`: current short test summary.
+- `docs/test-report.html`: current self-contained report; its authoritative source is `docs/test-report.md`.
 
-The benchmark found equal final correctness in the fair 20-case comparison, with first editor-call success improving from 85% to 95%. Overall tool-call count and cache-inclusive token use were effectively unchanged, so the route stays limited to the GPT/Codex allowlist rather than replacing `edit` universally.
+The historical 20-case benchmark found equal final correctness, with first editor-call success improving from 85% to 95%. The completed frozen 100-task three-arm benchmark (`explicit-edit-100-sol-low-v3-complete`) ran all 300 chains: native and released v0.1.7 scored 91.25%, while the local version scored 92.00%. All arms reached 92% Final Exact, all eight final failures were shared, and there was no local-only final regression. The sanitized run evidence is committed under `benchmark/results/`; the generated report contains the full methodology, paired results, efficiency, and safety evidence.

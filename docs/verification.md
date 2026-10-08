@@ -1,6 +1,6 @@
 # Package split verification
 
-Last run: 2026-09-30
+Last run: 2026-10-08
 
 This report covers the root bundle and the five independently releasable packages after the package split. Raw command output is stored locally under `.cache/verification/` and is intentionally ignored by Git.
 
@@ -18,7 +18,7 @@ This report covers the root bundle and the five independently releasable package
 ## Baseline results
 
 - Cache Export: 47 deterministic assertions and 18 Chromium E2E assertions passed, with 0 failures and 0 skips.
-- Codex Edit: 12 parser, matcher, routing, and package tests passed.
+- Codex Edit: 22 Node tests and 12 shared comparison cases passed, including real Pi native-edit versus local Codex Edit, released versus local parser, deterministic report regeneration, and outside-workspace safety comparisons.
 - Tiny Subagent: 12 process, persona, and rendering tests passed.
 - Todo, BTW, Worktree installer, and Worktree CLI integration tests passed.
 - Media: all five screenshots are non-empty; Cache Export is a full-page 1440 × 2278 capture; all five GIFs contain three distinct frames.

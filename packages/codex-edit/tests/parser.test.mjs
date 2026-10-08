@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { applyUpdate, parsePatch, resolveWorkspacePath } from "../src/parser.ts";
+import { applyUpdate, applyUpdateGroups, parsePatch, resolveWorkspacePath } from "../src/parser.ts";
 
 test("parses add, delete, update, and move operations", () => {
   const operations = parsePatch(`*** Begin Patch
@@ -159,6 +159,128 @@ test("parses multiple file operations used by structural refactors", () => {
       { action: "add", path: "extensions/tool-wrapper.ts", moveTo: undefined },
       { action: "delete", path: "extensions/tool.test.ts", moveTo: undefined },
     ],
+  );
+});
+
+test("coalesces repeated updates to one path and preserves operation order", () => {
+  const operations = parsePatch(`*** Begin Patch
+*** Update File: src/tool.ts
+@@
+-const value = 1;
++const value = 2;
+*** Update File: src/tool.ts
+@@
+-const value = 2;
++const value = 3;
+*** End Patch`);
+  assert.equal(operations.length, 1);
+  assert.equal(operations[0].path, "src/tool.ts");
+  assert.equal(operations[0].chunkGroups.length, 2);
+  const after = applyUpdateGroups("const value = 1;\n", operations[0].chunkGroups, "src/tool.ts");
+  assert.equal(after, "const value = 3;\n");
+});
+
+test("still rejects conflicting repeated targets", () => {
+  assert.throws(() => parsePatch(`*** Begin Patch
+*** Update File: src/tool.ts
+@@
+-old
++new
+*** Delete File: src/tool.ts
+*** End Patch`), /same path/);
+  assert.throws(() => parsePatch(`*** Begin Patch
+*** Update File: src/old.ts
+*** Move to: src/new.ts
+@@
+-old
++new
+*** Add File: src/new.ts
++replacement
+*** End Patch`), /same path/);
+});
+
+test("rejects empty chunks and stale expected lines instead of guessing", () => {
+  assert.throws(() => parsePatch(`*** Begin Patch
+*** Update File: src/tool.ts
+@@
+*** End Patch`), /Empty update chunk/);
+  const [operation] = parsePatch(`*** Begin Patch
+*** Update File: src/tool.ts
+@@
+-missing line
++replacement
+*** End Patch`);
+  assert.throws(
+    () => applyUpdate("actual line\n", operation.chunks, operation.path),
+    /Failed to find expected lines in src\/tool\.ts/,
+  );
+});
+
+test("handles the reported project-scale repeated-file and Markdown shapes", () => {
+  const operations = parsePatch(`*** Begin Patch
+*** Update File: skills/pi-worktree/SKILL.md
+@@
+-description: old
++description: updated
+@@
+ ---
++Release notes follow.
+*** Update File: packages/tiny-subagent/src/tool.ts
+@@
+-const state = "old";
++const state = "middle";
+*** Update File: packages/tiny-subagent/src/tool.ts
+@@
+-const state = "middle";
++const state = "new";
+*** Update File: scripts/release-package.sh
+@@
+-ROOT_LEVEL=patch
++ROOT_LEVEL=minor
+*** Update File: scripts/release-package.sh
+@@
+-ROOT_LEVEL=minor
++ROOT_LEVEL=patch
+*** End Patch`);
+  assert.deepEqual(operations.map((operation) => operation.path), [
+    "skills/pi-worktree/SKILL.md",
+    "packages/tiny-subagent/src/tool.ts",
+    "scripts/release-package.sh",
+  ]);
+  assert.equal(operations[1].chunkGroups.length, 2);
+  assert.equal(operations[2].chunkGroups.length, 2);
+
+  const skill = `---
+name: pi-worktree
+description: old
+---
+
+# pi-worktree
+
+---
+Footer
+`;
+  assert.equal(
+    applyUpdateGroups(skill, operations[0].chunkGroups, operations[0].path),
+    `---
+name: pi-worktree
+description: updated
+---
+Release notes follow.
+
+# pi-worktree
+
+---
+Footer
+`,
+  );
+  assert.equal(
+    applyUpdateGroups('const state = "old";\n', operations[1].chunkGroups, operations[1].path),
+    'const state = "new";\n',
+  );
+  assert.equal(
+    applyUpdateGroups("ROOT_LEVEL=patch\n", operations[2].chunkGroups, operations[2].path),
+    "ROOT_LEVEL=patch\n",
   );
 });
 
