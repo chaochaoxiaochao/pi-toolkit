@@ -19,6 +19,8 @@ jobs:
           registry-url: https://registry.npmjs.org/
           # 用仓库 Secrets 里的 NPM_TOKEN（granular access token + Bypass 2FA）
           scope: ""
+      - name: Install test runtime
+        run: npm install --no-save --ignore-scripts --no-package-lock @earendil-works/pi-ai@0.85.1 @earendil-works/pi-coding-agent@0.85.1 @earendil-works/pi-tui@0.85.1 typebox
       - name: Verify tag matches package version
         run: |
           PACKAGE_VERSION=$(node -p "require('./package.json').version")

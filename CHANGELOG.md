@@ -1,3 +1,7 @@
+## Unreleased
+
+- install the pinned Pi test runtime on clean publication runners before executing Codex Edit integration checks
+
 ## 2026-10-08 - v0.9.5
 
 - bundle codex-edit v0.1.8: fix repeated same-path updates and publish reproducible benchmark evidence

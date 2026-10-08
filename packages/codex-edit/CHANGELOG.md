@@ -1,3 +1,7 @@
+## Unreleased
+
+- install the pinned Pi test runtime on clean publication runners before executing native comparison and extension-load checks
+
 ## 2026-10-08 - v0.1.8
 
 - fix repeated same-path updates and publish reproducible benchmark evidence

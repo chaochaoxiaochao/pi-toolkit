@@ -21,6 +21,8 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org/
           scope: ""
+      - name: Install test runtime
+        run: npm install --no-save --ignore-scripts --no-package-lock @earendil-works/pi-ai@0.85.1 @earendil-works/pi-coding-agent@0.85.1 @earendil-works/pi-tui@0.85.1 typebox
       - name: Resolve and verify package
         run: |
           SLUG="${GITHUB_REF_NAME%-v*}"
