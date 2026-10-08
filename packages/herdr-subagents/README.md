@@ -115,6 +115,31 @@ Herdr Subagents loads settings and persona definitions from separate files:
 
 Project JSON values recursively override global JSON values. The built-in setting defaults are `defaultConcurrency: 1`, `maxConcurrency: 4`, and `stalledWarningSeconds: 300`. `defaultModel` and `defaultThinking` are unset, so the parent Pi model and its thinking level are inherited unless another setting wins.
 
+### Settings file option reference
+
+These are all supported top-level fields in `herdr-subagents.json`:
+
+| Option | Accepted value | Default | Effect |
+| --- | --- | --- | --- |
+| `defaultConcurrency` | Positive integer | `1` | Number of read-only tasks allowed to run together when a batch call omits `concurrency`. It is capped to `maxConcurrency`. |
+| `maxConcurrency` | Positive integer | `4` | Hard ceiling for requested/default batch concurrency. A batch containing any write-capable persona still runs serially. |
+| `stalledWarningSeconds` | Positive integer | `300` | Seconds before a still-running child emits a warning. This is not a timeout and does not stop the child. |
+| `defaultModel` | Non-empty Pi model string, normally `provider/model` | Unset | Model used when neither JSON persona settings nor persona Markdown select one. If unset, the parent model is inherited. Use `/herdr-subagents models` to list authenticated models. |
+| `defaultThinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` | Unset | Thinking level below persona-specific settings. Provider/model support can vary. If unset, parent thinking is inherited only when the parent model is also inherited. |
+| `personas` | Object keyed by an existing persona name | `{}` | Per-persona JSON overrides described below. This does not create a persona; a matching Markdown definition must exist. |
+
+Known fields with an invalid JSON type, an empty required string, or a non-positive integer are ignored with a diagnostic shown by `/herdr-subagents settings`. Model IDs, thinking-level compatibility, and skill availability are ultimately validated by Pi when the child starts. When `defaultConcurrency` exceeds `maxConcurrency`, the effective default is reduced to the maximum.
+
+Each `personas.<name>` object supports exactly these overrides:
+
+| Option | Accepted value | Effect |
+| --- | --- | --- |
+| `model` | Non-empty Pi model string | Overrides the model from the effective persona Markdown and `defaultModel`. |
+| `thinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` | Overrides persona Markdown and `defaultThinking`. The value is passed to Pi's `--thinking` option. |
+| `skills` | Array of non-empty strings | Replaces the entire lower-precedence skill list. Use `[]` to clear inherited skills. Each item is passed to child Pi as `--skill`. |
+
+JSON persona overrides cannot change `name`, `description`, `access`, `tools`, or the system prompt; define those in persona Markdown.
+
 A global configuration can establish shared defaults:
 
 ```json
@@ -180,7 +205,19 @@ skills: security-review, code-review
 Review the assigned scope without modifying files. Report concrete risks and evidence.
 ```
 
-`name` and `description` are required. `access` accepts `read` or `write`; a custom persona that omits it defaults to **write access**, which also forces its batch to concurrency one. `tools` restricts the built-in tools, but `subagent_report` is always added so the child can settle its task. `model`, `thinking`, and `skills` provide persona defaults.
+Persona Markdown supports these frontmatter fields:
+
+| Field | Accepted value | Required/default | Effect |
+| --- | --- | --- | --- |
+| `name` | Non-empty string | Required | Persona identifier used by `agent`. Names must be unique within one persona directory. |
+| `description` | Non-empty string | Required | Description shown to the parent when agents are listed. |
+| `access` | `read` or `write` | `write` | Scheduling declaration. Any batch containing `write` is forced to concurrency one. `read` permits parallel scheduling but does not itself remove tools. |
+| `model` | Non-empty Pi model string | Unset | Persona model default. |
+| `thinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` | Unset | Persona thinking default passed to Pi's `--thinking` option. |
+| `tools` | Non-empty comma-separated list, optionally bracketed | Child Pi defaults | Restricts built-in tools. Supported names are `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, and `powershell`. `subagent_report` is always added. |
+| `skills` | Comma-separated list, optionally bracketed | None | Skills loaded explicitly into child Pi; automatic skill discovery is disabled. |
+
+The Markdown body after the frontmatter is the child system prompt and may be empty. To make a custom persona operationally read-only, set `access: read` **and** choose an appropriate `tools` allowlist; `access` alone is not a tool sandbox. Model names and skill values are passed to Pi, so they must be available in the installed Pi environment.
 
 Persona Markdown definitions use replacement precedence, not field merging. A same-name project definition replaces the entire global or package definition:
 

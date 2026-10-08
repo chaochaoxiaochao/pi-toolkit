@@ -2,7 +2,7 @@
 
 - add merged global/project `defaultThinking` for Herdr Subagents, below persona-specific thinking and above parent-session fallback
 - embed the Herdr workflow video directly in the GitHub README, retain the reproducible WebM source, and remove the GIF preview
-- document Herdr Subagents configuration paths and examples, built-in and custom personas, and exact model and persona-option precedence
+- document every Herdr Subagents settings and persona option, accepted values, defaults, configuration paths, examples, and exact precedence
 - add a full real-time Herdr Subagents WebM recording that focuses every child Agent pane before returning to the parent summary
 
 - replace the rendered Herdr transcript demo with a real UI recording of a parent Pi conversation opening and completing three concurrent interactive Agent panes
