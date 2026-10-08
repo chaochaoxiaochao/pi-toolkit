@@ -4,6 +4,21 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { resultPathForAttempt } from "../src/result-path.ts";
+import { PARENT_PANE_ENV } from "../src/live-agent.ts";
+
+const RETURN_SHORTCUT = "alt+p";
+
+async function returnToParent(pi: ExtensionAPI, ctx: { ui: { notify(message: string, type?: "info" | "warning" | "error"): void } }): Promise<void> {
+	const parentPaneId = process.env[PARENT_PANE_ENV]?.trim();
+	if (!parentPaneId) {
+		ctx.ui.notify("Parent Agent pane is unavailable for this Subagent session.", "error");
+		return;
+	}
+	const result = await pi.exec("herdr", ["agent", "focus", parentPaneId]);
+	if (result.code !== 0) {
+		ctx.ui.notify(`Could not return to the parent Agent: ${result.stderr.trim() || result.stdout.trim() || `Herdr exited ${result.code}`}`, "error");
+	}
+}
 
 const ReportParams = Type.Object({
 	status: StringEnum(["completed", "needs-input", "failed"] as const, { description: "Current outcome for this task." }),
@@ -24,6 +39,17 @@ function writeAtomic(path: string, content: string): void {
 }
 
 export default function (pi: ExtensionAPI) {
+	pi.registerCommand("parent", {
+		description: "Return focus to the parent Agent pane",
+		async handler(_args, ctx) { await returnToParent(pi, ctx); },
+	});
+	pi.registerShortcut(RETURN_SHORTCUT, {
+		description: "Return to parent Agent",
+		async handler(ctx) { await returnToParent(pi, ctx); },
+	});
+	pi.on("session_start", async (_event, ctx) => {
+		if (process.env[PARENT_PANE_ENV]?.trim()) ctx.ui.setStatus("herdr-subagents-parent", `${RETURN_SHORTCUT} parent`);
+	});
 	pi.registerTool({
 		name: "subagent_report",
 		label: "Subagent Report",

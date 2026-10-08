@@ -23,6 +23,7 @@ import { applyTaskStatus, isSettledRunStatus, projectTaskActivity, readTaskRecor
 import { RunPaneAllocator } from "../src/run-pane-allocator.ts";
 import { aggregateTaskStatus } from "../src/run-status.ts";
 import { isAbortError } from "../src/errors.ts";
+import registerSubagentReport from "../extensions/subagent-report.ts";
 
 let passed = 0;
 let failed = 0;
@@ -313,7 +314,25 @@ try {
 	const outside = await runHerdrSubagents("hello", { cwd: root, herdr: unavailableHerdr });
 	check("Herdr is required", !outside.ok && outside.errorMessage?.includes("inside Herdr") && unavailableHerdr.calls.length === 0);
 
-	setEnv({ HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w1", PI_HERDR_SUBAGENTS_PI_BINARY: "/definitely/missing/pi" });
+	setEnv({ HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w1", HERDR_PANE_ID: "w1:p-parent", PI_HERDR_SUBAGENTS_PI_BINARY: "/definitely/missing/pi" });
+	const childCommands = new Map();
+	const childShortcuts = new Map();
+	const childEvents = new Map();
+	const childExecCalls = [];
+	const childStatuses = [];
+	registerSubagentReport({
+		registerTool() {},
+		registerCommand(name, options) { childCommands.set(name, options); },
+		registerShortcut(key, options) { childShortcuts.set(key, options); },
+		on(name, handler) { childEvents.set(name, handler); },
+		async exec(command, args) { childExecCalls.push([command, args]); return { stdout: "", stderr: "", code: 0, killed: false }; },
+	});
+	process.env.PI_HERDR_SUBAGENTS_PARENT_PANE_ID = "w1:p-parent";
+	const childContext = { ui: { notify() {}, setStatus(key, value) { childStatuses.push([key, value]); } } };
+	await childEvents.get("session_start")?.({}, childContext);
+	await childCommands.get("parent")?.handler("", childContext);
+	await childShortcuts.get("alt+p")?.handler(childContext);
+	check("child command and shortcut return to the exact parent Agent pane", childExecCalls.length === 2 && childExecCalls.every(([command, args]) => command === "herdr" && args.join(",") === "agent,focus,w1:p-parent") && childStatuses.some(([, value]) => value.includes("alt+p")));
 	const herdr = fakeHerdr();
 	const success = await runHerdrSubagents("Review authentication", {
 		cwd: root,
@@ -330,7 +349,7 @@ try {
 	const startRequest = herdr.calls.find(([name]) => name === "startAgent")[1];
 	check("named unfocused tab in parent workspace", createRequest.workspaceId === "w1" && createRequest.cwd === root && createRequest.label === "SA · auth-review" && createRequest.focus === false);
 	check("ordinary execution never steals pane focus", !herdr.calls.some(([name]) => name === "focusPane"));
-	check("child environment points at durable task", createRequest.env.PI_HERDR_SUBAGENTS_CHILD === "1" && createRequest.env.PI_HERDR_SUBAGENTS_TASK_DIR.includes(join(".pi", "herdr-subagents", "runs")));
+	check("child environment points at durable task and parent pane", createRequest.env.PI_HERDR_SUBAGENTS_CHILD === "1" && createRequest.env.PI_HERDR_SUBAGENTS_TASK_DIR.includes(join(".pi", "herdr-subagents", "runs")) && createRequest.env.PI_HERDR_SUBAGENTS_PARENT_PANE_ID === "w1:p-parent");
 	check("persistent isolated child Pi", startRequest.kind === "pi" && startRequest.paneId === "w1:p2" && startRequest.args.includes("--session") && startRequest.args.includes("--no-extensions") && startRequest.args.includes("--extension") && startRequest.args.includes("--no-skills") && startRequest.args.includes("--model") && startRequest.args.includes("fake/model") && startRequest.args.includes("--tools") && startRequest.args.includes("read,grep,subagent_report"));
 	const promptRequest = herdr.calls.find(([name]) => name === "promptAgent")[1];
 	check("prompt submitted through Herdr", promptRequest.prompt === "Review authentication" && promptRequest.target === startRequest.name);

@@ -16,7 +16,7 @@
 - Force write-capable batches to serial execution while allowing bounded read-only parallelism.
 - Preserve compact reports, full results, Pi sessions, blocked questions, and historical follow-ups.
 - Recover queued/running work after interruption without retrying post-prompt side effects, including truncated reports and recovery errors.
-- Verify the split public contracts (`herdr_subagents` with required `tasks`, plus `herdr_subagents_control` with required `action`) and injectable extension wiring, including conditional registration only inside Herdr, Fleet rendering, editor focus ownership, terminal-input passthrough, exact-pane navigation, and stable display while another background run queues.
+- Verify the split public contracts (`herdr_subagents` with required `tasks`, plus `herdr_subagents_control` with required `action`) and injectable extension wiring, including conditional registration only inside Herdr, Fleet rendering, editor focus ownership, terminal-input passthrough, exact-pane navigation, child `/parent` and `Alt+P` return controls, and stable display while another background run queues.
 - Verify Fleet divider/row formatting, warning/yellow running indicators, success/green completed indicators, persona and task projections, cumulative active duration across blocking/resume, exact Pi usage aggregation from assistant messages, tool results, standalone usage, compaction, and branch summaries, malformed/truncated JSONL tolerance, queued metric omission, and visible-column bounds at narrow widths.
 - Verify live token updates are file-event driven and polled on each running one-second tick, elapsed repainting exists only while work runs, and widget disposal closes watchers and timers.
 - Verify selected active/queued run cancellation, blocked-response live Fleet updates, authoritative stale-field replacement, parent-shutdown cancellation, idempotent missing-tab cleanup, cleanup notifications, atomic state replacement, non-retried uncertain startup operations, and stalled warnings.
@@ -24,4 +24,4 @@
 
 ## Latest baseline
 
-All 168 deterministic scheduler, recovery, process-boundary, schema-validation, navigation, metrics, responsive-formatting, and persona cases must pass. Release validation also requires extension loading and a real Herdr read-only batch smoke with distinct task panes and final tab cleanup. The latest smoke completed two concurrent tasks, retained its focused run tab through settlement, and closed it automatically after focus moved away.
+All 169 deterministic scheduler, recovery, process-boundary, schema-validation, navigation, metrics, responsive-formatting, and persona cases must pass. Release validation also requires extension loading and a real Herdr read-only batch smoke with distinct task panes and final tab cleanup. The latest smoke completed two concurrent tasks, retained its focused run tab through settlement, and closed it automatically after focus moved away.

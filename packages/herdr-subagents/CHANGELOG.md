@@ -1,3 +1,7 @@
+## Unreleased
+
+- Add `/parent` and `Alt+P` inside child Agents to return focus to the exact parent Agent pane, with a visible child footer hint.
+
 ## 2026-10-08 - v0.4.1
 
 - targeted cancellation, live token polling, and idempotent tab cleanup

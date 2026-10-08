@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { CliHerdrAutomation, type HerdrAutomation } from "./herdr.ts";
 import { ensureRuntimeIgnored } from "./history.ts";
-import { liveAgentName, promptLiveAgent } from "./live-agent.ts";
+import { childEnvironment, liveAgentName, promptLiveAgent } from "./live-agent.ts";
 import { writeJsonAtomic } from "./state.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
 import type { OwnerIdentity } from "./ownership.ts";
@@ -12,9 +12,6 @@ import { applyReport, applyTaskStatus, settleAttemptFailure, type PersistedDocum
 import { reportProtocolPrompt } from "./protocol.ts";
 import { applyRunStatus } from "./run-status.ts";
 import { isAbortError } from "./errors.ts";
-
-const CHILD_ENV = "PI_HERDR_SUBAGENTS_CHILD";
-const TASK_DIRECTORY_ENV = "PI_HERDR_SUBAGENTS_TASK_DIR";
 
 export type HerdrSubagentsDocument = PersistedDocument;
 export type HerdrSubagentsReport = PersistedReport;
@@ -168,10 +165,7 @@ export async function runHerdrSubagents(prompt: string, options: HerdrSubagentsO
 			workspaceId: process.env.HERDR_WORKSPACE_ID,
 			cwd,
 			label: `SA · ${label}`,
-			env: {
-				[CHILD_ENV]: "1",
-				[TASK_DIRECTORY_ENV]: taskDirectory,
-			},
+			env: childEnvironment(taskDirectory),
 			focus: false,
 			signal: options.signal,
 		});

@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 2026-10-08 - v0.10.4
 
 - bundle herdr-subagents v0.4.1: targeted cancellation, live token polling, and idempotent tab cleanup

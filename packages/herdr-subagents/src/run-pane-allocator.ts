@@ -3,6 +3,7 @@ import { writeJsonAtomic } from "./state.ts";
 import type { RunRecord } from "./records.ts";
 import { applyRunStatus } from "./run-status.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
+import { childEnvironment } from "./live-agent.ts";
 
 interface RunPaneAllocatorOptions {
 	herdr: HerdrAutomation;
@@ -31,7 +32,7 @@ export class RunPaneAllocator {
 		let paneId = "";
 		this.allocation = this.allocation.then(async () => {
 			const { herdr, run, runFile, signal } = this.options;
-			const env = { PI_HERDR_SUBAGENTS_CHILD: "1", PI_HERDR_SUBAGENTS_TASK_DIR: taskDirectory };
+			const env = childEnvironment(taskDirectory);
 			let anchorExists = Boolean(run.tabId && this.lastPaneId);
 			if (anchorExists && this.options.validateExistingPane) {
 				const survivingPaneIds: string[] = [];

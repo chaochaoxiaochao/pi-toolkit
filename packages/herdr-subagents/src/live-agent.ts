@@ -17,6 +17,17 @@ export interface LiveTaskRecord {
 	skills?: string[];
 }
 
+export const PARENT_PANE_ENV = "PI_HERDR_SUBAGENTS_PARENT_PANE_ID";
+
+export function childEnvironment(taskDirectory: string, environment: NodeJS.ProcessEnv = process.env): Record<string, string> {
+	const parentPaneId = environment.HERDR_PANE_ID?.trim();
+	return {
+		PI_HERDR_SUBAGENTS_CHILD: "1",
+		PI_HERDR_SUBAGENTS_TASK_DIR: taskDirectory,
+		...(parentPaneId ? { [PARENT_PANE_ENV]: parentPaneId } : {}),
+	};
+}
+
 export function childPiArgs(task: LiveTaskRecord, systemPromptFile: string): string[] {
 	const args = [
 		"--approve",

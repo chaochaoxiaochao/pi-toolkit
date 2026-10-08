@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { appendFile, mkdir, readFile, rm, rmdir } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { CliHerdrAutomation, type HerdrAutomation } from "./herdr.ts";
-import { liveAgentName, promptLiveAgent } from "./live-agent.ts";
+import { childEnvironment, liveAgentName, promptLiveAgent } from "./live-agent.ts";
 import { writeJsonAtomic, writeTextAtomic } from "./state.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
 import type { OwnerIdentity } from "./ownership.ts";
@@ -144,7 +144,7 @@ async function resumeHistoricalTaskLocked(cwd: string, runId: string, taskNumber
 		let report: PersistedReport;
 		let status: "blocked" | "completed" | "failed";
 		try {
-			const env = { PI_HERDR_SUBAGENTS_CHILD: "1", PI_HERDR_SUBAGENTS_TASK_DIR: historical.recordDirectory };
+			const env = childEnvironment(historical.recordDirectory);
 			tab = await herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID ?? "", cwd, label: `SA · ${run.label}`, env, focus: false, signal: options.signal });
 			const paneLabel = `${String(historical.order).padStart(2, "0")} · ${historical.name}`;
 			await herdr.renamePane(tab.paneId, paneLabel, options.signal);
