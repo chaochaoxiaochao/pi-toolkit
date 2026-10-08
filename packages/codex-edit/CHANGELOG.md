@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-08 - v0.1.9
 
+- install the pinned Pi runtime for clean-runner publication tests
 - install the pinned Pi test runtime on clean publication runners before executing native comparison and extension-load checks
 
 ## 2026-10-08 - v0.1.8
