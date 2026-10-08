@@ -66,7 +66,6 @@ bash scripts/install.sh
 | `herdr` | Control Herdr workspaces, tabs, panes, and agents |
 | `agent-team` | Run cross-vendor adversarial review through Herdr |
 | `tapd` | Use the TAPD CLI for requirements, defects, tasks, and wikis |
-| `calldiff` | Diff call stacks across commits |
 
 Package-specific skills, such as `pi-worktree`, are documented by their child package.
 

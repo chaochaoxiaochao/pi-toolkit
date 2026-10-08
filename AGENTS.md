@@ -54,7 +54,6 @@ pi-toolkit/
 
 - 用户可见行为变化必须同步检查根 `README.md`、本文件、根 `CHANGELOG.md`、相关子包 README/TESTING/CHANGELOG 和 manifest。
 - `skills/herdr/SKILL.md` 只在同步上游稳定 tag 时整体替换；唯一允许的本地差异是 description 与 H1 中的名称小写化，来源见 NOTICE。
-- `skills/calldiff/SKILL.md` 与上游指定 commit 逐字节一致，只能整体同步并更新 NOTICE。
 - `skills/tapd/SKILL.md` 由 `tapd skill init` 生成；重生成后必须重放手写的“安全下载附件”一节。
 - `web-browser` 改动后检查全部 `scripts/*.js` 语法、实际启动隔离浏览器并完成导航/求值，再检查 tarball。
 
