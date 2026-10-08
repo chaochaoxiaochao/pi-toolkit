@@ -140,17 +140,20 @@ function latestRunDirectory() {
 try {
 	check("run validation accepts one or more tasks", validateRunParams({ tasks: [{ name: "one", prompt: "do it" }], concurrency: 2, background: true }) === undefined);
 	check("control validation accepts supported calls", [
-		{ action: "list" }, { action: "history" }, { action: "cleanup", runId: "run" },
+		{ action: "list" }, { action: "history" }, { action: "cancel", runId: "run" }, { action: "cleanup", runId: "run" },
 		{ action: "respond", runId: "run", answer: "yes", task: 1 },
 		{ action: "resume", runId: "run", task: 1, prompt: "continue" },
 	].every((params) => validateControlParams(params) === undefined));
-	check("all supported actions have shared validation and rendering metadata", ["list", "history", "cleanup", "respond", "resume"].every((action) => action in HERDR_ACTIONS));
+	check("all supported actions have shared validation and rendering metadata", ["list", "history", "cancel", "cleanup", "respond", "resume"].every((action) => action in HERDR_ACTIONS));
 	check("split validation rejects missing tasks and invalid control fields", [
 		validateRunParams({ tasks: [] }),
 		validateControlParams({ action: "list", prompt: "not allowed" }),
 		validateControlParams({ action: "respond", runId: "run" }),
 		validateControlParams({ action: "resume", runId: "run", task: 1 }),
 	].every((message) => typeof message === "string" && message.length > 0));
+	let cancelledRunId;
+	const cancelControl = await executeHerdrSubagents({ action: "cancel", runId: "active-run" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), cancelRun: async (runId) => { cancelledRunId = runId; return { cancelled: true }; } });
+	check("cancel control targets the selected active or queued run", !cancelControl.isError && cancelledRunId === "active-run" && cancelControl.details.cancelled === true);
 	const fleet = new FleetSelection();
 	const fleetBatch = { label: "reviews", activity: [
 		{ index: 0, name: "one", status: "completed", paneId: "p1" },
@@ -239,6 +242,12 @@ try {
 	runtimeTimeouts.clear();
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	check("Fleet widget refreshes token usage from file events", liveWidget.render(80)[1].includes("84 tok"));
+	liveTokens = 126;
+	for (const callback of [...runtimeIntervals.values()]) callback();
+	for (const callback of [...runtimeTimeouts.values()]) callback();
+	runtimeTimeouts.clear();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	check("Fleet widget refreshes token usage on every running one-second tick", liveWidget.render(80)[1].includes("126 tok"));
 	liveWidget.update({ ...liveWidgetBatch, status: "blocked", activity: [{ ...liveWidgetBatch.activity[0], status: "blocked", updatedAt: "2026-10-08T07:00:05.000Z", activeStartedAt: undefined, elapsedMs: 5_000 }] });
 	check("Fleet widget stops elapsed repainting when work blocks", runtimeIntervals.size === 0 && clearedIntervals === 1);
 	liveWidget.dispose();
@@ -430,14 +439,20 @@ try {
 	check("batch is FIFO with a dedicated pane per task", batchPrompts.join(",") === "one slow,two,three FAIL,four" && new Set(batchStarts.map((request) => request.paneId)).size === 4);
 	check("failed sibling does not cancel batch", batch.isError && batchDetails.status === "partial" && batchDetails.tasks.map((task) => task.name).join(",") === "one,two,three,four" && batchDetails.tasks[2].status === "failed" && batchDetails.tasks[3].status === "completed");
 	const batchCleanupHerdr = fakeHerdr("close-failed");
-	const batchCleanup = await executeHerdrSubagents({ tasks: [{ name: "cleanup", prompt: "cleanup", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: batchCleanupHerdr });
+	const batchCleanupUpdates = [];
+	const batchCleanup = await executeHerdrSubagents({ tasks: [{ name: "cleanup", prompt: "cleanup", agent: "explorer" }] }, undefined, (update) => batchCleanupUpdates.push(update), { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: batchCleanupHerdr });
 	const batchCleanupRecord = JSON.parse(readFileSync(join(batchCleanup.details.recordDirectory, "run.json"), "utf8"));
-	check("batch cleanup failure is persisted and surfaced", batchCleanup.isError && batchCleanup.content[0].text.includes("cleanup failed") && batchCleanupRecord.status === "failed" && batchCleanupRecord.cleanupError.includes("tab still busy"));
+	check("batch cleanup failure is persisted and surfaced once", batchCleanup.isError && batchCleanup.content[0].text.includes("cleanup failed") && batchCleanupRecord.status === "failed" && batchCleanupRecord.cleanupError.includes("tab still busy") && batchCleanupUpdates.filter((update) => update.content[0]?.text.includes("cleanup failed")).length === 1);
 	const cleanupProbeHerdr = fakeHerdr();
 	cleanupProbeHerdr.isTabFocused = async () => { throw new Error("tab lookup failed"); };
 	const cleanupProbe = await executeHerdrSubagents({ tasks: [{ name: "cleanup-probe", prompt: "cleanup probe", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: cleanupProbeHerdr });
 	const cleanupProbeRecord = JSON.parse(readFileSync(join(cleanupProbe.details.recordDirectory, "run.json"), "utf8"));
 	check("cleanup focus-probe failure is persisted and surfaced", cleanupProbe.isError && cleanupProbe.content[0].text.includes("tab lookup failed") && cleanupProbeRecord.status === "failed" && cleanupProbeRecord.cleanupError === "tab lookup failed");
+	const missingTabHerdr = fakeHerdr();
+	missingTabHerdr.isTabFocused = async () => { throw new Error('{"error":{"code":"tab_not_found","message":"tab w1:t2 not found"}}'); };
+	const missingTabCleanup = await executeHerdrSubagents({ tasks: [{ name: "already-closed", prompt: "already closed", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: missingTabHerdr });
+	const missingTabRecord = JSON.parse(readFileSync(join(missingTabCleanup.details.recordDirectory, "run.json"), "utf8"));
+	check("already-missing tab is successful idempotent cleanup", !missingTabCleanup.isError && missingTabRecord.status === "completed" && !missingTabRecord.cleanupPendingTabIds && !missingTabRecord.cleanupError);
 	const activeUpdate = batchUpdates.find((update) => update.activity?.some((task) => task.status === "running"));
 	const counts = activityCounts(activeUpdate);
 	const focusHerdr = fakeHerdr();
@@ -551,6 +566,13 @@ try {
 	check("dispatcher starts next queued run automatically", starts.join(",") === "run-one,run-two" && dispatcher.snapshot().activeRunId === "run-two");
 	releaseSecond();
 	check("dispatcher settles queued run", await second === "two");
+	const cancellingDispatcher = new RunDispatcher();
+	cancellingDispatcher.pause();
+	const removedQueued = cancellingDispatcher.submit("remove-me", async () => "unexpected").catch((error) => error.message);
+	const keptQueued = cancellingDispatcher.submit("keep-me", async () => "kept");
+	check("dispatcher cancels only the selected queued run", cancellingDispatcher.cancelQueuedRun("remove-me", new Error("cancelled by user")) && await removedQueued === "cancelled by user" && cancellingDispatcher.snapshot().queuedRunIds.join(",") === "keep-me");
+	cancellingDispatcher.resume();
+	check("dispatcher still executes uncancelled queued siblings", await keptQueued === "kept");
 	const retainedDispatcher = new RunDispatcher();
 	const retainedStarts = [];
 	const retainedFirst = retainedDispatcher.submit("blocked-run", async () => { retainedStarts.push("blocked-run"); retainedDispatcher.retain("blocked-run"); return "blocked"; });

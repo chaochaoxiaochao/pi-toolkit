@@ -2,6 +2,11 @@ import type { HerdrAutomation } from "./herdr.ts";
 import { readRunRecord, type RunRecord } from "./records.ts";
 import { writeJsonAtomic } from "./state.ts";
 
+function isMissingTabError(error: unknown): boolean {
+	const detail = error instanceof Error ? `${error.message}\n${(error as { stderr?: unknown }).stderr ?? ""}` : String(error);
+	return /tab[_ -]?not[_ -]?found|unknown tab/i.test(detail);
+}
+
 export async function cleanupRunTab(options: {
 	herdr: HerdrAutomation;
 	tabId: string;
@@ -52,17 +57,28 @@ export async function cleanupRunTab(options: {
 				.then(() => options.herdr.closeTab(options.tabId, options.signal))
 				.then(() => finishClosed(true))
 				.catch(async (error) => {
+					if (isMissingTabError(error)) { await finishClosed(true); return; }
 					if (!options.signal?.aborted) { await reportFailure(error, true); return; }
 					try {
 						await options.herdr.closeTab(options.tabId);
 						await finishClosed(true);
-					} catch (closeError) { await reportFailure(closeError, true); }
+					} catch (closeError) {
+						if (isMissingTabError(closeError)) { await finishClosed(true); return; }
+						await reportFailure(closeError, true);
+					}
 				});
 			return { deferred: true };
 		}
 		await options.herdr.closeTab(options.tabId, options.signal);
 		await finishClosed();
 	}
-	catch (error) { await reportFailure(error); throw error; }
+	catch (error) {
+		if (isMissingTabError(error)) {
+			await finishClosed();
+			return { deferred: false };
+		}
+		await reportFailure(error);
+		throw error;
+	}
 	return { deferred: false };
 }

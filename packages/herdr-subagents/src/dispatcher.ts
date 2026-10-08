@@ -51,6 +51,14 @@ export class RunDispatcher {
 		this.changed();
 		return cancelled.map((run) => run.id);
 	}
+	cancelQueuedRun(id: string, reason: Error): boolean {
+		const index = this.queue.findIndex((run) => run.id === id);
+		if (index < 0) return false;
+		const [cancelled] = this.queue.splice(index, 1);
+		cancelled.reject(reason);
+		this.changed();
+		return true;
+	}
 
 	private changed(): void { this.onChange?.(this.snapshot()); }
 

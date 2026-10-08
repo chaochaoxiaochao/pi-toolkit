@@ -1,4 +1,4 @@
-import type { HerdrAutomation } from "./herdr.ts";
+import { CliHerdrAutomation, type HerdrAutomation } from "./herdr.ts";
 import { loadSubagentConfiguration, type ConfigurationPaths, type SubagentConfiguration } from "./config.ts";
 import { runHerdrSubagents, type HerdrSubagentsResult } from "./runner.ts";
 import { runHerdrSubagentsBatch, type BatchResult, type BatchTask } from "./batch-runner.ts";
@@ -6,6 +6,8 @@ import { respondToBlockedTask } from "./blocking.ts";
 import { cleanSubagentRun, historyText, listSubagentHistory, resumeHistoricalTask } from "./history.ts";
 import { HERDR_ACTIONS, validateControlParams, validateRunParams } from "./validation.ts";
 import type { OwnerIdentity } from "./ownership.ts";
+import { cancelActiveSubagentRuns } from "./reconcile.ts";
+import { cancelQueuedRuns, loadQueuedRuns } from "./queued-runs.ts";
 
 export interface HerdrSubagentsTaskParams { name: string; prompt: string; agent?: string; model?: string; }
 
@@ -17,7 +19,7 @@ export interface HerdrSubagentsRunParams {
 }
 
 export interface HerdrSubagentsControlToolParams {
-	action: "list" | "respond" | "history" | "resume" | "cleanup";
+	action: "list" | "respond" | "history" | "resume" | "cancel" | "cleanup";
 	runId?: string;
 	answer?: string;
 	task?: number;
@@ -26,7 +28,7 @@ export interface HerdrSubagentsControlToolParams {
 
 /** Internal superset used by shared execution helpers. */
 export interface HerdrSubagentsToolParams {
-	action?: "list" | "respond" | "history" | "resume" | "cleanup";
+	action?: "list" | "respond" | "history" | "resume" | "cancel" | "cleanup";
 	prompt?: string;
 	agent?: string;
 	label?: string;
@@ -51,6 +53,7 @@ export interface HerdrSubagentsToolDependencies {
 	configurationPaths?: ConfigurationPaths;
 	owner?: OwnerIdentity;
 	runId?: string;
+	cancelRun?: (runId: string) => Promise<{ cancelled: boolean; queued?: boolean; cleanupErrors?: string[] }>;
 }
 
 export type HerdrSubagentsDetails = HerdrSubagentsResult & {
@@ -123,6 +126,29 @@ const actionHandlers = {
 		} catch (error) {
 			const text = error instanceof Error ? error.message : String(error);
 			return errorResponse(text, { action: "cleanup", runId: params.runId, cleaned: false });
+		}
+	},
+	async cancel({ params, ctx, dependencies }: ToolExecutionContext) {
+		const runId = (params.runId as string).trim();
+		try {
+			let result: { cancelled: boolean; queued?: boolean; cleanupErrors?: string[] };
+			if (dependencies.cancelRun) result = await dependencies.cancelRun(runId);
+			else {
+				const reason = "Subagent run cancelled by user.";
+				const queued = (await loadQueuedRuns(ctx.cwd)).some((run) => run.runId === runId);
+				if (queued) {
+					await cancelQueuedRuns(ctx.cwd, [runId], { reason, owner: dependencies.owner });
+					result = { cancelled: true, queued: true };
+				} else {
+					const cancellation = await cancelActiveSubagentRuns(ctx.cwd, dependencies.herdr ?? new CliHerdrAutomation(), { reason, owner: dependencies.owner, runId });
+					result = { cancelled: cancellation.cancelledRuns > 0, cleanupErrors: cancellation.cleanupErrors };
+				}
+			}
+			const suffix = result.cleanupErrors?.length ? ` Cleanup warnings: ${result.cleanupErrors.join("; ")}` : "";
+			const text = result.cancelled ? `Cancelled Subagent run ${runId}.${suffix}` : `Subagent run '${runId}' is not active or queued.`;
+			return { content: [{ type: "text", text }], details: { action: "cancel", runId, ...result }, ...(result.cancelled ? {} : { isError: true }) };
+		} catch (error) {
+			return errorResponse(error instanceof Error ? error.message : String(error), { action: "cancel", runId, cancelled: false });
 		}
 	},
 	async resume({ params, signal, onUpdate, ctx, dependencies, discovery }: ToolExecutionContext) {

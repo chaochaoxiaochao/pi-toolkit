@@ -190,7 +190,7 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 		const failed = settledResults.filter((result) => result.status === "failed").length;
 		const cancelled = options.signal?.aborted || activity.some((entry) => entry.status === "cancelled");
 		const status: BatchResult["status"] = cancelled ? "cancelled" : blocked || activity.some((entry) => entry.status === "queued") ? "blocked" : failed === 0 ? "completed" : failed === tasks.length ? "failed" : "partial";
-		const summary = status === "cancelled" ? "Subagent batch cancelled because the parent Pi session closed." : blocked ? `${blocked.name} needs input: ${blocked.question}` : failed ? `${tasks.length - failed}/${tasks.length} tasks completed; ${failed} failed.` : `${tasks.length}/${tasks.length} tasks completed.`;
+		const summary = status === "cancelled" ? "Subagent batch cancelled." : blocked ? `${blocked.name} needs input: ${blocked.question}` : failed ? `${tasks.length - failed}/${tasks.length} tasks completed; ${failed} failed.` : `${tasks.length}/${tasks.length} tasks completed.`;
 		applyRunStatus(runRecord, status, { question: blocked?.question });
 		await writeJsonAtomic(runFile, runRecord);
 		return { ok: status === "completed", status, runId, label: options.label, requestedConcurrency, effectiveConcurrency, tasks: settledResults, activity, summary, documents: settledResults.flatMap((result) => result.documents), recordDirectory: runDirectory, tabId };
@@ -205,7 +205,7 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 				await cleanupRunTab({
 					herdr, tabId, runFile, runRecord, signal: options.signal, failureStatus: "failed",
 					errorPrefix: "Task results settled, but Herdr tab cleanup failed",
-					onError: (message) => { emit("failed", message); options.onCleanupError?.(message); },
+					onError: (message) => options.onCleanupError?.(message),
 				});
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);

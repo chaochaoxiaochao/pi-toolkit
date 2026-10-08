@@ -160,6 +160,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 	const dispatcher = new RunDispatcher();
 	const fleet = new FleetController(herdr, isEditorComponent, dependencies.createFleetWidget, dependencies.fleetWidgetRuntime);
 	const runControllers = new Map<string, AbortController>();
+	const runPromises = new Map<string, Promise<unknown>>();
 	const inFlight = new Set<Promise<unknown>>();
 	let sessionController = new AbortController();
 	let ownerSessionId: string | undefined;
@@ -228,8 +229,9 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 				}
 				return result;
 			});
+			runPromises.set(runId, promise);
 			inFlight.add(promise);
-			void promise.finally(() => { inFlight.delete(promise); runControllers.delete(runId); }).catch(() => undefined);
+			void promise.finally(() => { inFlight.delete(promise); runControllers.delete(runId); runPromises.delete(runId); }).catch(() => undefined);
 			if (params.background) {
 				void promise.then((result) => {
 					if (generation !== sessionGeneration) return;
@@ -237,6 +239,10 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 					if (!fleet.active && !dispatcher.snapshot().activeRunId && dispatcher.snapshot().queuedRunIds.length === 0) fleet.render();
 				}).catch((error) => {
 					if (generation !== sessionGeneration) return;
+					if (controller.signal.aborted) {
+						pi.sendMessage({ customType: "herdr-subagents-run", content: `Subagent run ${runId} cancelled.`, display: true, details: { runId, status: "cancelled" } }, { triggerTurn: true, deliverAs: "followUp" });
+						return;
+					}
 					pi.sendMessage({ customType: "herdr-subagents-run", content: `Subagent run ${runId} failed: ${error instanceof Error ? error.message : String(error)}`, display: true, details: { runId, status: "failed" } }, { triggerTurn: true, deliverAs: "followUp" });
 				});
 				return { content: [{ type: "text" as const, text: `Subagent run queued: ${runId}` }], details: { runId, status: "queued", background: true } };
@@ -253,12 +259,12 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 	pi.registerTool({
 		name: "herdr_subagents_control",
 		label: "Herdr Subagents Control",
-		description: "Inspect Herdr personas and run history, answer a blocked task, resume a saved task, or remove a selected archived run. Use herdr_subagents to start new work.",
+		description: "Inspect Herdr personas and run history, cancel active or queued work, answer a blocked task, resume a saved task, or remove a selected archived run. Use herdr_subagents to start new work.",
 		promptSnippet: "Inspect and control Herdr subagent runs",
 		parameters: HerdrSubagentsControlParams,
 
 		async execute(_toolCallId, params: HerdrSubagentsControlToolParams, signal, onUpdate, ctx) {
-			const executionId = params.runId ?? randomUUID();
+			const executionId = randomUUID();
 			const controller = new AbortController();
 			runControllers.set(executionId, controller);
 			const runSignal = AbortSignal.any([controller.signal, sessionController.signal, ...(signal ? [signal] : [])]);
@@ -269,7 +275,34 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 				const updateDetails = update.details as { warning?: string };
 				if (updateDetails.warning || updateText?.includes("cleanup failed")) ctx.ui.notify(updateDetails.warning ?? updateText ?? "Subagent warning", "warning");
 				onUpdate?.(update);
-			}, ctx, { agentsDirectory: packageAgentsDir, owner: { sessionId: ownerSessionId, processId: process.pid } });
+			}, ctx, {
+				agentsDirectory: packageAgentsDir,
+				herdr,
+				owner: { sessionId: ownerSessionId, processId: process.pid },
+				cancelRun: async (runId) => {
+					const reason = new Error("Subagent run cancelled by user.");
+					const targetController = runControllers.get(runId);
+					targetController?.abort(reason);
+					if (dispatcher.cancelQueuedRun(runId, reason)) {
+						await cancelQueuedRuns(ctx.cwd, [runId], { reason: reason.message, owner: { sessionId: ownerSessionId, processId: process.pid } });
+						fleet.clearRun(runId);
+						return { cancelled: true, queued: true };
+					}
+					const activePromise = runPromises.get(runId);
+					if (activePromise) {
+						await activePromise.catch(() => undefined);
+						fleet.clearRun(runId);
+						dispatcher.release(runId);
+						return { cancelled: true };
+					}
+					const cancellation = await cancelActiveSubagentRuns(ctx.cwd, herdr, { reason: reason.message, owner: { sessionId: ownerSessionId, processId: process.pid }, runId });
+					if (cancellation.cancelledRuns) {
+						fleet.clearRun(runId);
+						dispatcher.release(runId);
+					}
+					return { cancelled: cancellation.cancelledRuns > 0, cleanupErrors: cancellation.cleanupErrors };
+				},
+			});
 			inFlight.add(promise);
 			const result = await promise.finally(() => { inFlight.delete(promise); runControllers.delete(executionId); });
 			fleet.sync(result.details);

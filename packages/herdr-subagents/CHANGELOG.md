@@ -3,6 +3,7 @@
 - add the live compact Fleet footer with authoritative metrics and refreshed media
 - Replace the below-editor task list with a compact responsive Fleet monitor showing authoritative persona, task status, cumulative active time, and true child Pi usage from assistant, tool-result, standalone usage, compaction, and branch-summary entries.
 - Update Fleet metrics from child-session file events, repaint elapsed time only while work runs, safely ignore malformed or partial JSONL tails, and dispose every watcher and timer with the widget.
+- Refresh Fleet token totals on every running one-second tick, add targeted active/queued run cancellation, and treat an already-missing Herdr tab as successful idempotent cleanup.
 - Preserve exact-pane keyboard focus while extending blocked-response and historical-resume activity projections with durable timing and session metadata.
 - Use warning/yellow indicators for running Fleet rows and success/green indicators for completed rows, compact the shared metrics column instead of pushing it to the terminal edge, and publish media that demonstrates the live parent footer while restoring focus after capture.
 

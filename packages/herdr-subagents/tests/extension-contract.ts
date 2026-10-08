@@ -103,9 +103,23 @@ async function verifyPublicUiWiring() {
 		await background.tool.execute("second", { background: true, tasks: [{ name: "queued task", prompt: "two" }] }, undefined, undefined, { cwd, ui: background.ui });
 		if (background.widgetCalls !== activeWidgetCalls || !background.renderedLines.some((line) => line.includes("active task"))) throw new Error("queued background run replaced the active Fleet widget");
 		releaseFirst?.({ content: [{ type: "text", text: "done" }], details: { ...runningDetails, status: "completed" } });
-		await new Promise((resolve) => setTimeout(resolve, 10));
+			await new Promise((resolve) => setTimeout(resolve, 10));
 
-		const rejectedCwd = join(cwd, "rejected-background");
+			let cancelledSignal: AbortSignal | undefined;
+			const cancellable = harness(async (params, signal, _onUpdate, _ctx, dependencies) => {
+				if (params.action === "cancel") {
+					const result = await dependencies.cancelRun(params.runId);
+					return { content: [{ type: "text", text: "cancelled" }], details: { action: "cancel", runId: params.runId, ...result } };
+				}
+				cancelledSignal = signal;
+				return await new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+			});
+			await startHarness(cancellable, cwd);
+			const cancellableRun = await cancellable.tool?.execute("cancellable", { background: true, tasks: [{ name: "cancel me", prompt: "wait" }] }, undefined, undefined, { cwd, ui: cancellable.ui });
+			const cancelled = await cancellable.controlTool?.execute("cancel", { action: "cancel", runId: cancellableRun.details.runId }, undefined, undefined, { cwd, ui: cancellable.ui });
+			if (!cancelledSignal?.aborted || cancelled?.details?.cancelled !== true) throw new Error("cancel control did not abort the selected live background run");
+
+			const rejectedCwd = join(cwd, "rejected-background");
 		mkdirSync(rejectedCwd, { recursive: true });
 		const rejectedBackground = harness(async () => ({ content: [{ type: "text", text: "Unknown persona" }], details: { errorMessage: "Unknown persona" }, isError: true }));
 		await startHarness(rejectedBackground, rejectedCwd);

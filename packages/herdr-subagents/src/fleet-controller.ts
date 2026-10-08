@@ -103,7 +103,10 @@ export class FleetWidget implements Component {
 			} catch { /* The next durable activity update can retry the watch. */ }
 		}
 		const hasRunning = this.batch.activity.some((task) => task.status === "running");
-		if (hasRunning && !this.elapsedTimer) this.elapsedTimer = this.runtime.setInterval(() => this.tui.requestRender(), 1_000);
+		if (hasRunning && !this.elapsedTimer) this.elapsedTimer = this.runtime.setInterval(() => {
+			this.tui.requestRender();
+			this.scheduleMetricsRefresh(0);
+		}, 1_000);
 		else if (!hasRunning && this.elapsedTimer) { this.runtime.clearInterval(this.elapsedTimer); this.elapsedTimer = undefined; }
 		this.scheduleMetricsRefresh(0);
 	}

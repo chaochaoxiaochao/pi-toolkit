@@ -23,7 +23,7 @@ async function closeRunTab(run: RunRecord, runFile: string, herdr: HerdrAutomati
 	}
 }
 
-export interface CancelActiveRunsOptions { reason?: string; owner?: OwnerIdentity; }
+export interface CancelActiveRunsOptions { reason?: string; owner?: OwnerIdentity; runId?: string; }
 
 export async function cancelActiveSubagentRuns(cwd: string, herdr: HerdrAutomation, options: CancelActiveRunsOptions = {}): Promise<CancellationResult> {
 	const reason = options.reason ?? "Parent Pi session closed.";
@@ -39,6 +39,7 @@ export async function cancelActiveSubagentRuns(cwd: string, herdr: HerdrAutomati
 			result.cleanupErrors.push(`Could not inspect Subagent run ${runFile}: ${error instanceof Error ? error.message : String(error)}`);
 			continue;
 		}
+		if (options.runId && run.id !== options.runId) continue;
 		if (!isActiveStatus(run.status)) continue;
 		if (options.owner?.sessionId && run.ownerSessionId !== options.owner.sessionId) continue;
 		const now = new Date().toISOString();
