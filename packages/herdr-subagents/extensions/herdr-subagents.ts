@@ -136,7 +136,7 @@ async function shutdownParentSession(options: { cwd: string; herdr: HerdrAutomat
 }
 
 export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSubagentsExtensionDependencies = {}) {
-	if (process.env.PI_HERDR_SUBAGENTS_CHILD === "1") return;
+	if (process.env.PI_HERDR_SUBAGENTS_CHILD === "1" || process.env.HERDR_ENV !== "1" || !process.env.HERDR_WORKSPACE_ID) return;
 	const herdr = dependencies.herdr ?? new CliHerdrAutomation();
 	const execute = dependencies.execute ?? executeHerdrSubagents;
 	const isEditorComponent = dependencies.isEditor ?? ((value: unknown) => value instanceof Editor);

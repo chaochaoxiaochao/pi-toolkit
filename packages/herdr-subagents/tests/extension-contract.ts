@@ -7,6 +7,7 @@ import { registerHerdrSubagents } from "../extensions/herdr-subagents.ts";
 
 function harness(execute: (...args: any[]) => Promise<any>) {
 	const handlers = new Map<string, (...args: any[]) => any>();
+	const commands: string[] = [];
 	let tool: Record<string, any> | undefined;
 	let terminalInput: ((data: string) => { consume?: boolean } | undefined) | undefined;
 	let widgetCalls = 0;
@@ -26,7 +27,7 @@ function harness(execute: (...args: any[]) => Promise<any>) {
 	const pi = {
 		on(name: string, handler: (...args: any[]) => any) { handlers.set(name, handler); },
 		registerTool(definition: Record<string, any>) { tool = definition; },
-		registerCommand() {},
+		registerCommand(name: string) { commands.push(name); },
 		sendMessage() {},
 	};
 	registerHerdrSubagents(pi as never, {
@@ -37,6 +38,7 @@ function harness(execute: (...args: any[]) => Promise<any>) {
 	});
 	return {
 		handlers,
+		commands,
 		get tool() { return tool; },
 		get terminalInput() { return terminalInput; },
 		get widgetCalls() { return widgetCalls; },
@@ -147,7 +149,38 @@ async function verifyPublicUiWiring() {
 	}
 }
 
-await verifyPublicUiWiring();
+const originalHerdrEnv = process.env.HERDR_ENV;
+const originalWorkspaceId = process.env.HERDR_WORKSPACE_ID;
+const originalChild = process.env.PI_HERDR_SUBAGENTS_CHILD;
+try {
+	delete process.env.HERDR_ENV;
+	delete process.env.HERDR_WORKSPACE_ID;
+	delete process.env.PI_HERDR_SUBAGENTS_CHILD;
+	const outside = harness(async () => { throw new Error("unreachable"); });
+	if (outside.tool || outside.commands.length || outside.handlers.size) throw new Error("Subagents registered outside Herdr");
+	process.env.HERDR_ENV = "1";
+	const missingWorkspace = harness(async () => { throw new Error("unreachable"); });
+	if (missingWorkspace.tool || missingWorkspace.commands.length || missingWorkspace.handlers.size) throw new Error("Subagents registered without a Herdr workspace");
+	process.env.HERDR_ENV = "0";
+	process.env.HERDR_WORKSPACE_ID = "w1";
+	const inactiveHerdr = harness(async () => { throw new Error("unreachable"); });
+	if (inactiveHerdr.tool || inactiveHerdr.commands.length || inactiveHerdr.handlers.size) throw new Error("Subagents registered with HERDR_ENV=0");
+	process.env.HERDR_ENV = "1";
+	const inside = harness(async () => { throw new Error("unreachable"); });
+	if (!inside.tool || !inside.commands.includes("herdr-subagents") || !inside.handlers.has("session_start")) throw new Error("Subagents did not register inside Herdr");
+	process.env.PI_HERDR_SUBAGENTS_CHILD = "1";
+	const child = harness(async () => { throw new Error("unreachable"); });
+	if (child.tool || child.commands.length || child.handlers.size) throw new Error("Subagents registered inside a child Agent");
+	delete process.env.PI_HERDR_SUBAGENTS_CHILD;
+	await verifyPublicUiWiring();
+} finally {
+	if (originalHerdrEnv === undefined) delete process.env.HERDR_ENV;
+	else process.env.HERDR_ENV = originalHerdrEnv;
+	if (originalWorkspaceId === undefined) delete process.env.HERDR_WORKSPACE_ID;
+	else process.env.HERDR_WORKSPACE_ID = originalWorkspaceId;
+	if (originalChild === undefined) delete process.env.PI_HERDR_SUBAGENTS_CHILD;
+	else process.env.PI_HERDR_SUBAGENTS_CHILD = originalChild;
+}
 
 export default function (_pi: ExtensionAPI) {
 	let tool: Record<string, any> | undefined;
@@ -158,7 +191,22 @@ export default function (_pi: ExtensionAPI) {
 		sendMessage() {},
 	};
 
-	registerHerdrSubagents(pi as never, { herdr: {} as never });
+	const previousHerdrEnv = process.env.HERDR_ENV;
+	const previousWorkspaceId = process.env.HERDR_WORKSPACE_ID;
+	const previousChild = process.env.PI_HERDR_SUBAGENTS_CHILD;
+	try {
+		process.env.HERDR_ENV = "1";
+		process.env.HERDR_WORKSPACE_ID = "w1";
+		delete process.env.PI_HERDR_SUBAGENTS_CHILD;
+		registerHerdrSubagents(pi as never, { herdr: {} as never });
+	} finally {
+		if (previousHerdrEnv === undefined) delete process.env.HERDR_ENV;
+		else process.env.HERDR_ENV = previousHerdrEnv;
+		if (previousWorkspaceId === undefined) delete process.env.HERDR_WORKSPACE_ID;
+		else process.env.HERDR_WORKSPACE_ID = previousWorkspaceId;
+		if (previousChild === undefined) delete process.env.PI_HERDR_SUBAGENTS_CHILD;
+		else process.env.PI_HERDR_SUBAGENTS_CHILD = previousChild;
+	}
 	if (!tool) throw new Error("herdr_subagents was not registered");
 	const schema = tool.parameters as Record<string, any>;
 	if (schema.type !== "object" || schema.anyOf || schema.oneOf) throw new Error("herdr_subagents parameters must be one flat object schema");

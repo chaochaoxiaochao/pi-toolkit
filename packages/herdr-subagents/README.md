@@ -24,7 +24,7 @@ pi update npm:@maxiaochao/pi-herdr-subagents
 
 The full `@maxiaochao/pi-toolkit` package also bundles this extension. Install the full toolkit or this standalone child package, not both.
 
-The package registers one tool, `herdr_subagents`. Calls outside a Herdr workspace fail without starting a child.
+Inside a Herdr workspace, the package registers `herdr_subagents` and `/herdr-subagents`. Outside Herdr (or without a workspace ID), the extension registers neither, so the tool is absent from the model context. Start Pi inside Herdr or reload the extension there to enable them.
 
 The design replaces hidden print-mode subprocesses with ordinary interactive Pi Agents managed through Herdr, so delegated work stays visible, inspectable, resumable, and durably recorded.
 

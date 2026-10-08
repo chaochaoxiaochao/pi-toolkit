@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Skip tool and command registration outside a Herdr workspace so unavailable Subagent capabilities do not enter the model context.
 - Preserve newly allocated panes when blocked runs resume, stop blindly retrying Herdr resource-creating commands after uncertain failures, and prevent concurrent historical resumes from writing the same Pi session.
 - Isolate malformed queue/history entries so healthy active runs and durable history remain recoverable, and share durable attempt settlement plus task projection contracts across execution modes.
 - Retain blocked Fleet and dispatcher ownership after stateless response errors, and include public test entrypoints in the published package.
