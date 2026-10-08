@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-08 - v0.10.2
 
+- bundle herdr-subagents v0.3.0: split execution and control tools and unify task runs
 - Bundle the Herdr Subagents execution/control tool split and unified non-empty `tasks` input for single and multi-task runs.
 
 ## 2026-10-08 - v0.10.1
