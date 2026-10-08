@@ -158,9 +158,10 @@ function table(state) {
   const model = process.env.PI_HERDR_MEDIA_MODEL ?? "pudu/gpt-5.6-sol";
   const result = await runHerdrSubagents("Inspect packages/herdr-subagents/src/result-path.ts and summarize what it guarantees.", { cwd: root, model, tools: ["read", "grep"] });
   if (!result.ok) throw new Error(`Herdr Subagents media capture failed: ${result.errorMessage ?? result.summary}`);
-	const one = [`$ herdr_subagents run explorer "Inspect result-path.ts"`, ``, `Opening an interactive Pi Agent in a dedicated Herdr pane...`].join("\n");
-	const two = [one, `  lifecycle: agent start → agent prompt --wait`, `  print mode: disabled`, `  model: ${model}`, `  tools: read, grep`, `  persistent session: ${result.sessionFile ? "enabled" : "missing"}`, `  child recursion guard: enabled`].join("\n");
-  const three = [two, ``, `Child result`, `------------`, result.output, ``, `Process exited successfully.`].join("\n");
+  const one = [`$ herdr_subagents({ agent: "explorer", prompt: "Inspect result-path.ts" })`, ``, `Opening an interactive Pi Agent in a dedicated Herdr pane...`].join("\n");
+  const two = [one, `  lifecycle: agent start → agent prompt --wait`, `  print mode: disabled`, `  model: ${model}`, `  tools: read, grep`, `  persistent session: ${result.sessionFile ? "enabled" : "missing"}`, `  child recursion guard: enabled`].join("\n");
+  const output = result.output.replaceAll(root, "<project>");
+  const three = [two, ``, `Child result`, `------------`, output, ``, `Process exited successfully.`].join("\n");
   pages("herdr-subagents", [one, two, three]);
 }
 
