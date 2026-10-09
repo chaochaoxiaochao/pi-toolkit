@@ -50,7 +50,11 @@ Every changed line traces to the user's request or to a defect that request reve
 - "Tests pass" is wrong if any required test was skipped or not run.
 - If a required input, file, or tool is missing, or a step is impossible under the stated constraints, report what is missing and what you need. Never fabricate it to make a check pass.
 
-## 7. Worktree Isolation
+## 7. Frontend Verification
+
+For frontend feature development, load the `web-browser` skill and verify the result in a real Chrome browser through CDP. Exercise the relevant user flow with real clicks, capture screenshots of the resulting UI, and test the actual behavior before reporting completion. Static inspection or non-browser tests do not replace this verification.
+
+## 8. Worktree Isolation
 
 For a Git-repository task that coordinates substantial changes across multiple files or modules, or implements a feature intended for release, ask before editing whether to isolate it in a worktree. Skip the question when already in a linked worktree.
 

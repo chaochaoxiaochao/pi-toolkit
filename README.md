@@ -82,7 +82,6 @@ bash scripts/install.sh
 | Skill | Purpose |
 |---|---|
 | `web-browser` | Launch and automate an isolated Chrome/Chromium session through CDP |
-| `chrome-cdp` | Attach to an existing Chrome debugging session |
 | `show-me` | Explain the current topic with the smallest useful visual |
 | `html-artifact` | Build self-contained HTML explainers and diagrams |
 | `pdlog` | Decompress and inspect Pudu `.pdlog` files |

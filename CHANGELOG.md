@@ -1,6 +1,15 @@
+## 2026-10-09 - v0.10.10
+
+- require real Chrome frontend verification and remove the redundant chrome-cdp skill
+
+## Unreleased
+
+- Require real Chrome click, screenshot, and behavior verification through `web-browser` for frontend feature development, and remove the redundant `chrome-cdp` skill.
+
 ## 2026-10-09 - v0.10.9
 
 - bundle scheduler v0.1.1: add clear-all controls and multi-line widget coexistence
+
 ## 2026-10-09 - v0.10.8
 
 - bundle worktree v0.2.0: add current-session worktree switching for users, Agents, and SDK Harnesses
