@@ -1,6 +1,6 @@
 # @maxiaochao/pi-worktree
 
-`pi-worktree` CLI 与配套 Pi skill。CLI 创建、检查和清理 Git worktree，并在隔离目录中启动 Pi。
+`pi-worktree` CLI、Pi Extension 与配套 skill。它既能启动独立 Pi，也能让用户在当前界面切换 worktree，或让 Agent 向 SDK Harness 发出结构化切换请求。
 
 ![Worktree 在真实临时 Git 仓库中的运行截图](docs/screenshot.png)
 
@@ -14,16 +14,28 @@
 
 ```bash
 pi-worktree start feature -p "implement the feature"
+pi-worktree prepare feature --json
 pi-worktree info feature
 pi-worktree out
 pi-worktree remove feature
 ```
 
-`start` 从当前分支创建或复用 `.worktrees/feature`，记录 base，并在该目录启动 Pi。
+`start` 从当前分支创建或复用 `.worktrees/feature`，记录 base，并在该目录启动 Pi。`prepare` 复用同一创建逻辑，但只返回目标，不启动嵌套 Pi。
+
+在交互式 Pi 中，用户可以保留当前界面和完整对话：
+
+```text
+/worktree start feature
+/worktree start feature --base main
+```
+
+命令会把当前持久会话 fork 到目标 worktree，再通过 Pi 的公开 session replacement API 切换。临时的 `--no-session` 会话无法使用此入口。
+
+Agent 使用 Extension 注册的 `enter_worktree` tool。它创建或复用目标后返回 `pi-worktree/switch-request` 结构化结果，并终止当前工具轮；兼容 Harness 应在 `agent_settled` 后读取 `sessionFile` 和 `path`，执行 `SessionManager.forkFrom(sessionFile, path)`，再把返回的新 session 文件交给 `runtime.switchSession()`，最后重新绑定 `runtime.session`。这样目标 cwd 会写入新 session header，重启后仍然有效。普通 Pi 没有宿主切换钩子时，Tool 只会生成请求；用户仍可使用 `/worktree start` 完成切换。
 
 ## 安装
 
-完整工具包已经包含 CLI 和 skill：
+完整工具包已经包含 CLI、Extension 和 skill：
 
 ```bash
 pi install npm:@maxiaochao/pi-toolkit
@@ -50,11 +62,14 @@ pi update npm:@maxiaochao/pi-worktree # 更新独立子包
 
 ```bash
 pi-worktree start <name> [pi args...]
+pi-worktree prepare [--base <ref>] [--json] <name>
 pi-worktree list
 pi-worktree info <name>
 pi-worktree out
 pi-worktree remove <name>
 pi-worktree prune
 ```
+
+`prepare --json` 是 Extension 和其他宿主使用的幂等机器接口，返回 `created`、`attached`、`reused` 或 `already-active`，以及绝对路径、分支和 dirty 状态。已有 worktree 会复用；已存在但未挂载的同名分支会挂载；stale 注册、非法名称和路径冲突会显式失败。
 
 Agent 用法见 `skills/pi-worktree/SKILL.md`。测试流程、夹具和结果见 [TESTING.md](TESTING.md)。

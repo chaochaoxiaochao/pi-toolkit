@@ -1,19 +1,26 @@
 {
   "name": "@maxiaochao/pi-worktree",
   "version": "0.1.0",
-  "description": "Git worktree CLI and Pi skill for isolated coding tasks.",
+  "description": "Git worktree CLI, Pi extension, and skill for isolated coding tasks.",
   "type": "module",
   "keywords": ["pi-package", "pi-skill", "git", "worktree"],
-  "files": ["bin", "skills", "scripts", "docs", "README.md", "TESTING.md", "CHANGELOG.md"],
+  "files": ["bin", "extensions", "skills", "scripts", "docs", "README.md", "TESTING.md", "CHANGELOG.md"],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/chaochaoxiaochao/pi-toolkit.git",
     "directory": "packages/worktree"
   },
   "bin": { "pi-worktree": "bin/pi-worktree" },
-  "pi": { "skills": ["./skills"] },
+  "pi": {
+    "extensions": ["./extensions/worktree.ts"],
+    "skills": ["./skills"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
   "scripts": {
-    "test": "node --test tests/install.test.mjs && bash tests/run-tests.sh",
+    "test": "node --test tests/install.test.mjs && node --experimental-strip-types --test tests/extension.test.mjs && bash tests/run-tests.sh",
     "postinstall": "node scripts/install.mjs"
   },
   "publishConfig": { "access": "public" }

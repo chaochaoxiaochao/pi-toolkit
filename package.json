@@ -34,7 +34,8 @@
       "./extensions/btw/index.ts",
       "./packages/codex-edit/extensions/codex-edit.ts",
       "./packages/herdr-subagents/extensions/herdr-subagents.ts",
-      "./packages/scheduler/extensions/scheduler.ts"
+      "./packages/scheduler/extensions/scheduler.ts",
+      "./packages/worktree/extensions/worktree.ts"
     ],
     "skills": [
       "./skills",
@@ -58,7 +59,7 @@
   },
   "scripts": {
     "test": "node tests/package-layout.mjs && npm --prefix packages/todo test && npm --prefix packages/cache-export test && npm --prefix packages/codex-edit test && npm --prefix packages/herdr-subagents test && npm --prefix packages/scheduler test && npm --prefix packages/worktree test && node --experimental-strip-types extensions/btw/tests/history.mjs",
-    "load-test": "pi -ne -e ./packages/cache-export/extensions/cache-export.ts && pi -ne -e ./extensions/btw/index.ts && pi -ne -e ./packages/codex-edit/extensions/codex-edit.ts && pi -ne -e ./packages/herdr-subagents/extensions/herdr-subagents.ts && pi -ne -e ./packages/scheduler/extensions/scheduler.ts",
+    "load-test": "pi -ne -e ./packages/cache-export/extensions/cache-export.ts && pi -ne -e ./extensions/btw/index.ts && pi -ne -e ./packages/codex-edit/extensions/codex-edit.ts && pi -ne -e ./packages/herdr-subagents/extensions/herdr-subagents.ts && pi -ne -e ./packages/scheduler/extensions/scheduler.ts && pi -ne -e ./packages/worktree/extensions/worktree.ts",
     "eval:agents": "node evaluations/agents-md/run.mjs",
     "eval:agents:test": "node evaluations/agents-md/tests/run-tests.mjs",
     "postinstall": "node scripts/install-agents.mjs"

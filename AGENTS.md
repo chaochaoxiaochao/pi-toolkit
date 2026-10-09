@@ -48,7 +48,7 @@ pi-toolkit/
 - Cache Export 的发布验收要求确定性测试通过，并在有 Chrome 的环境中跑浏览器 E2E；skip 不算发布验收通过。
 - `packages/cache-export/src/tau-assets.ts` 来自 `huggingface/tau` 的 `session_usage.py`，只能重生成，不能手改。
 - Herdr Subagents 的实现可能存在并行工作；重构 package 接线时保留其未提交实现改动。
-- Worktree 包同时拥有 CLI、completion、postinstall 与 skill，不能只同步 skill。
+- Worktree 包同时拥有 CLI、Extension、completion、postinstall 与 skill；CLI 是 Git 操作的唯一实现，Extension 的 command/tool 必须复用 `prepare --json`，不能只同步其中一层。
 - 扩展依赖 Pi 内置包时放 `peerDependencies`（`@earendil-works/pi-*`、`typebox`），不要安装实体副本。
 - 不用 `.mjs` 写扩展入口；Pi `/reload` 对 `.ts/.js` 使用 jiti，Node 原生 `.mjs` 缓存不会刷新。
 
