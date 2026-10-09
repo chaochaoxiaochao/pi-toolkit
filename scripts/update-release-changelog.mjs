@@ -8,12 +8,12 @@ if (!path || !/^\d+\.\d+\.\d+(?:[-+].+)?$/.test(version ?? "") || !note || !/^\d
 }
 
 const changelog = await readFile(path, "utf8");
-if (!changelog.startsWith("## Unreleased\n")) {
+const unreleased = /^(# Changelog\n\n)?## Unreleased\n(?:\n)?/;
+if (!unreleased.test(changelog)) {
   console.error(`${path} must start with an Unreleased section`);
   process.exit(1);
 }
-const released = changelog.replace(
-  /^## Unreleased\n(?:\n)?/,
-  `## ${date} - v${version}\n\n- ${note}\n`,
+const released = changelog.replace(unreleased, (_match, title = "") =>
+  `${title}## ${date} - v${version}\n\n- ${note}\n`,
 );
 await writeFile(path, released, "utf8");

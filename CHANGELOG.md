@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-09 - v0.10.8
 
+- bundle worktree v0.2.0: add current-session worktree switching for users, Agents, and SDK Harnesses
 - Improve Scheduler with clear-all controls and a visible above-editor row for every active schedule, separate from the below-editor Herdr Fleet.
 - Bundle the Worktree Extension with `/worktree start`, the `enter_worktree` Agent Tool, and the structured Harness workspace-switch protocol.
 - Add the idempotent `pi-worktree prepare --json` machine interface so the CLI remains the single implementation for worktree creation and reuse.
