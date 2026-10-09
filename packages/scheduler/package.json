@@ -1,0 +1,25 @@
+{
+  "name": "@maxiaochao/pi-scheduler",
+  "version": "0.1.0",
+  "description": "Session-scoped interval prompts for Pi agents.",
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "scheduler"],
+  "files": ["extensions", "src", "docs", "README.md", "TESTING.md", "CHANGELOG.md"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chaochaoxiaochao/pi-toolkit.git",
+    "directory": "packages/scheduler"
+  },
+  "pi": { "extensions": ["./extensions/scheduler.ts"] },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types tests/scheduler-core.mjs && node --experimental-strip-types tests/scheduler-extension.mjs",
+    "load-test": "pi -ne -e ./extensions/scheduler.ts"
+  },
+  "publishConfig": { "access": "public" }
+}

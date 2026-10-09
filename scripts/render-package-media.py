@@ -17,6 +17,7 @@ FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
 
 PACKAGES = {
     "todo": ("Pi Todo", "Production state-machine output"),
+    "scheduler": ("Pi Scheduler", "Production scheduler with deterministic time"),
     "codex-edit": ("Pi Codex Edit", "Production parser and patch application"),
     "worktree": ("Pi Worktree", "Shipped CLI running in a temporary Git repository"),
 }
@@ -110,8 +111,15 @@ def render_herdr_subagents():
     shutil.copyfile(CAPTURE / "herdr-demo.webm", docs / "demo.webm")
 
 
+selected = set(sys.argv[2:])
 for package_slug, metadata in PACKAGES.items():
-    render_terminal_package(package_slug, *metadata)
-render_herdr_subagents()
-render_cache_export()
-print("Rendered package screenshots and demos, including the Herdr screenshot and WebM recording")
+    if not selected or package_slug in selected:
+        render_terminal_package(package_slug, *metadata)
+if not selected or "herdr-subagents" in selected:
+    render_herdr_subagents()
+if not selected or "cache-export" in selected:
+    render_cache_export()
+if selected:
+    print(f"Rendered package media for {', '.join(sorted(selected))}")
+else:
+    print("Rendered all package screenshots and demos, including the Herdr screenshot and WebM recording")

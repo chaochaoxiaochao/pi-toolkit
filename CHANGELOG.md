@@ -1,3 +1,7 @@
+## Unreleased
+
+- Add the bundled and independently installable `@maxiaochao/pi-scheduler` package for session-scoped interval prompts, manual triggering, lightweight TUI status, and shared Agent/user controls.
+
 ## 2026-10-09 - v0.10.6
 
 - bundle herdr-subagents v0.4.3: add per-run status, neutral analyst persona, and tool-agnostic Agent Team protocol

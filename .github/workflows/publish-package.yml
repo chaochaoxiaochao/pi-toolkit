@@ -7,6 +7,7 @@ on:
       - "cache-export-v*"
       - "codex-edit-v*"
       - "herdr-subagents-v*"
+      - "scheduler-v*"
       - "worktree-v*"
 
 jobs:

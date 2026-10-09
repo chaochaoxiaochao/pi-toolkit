@@ -16,6 +16,7 @@ pi-toolkit/
 │   ├── cache-export/            # @maxiaochao/pi-cache-export 权威源码
 │   ├── codex-edit/              # @maxiaochao/pi-codex-edit 权威源码
 │   ├── herdr-subagents/         # @maxiaochao/pi-herdr-subagents 权威源码
+│   ├── scheduler/               # @maxiaochao/pi-scheduler 权威源码
 │   └── worktree/                # @maxiaochao/pi-worktree：bin + completion + skill
 ├── skills/                      # 主包独有的通用 skills
 ├── themes/nightowl.json
@@ -43,6 +44,7 @@ pi-toolkit/
 - 修改根入口、BTW、主题、全局指令或组合清单时运行 `npm test`、`npm run load-test` 和根目录 `npm pack --dry-run`。
 - Codex Edit 必须加载 `packages/codex-edit/extensions/codex-edit.ts`；parser/matcher 改动必须覆盖重复 HTML/Markdown 区域、同路径多 update、多 hunk、多文件 patch，以及空 chunk、stale context 和冲突路径的安全失败。每个新生产问题先加入 `tests/comparison-cases.mjs`，且 native/released 两组对比都必须通过。`npm --prefix packages/codex-edit test` 必须从测试结果生成 `docs/test-report.md`，再转换为自包含 `docs/test-report.html`；提交和发版必须包含最新报告。冻结的 released baseline 保持不变。
 - Herdr Subagents 必须运行全部确定性测试、加载 `packages/herdr-subagents/extensions/herdr-subagents.ts`，并在真实 Herdr 中验证只读并发批次和 tab 清理；媒体必须通过 `HERDR_MEDIA_WINDOW_ID=<window-id> node scripts/capture-package-media.mjs` 录制父 Pi 对话、逐一聚焦三个真实 Agent pane 和最终父会话结果，同时保留截图和完整 WebM 视频。
+- Scheduler 必须运行确定性 fake-clock 与 extension 集成测试、加载 `packages/scheduler/extensions/scheduler.ts`，并验证定时/手动触发统一使用 followUp、同一 schedule 最多积压一次、取消与 session shutdown 清理 timer；媒体展示真实核心状态机输出。
 - Cache Export 的发布验收要求确定性测试通过，并在有 Chrome 的环境中跑浏览器 E2E；skip 不算发布验收通过。
 - `packages/cache-export/src/tau-assets.ts` 来自 `huggingface/tau` 的 `session_usage.py`，只能重生成，不能手改。
 - Herdr Subagents 的实现可能存在并行工作；重构 package 接线时保留其未提交实现改动。
@@ -83,6 +85,7 @@ pi install npm:@maxiaochao/pi-todo
 pi install npm:@maxiaochao/pi-cache-export
 pi install npm:@maxiaochao/pi-codex-edit
 pi install npm:@maxiaochao/pi-herdr-subagents
+pi install npm:@maxiaochao/pi-scheduler
 pi install npm:@maxiaochao/pi-worktree
 ```
 
@@ -97,7 +100,7 @@ pi install npm:@maxiaochao/pi-worktree
 子包修改统一使用联动发布：
 
 ```bash
-./scripts/release-package.sh <todo|cache-export|codex-edit|herdr-subagents|worktree> <initial|patch|minor|major> "<note>" [主包 patch|minor|major]
+./scripts/release-package.sh <todo|cache-export|codex-edit|herdr-subagents|scheduler|worktree> <initial|patch|minor|major> "<note>" [主包 patch|minor|major]
 ```
 
 - 主包 tag 为 `vX.Y.Z`，由 `.github/workflows/publish.yml` 发布。
@@ -116,6 +119,7 @@ pi update npm:@maxiaochao/pi-todo
 pi update npm:@maxiaochao/pi-cache-export
 pi update npm:@maxiaochao/pi-codex-edit
 pi update npm:@maxiaochao/pi-herdr-subagents
+pi update npm:@maxiaochao/pi-scheduler
 pi update npm:@maxiaochao/pi-worktree
 ```
 

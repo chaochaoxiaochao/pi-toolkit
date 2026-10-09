@@ -121,6 +121,47 @@ function table(state) {
   return state.todos.map((todo) => `${String(todo.id).padStart(2)}  ${todo.status.padEnd(9)} ${todo.text}`).join("\n");
 }
 
+// Scheduler: execute the production scheduler with a deterministic clock.
+{
+  const { Scheduler } = await import(join(root, "packages/scheduler/src/scheduler.ts"));
+  class MediaClock {
+    nowMs = Date.UTC(2026, 9, 9, 9, 0, 0);
+    nextHandle = 1;
+    timers = new Map();
+    now() { return this.nowMs; }
+    setTimeout(callback, delayMs) {
+      const handle = this.nextHandle++;
+      this.timers.set(handle, { at: this.nowMs + delayMs, callback });
+      return handle;
+    }
+    clearTimeout(handle) { this.timers.delete(handle); }
+    advance(ms) {
+      this.nowMs += ms;
+      for (;;) {
+        const due = [...this.timers.entries()].filter(([, timer]) => timer.at <= this.nowMs).sort((a, b) => a[1].at - b[1].at)[0];
+        if (!due) return;
+        this.timers.delete(due[0]);
+        due[1].callback();
+      }
+    }
+  }
+  const clock = new MediaClock();
+  const events = [];
+  const scheduler = new Scheduler({ clock, onTrigger: (schedule, source) => events.push(`${source}: ${schedule.id} → ${schedule.prompt}`) });
+  const created = scheduler.add("5m", "Check CI; report completion or failure.");
+  const one = [
+    `$ /schedule add 5m Check CI; report completion or failure.`,
+    `Created ${created.id} · next 09:05:00`,
+    `TUI  ⏱ 1 schedule · next 09:05:00`,
+  ].join("\n");
+  scheduler.trigger(created.id);
+  const two = [one, ``, `$ /schedule trigger ${created.id}`, events.at(-1), `Regular next time remains 09:05:00`].join("\n");
+  scheduler.acknowledge(created.id);
+  clock.advance(300_000);
+  const three = [two, ``, `09:05:00 timer fired`, events.at(-1), `Next trigger 09:10:00`, ``, `$ /schedule list`, `${created.id} · every 5m · next 09:10:00`].join("\n");
+  pages("scheduler", [one, two, three]);
+}
+
 // Todo: execute the production state machine and capture each mutation.
 {
   const { applyTodoAction } = await import(join(root, "packages/todo/src/todo-state.ts"));
