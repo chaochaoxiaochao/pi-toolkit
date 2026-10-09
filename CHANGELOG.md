@@ -1,3 +1,7 @@
+## 2026-10-09 - v0.10.15
+
+- redesign the TAPD skill around executable workflows, explicit workspace and JSON contracts, and safe attachment handling
+
 ## 2026-10-09 - v0.10.14
 
 - bundle worktree v0.3.2: continue Agent tasks automatically after switching into a worktree
