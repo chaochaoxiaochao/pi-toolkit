@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- 修复 `enter_worktree` 只创建目录却不切换的问题；现在 Extension 会在 `agent_settled` 后自动 fork 并切换当前会话，不再依赖外部 Harness 消费协议。
+- 移除 v0.2.0 的 `pi-worktree/switch-request` 常量及 `kind/version/action/sessionFile` 输出字段；自定义 Harness 若曾消费该协议，需要改用 Extension 内置自动切换。
+
 ## 2026-10-09 - v0.2.0
 
 - add current-session worktree switching for users, Agents, and SDK Harnesses

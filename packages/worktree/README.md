@@ -1,6 +1,6 @@
 # @maxiaochao/pi-worktree
 
-`pi-worktree` CLI、Pi Extension 与配套 skill。它既能启动独立 Pi，也能让用户在当前界面切换 worktree，或让 Agent 向 SDK Harness 发出结构化切换请求。
+`pi-worktree` CLI、Pi Extension 与配套 skill。它既能启动独立 Pi，也能让用户或 Agent 在当前 Pi 界面中切换 worktree，并保留完整对话。
 
 ![Worktree 在真实临时 Git 仓库中的运行截图](docs/screenshot.png)
 
@@ -14,7 +14,7 @@
 
 ```bash
 pi-worktree start feature -p "implement the feature"
-pi-worktree prepare feature --json
+pi-worktree prepare --json feature
 pi-worktree info feature
 pi-worktree out
 pi-worktree remove feature
@@ -31,7 +31,7 @@ pi-worktree remove feature
 
 命令会把当前持久会话 fork 到目标 worktree，再通过 Pi 的公开 session replacement API 切换。临时的 `--no-session` 会话无法使用此入口。
 
-Agent 使用 Extension 注册的 `enter_worktree` tool。它创建或复用目标后返回 `pi-worktree/switch-request` 结构化结果，并终止当前工具轮；兼容 Harness 应在 `agent_settled` 后读取 `sessionFile` 和 `path`，执行 `SessionManager.forkFrom(sessionFile, path)`，再把返回的新 session 文件交给 `runtime.switchSession()`，最后重新绑定 `runtime.session`。这样目标 cwd 会写入新 session header，重启后仍然有效。普通 Pi 没有宿主切换钩子时，Tool 只会生成请求；用户仍可使用 `/worktree start` 完成切换。
+Agent 使用 Extension 注册的 `enter_worktree` tool。它创建或复用目标、终止当前工具轮，并在 `agent_settled` 后自动触发内部 `/worktree` 命令。Extension 随后执行 `SessionManager.forkFrom()` 和 `switchSession()`；目标 cwd 会写入新 session header，当前界面继续显示完整对话，重启后也仍然有效。整个流程由 Extension 完成，不需要外部 Harness 适配。
 
 ## 安装
 

@@ -1,114 +1,204 @@
-import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
+import { pathToFileURL } from "node:url";
 
-const root = await mkdtemp(join(tmpdir(), "pi-worktree-extension-"));
-process.env.PI_CODING_AGENT_DIR = join(root, "agent");
-const { default: register, WORKTREE_SWITCH_REQUEST } = await import("../extensions/worktree.ts");
+const extensionUrl = pathToFileURL(
+  join(import.meta.dirname, "..", "extensions", "worktree.ts"),
+).href;
 
-test.after(async () => {
-  await rm(root, { recursive: true, force: true });
-});
-
-function setup(prepared) {
-  const commands = new Map();
-  const tools = new Map();
-  const pi = {
-    registerCommand(name, definition) { commands.set(name, definition); },
-    registerTool(definition) { tools.set(definition.name, definition); },
-    async exec(command, args, options) {
-      assert.match(command, /packages\/worktree\/bin\/pi-worktree$/);
-      assert.deepEqual(args, ["prepare", "--json", "--base", "main", "feature"]);
-      assert.equal(options.cwd, prepared.cwd);
-      return { code: 0, stdout: `${JSON.stringify(prepared.result)}\n`, stderr: "" };
-    },
-  };
-  register(pi);
-  return { commands, tools };
+function sourceSession(path, cwd) {
+  const timestamp = new Date().toISOString();
+  writeFileSync(path, [
+    JSON.stringify({ type: "session", version: 3, id: "source", timestamp, cwd }),
+    JSON.stringify({ type: "message", id: "history-1", parentId: null, timestamp, message: { role: "user", content: "preserve me", timestamp: Date.now() } }),
+    "",
+  ].join("\n"));
 }
 
-test("registers /worktree and switches a forked persistent session", async () => {
-  const cwd = join(root, "main");
-  const target = join(root, "main", ".worktrees", "feature");
-  await mkdir(target, { recursive: true });
-  const sourceSession = join(root, "source.jsonl");
-  await writeFile(sourceSession, `${JSON.stringify({ type: "session", version: 3, id: "source", timestamp: new Date().toISOString(), cwd })}\n`);
-  const prepared = { cwd, result: { status: "created", path: target, branch: "feature", dirty: false } };
-  const { commands } = setup(prepared);
+async function fixture({ cancelled = false, switchError, customSessionDir = true, deferExec = false } = {}) {
+  const root = mkdtempSync(join(tmpdir(), "pi-worktree-extension-"));
+  const cwd = join(root, "repo");
+  const worktree = join(root, "feature");
+  const sessions = join(root, "sessions");
+  mkdirSync(cwd);
+  mkdirSync(worktree);
+  mkdirSync(sessions);
+  const source = join(sessions, "source.jsonl");
+  sourceSession(source, cwd);
+
+  const handlers = {};
+  const sent = [];
   const notifications = [];
-  let switchedFile;
-  await commands.get("worktree").handler("start feature --base main", {
+  const execCalls = [];
+  let releaseExec;
+  let markExecStarted;
+  const execStarted = new Promise(resolve => { markExecStarted = resolve; });
+  const pi = {
+    on(event, handler) { handlers[event] = handler; },
+    registerCommand(name, command) { handlers[`command:${name}`] = command.handler; },
+    registerTool(tool) { handlers.tool = tool; },
+    async exec(command, args, options) {
+      execCalls.push({ command, args, options });
+      assert.equal(options.cwd, cwd);
+      markExecStarted();
+      if (deferExec) await new Promise(resolve => { releaseExec = resolve; });
+      return {
+        code: 0,
+        stdout: JSON.stringify({ status: "created", path: worktree, branch: "feature", dirty: false }),
+        stderr: "",
+      };
+    },
+    sendUserMessage(message, options) { sent.push({ message, options }); },
+  };
+
+  const extension = (await import(`${extensionUrl}?test=${Math.random()}`)).default;
+  extension(pi);
+
+  let switchedTo;
+  const ctx = {
     cwd,
-    sessionManager: { getSessionFile: () => sourceSession },
-    waitForIdle: async () => {},
-    ui: { notify: (...args) => notifications.push(args) },
-    async switchSession(file, options) {
-      switchedFile = file;
-      await options.withSession({ ui: { notify: (...args) => notifications.push(args) } });
+    sessionManager: {
+      getSessionFile: () => source,
+      usesDefaultSessionDir: () => !customSessionDir,
+      getSessionDir: () => sessions,
+    },
+    ui: { notify: (message, type) => notifications.push({ message, type }) },
+    async waitForIdle() {},
+    async switchSession(path, options) {
+      switchedTo = path;
+      if (cancelled) return { cancelled: true };
+      if (switchError) throw switchError;
+      await options.withSession({ ui: ctx.ui });
       return { cancelled: false };
     },
-  });
+  };
 
-  const header = JSON.parse((await readFile(switchedFile, "utf8")).split("\n")[0]);
-  assert.equal(header.cwd, target);
-  assert.equal(header.parentSession, sourceSession);
-  assert.deepEqual(notifications.at(-1), [`已切换到 feature：${target}`, "success"]);
-});
+  return {
+    root, cwd, worktree, sessions, handlers, sent, notifications, execCalls, ctx,
+    execStarted,
+    releaseExec: () => releaseExec(),
+    switchedTo: () => switchedTo,
+    cleanup: () => rmSync(root, { recursive: true, force: true }),
+  };
+}
 
-test("removes the forked session when /worktree switching is cancelled", async () => {
-  const cwd = join(root, "cancel-main");
-  const target = join(cwd, ".worktrees", "feature");
-  await mkdir(target, { recursive: true });
-  const sourceSession = join(root, "cancel-source.jsonl");
-  await writeFile(sourceSession, `${JSON.stringify({ type: "session", version: 3, id: "cancel-source", timestamp: new Date().toISOString(), cwd })}\n`);
-  const prepared = { cwd, result: { status: "created", path: target, branch: "feature", dirty: false } };
-  const { commands } = setup(prepared);
-  const notifications = [];
-  let forkedFile;
-  await commands.get("worktree").handler("start feature --base main", {
-    cwd,
-    sessionManager: { getSessionFile: () => sourceSession },
-    waitForIdle: async () => {},
-    ui: { notify: (...args) => notifications.push(args) },
-    async switchSession(file) {
-      forkedFile = file;
-      return { cancelled: true };
-    },
-  });
-
-  await assert.rejects(readFile(forkedFile, "utf8"), { code: "ENOENT" });
-  assert.deepEqual(notifications.at(-1), ["worktree 会话切换已取消", "warning"]);
-});
-
-test("registers enter_worktree with a durable Harness switch request", async () => {
-  const cwd = join(root, "main");
-  const target = join(cwd, ".worktrees", "feature");
-  const sourceSession = join(root, "tool-source.jsonl");
-  const prepared = { cwd, result: { status: "reused", path: target, branch: "feature", dirty: true } };
-  const { tools } = setup(prepared);
-  const tool = tools.get("enter_worktree");
-  assert.equal(tool.exposure, "model-only");
-  assert.ok(tool.outputSchema);
-  const result = await tool.execute(
+async function schedule(f) {
+  const result = await f.handlers.tool.execute(
     "call-1",
-    { name: "feature", base: "main" },
+    { name: "feature" },
     new AbortController().signal,
     undefined,
-    { cwd, sessionManager: { getSessionFile: () => sourceSession } },
+    f.ctx,
   );
+  assert.equal(result.details.switch, "scheduled");
+  assert.equal(f.handlers.tool.executionMode, "sequential");
+}
 
-  assert.equal(result.terminate, true);
-  assert.deepEqual(result.details, {
-    kind: WORKTREE_SWITCH_REQUEST,
-    version: 1,
-    action: "fork-and-switch",
-    sessionFile: sourceSession,
-    status: "reused",
-    path: target,
-    branch: "feature",
-    dirty: true,
-  });
-  assert.deepEqual(result.structuredContent, result.details);
+test("enter_worktree defers, forks the current session, and switches automatically", async () => {
+  const f = await fixture();
+  try {
+    await schedule(f);
+    await f.handlers.agent_settled({ aborted: false });
+    assert.deepEqual(f.sent, [{
+      message: "/worktree __enter_worktree_pending__",
+      options: { expandPromptTemplates: true },
+    }]);
+
+    const internalArg = f.sent[0].message.slice("/worktree ".length);
+    await f.handlers["command:worktree"](internalArg, f.ctx);
+
+    const target = f.switchedTo();
+    assert.ok(target);
+    assert.equal(dirname(target), f.sessions, "custom session directory is preserved");
+    const header = JSON.parse(readFileSync(target, "utf8").split("\n")[0]);
+    assert.equal(header.cwd, f.worktree);
+    assert.equal(header.parentSession, join(f.sessions, "source.jsonl"));
+    assert.match(readFileSync(target, "utf8"), /"id":"history-1"/);
+    assert.deepEqual(f.notifications.at(-1), {
+      message: `已切换到 feature：${f.worktree}`,
+      type: "info",
+    });
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("public /worktree forwards --base to the CLI and switches", async () => {
+  const f = await fixture();
+  try {
+    await f.handlers["command:worktree"]("start feature --base main", f.ctx);
+    assert.match(f.execCalls[0].command, /packages\/worktree\/bin\/pi-worktree$/);
+    assert.deepEqual(f.execCalls[0].args, ["prepare", "--json", "--base", "main", "feature"]);
+    assert.equal(f.execCalls[0].options.cwd, f.cwd);
+    assert.ok(f.switchedTo());
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("aborted agent settlement discards the scheduled switch", async () => {
+  const f = await fixture();
+  try {
+    await schedule(f);
+    await f.handlers.agent_settled({ aborted: true });
+    assert.equal(f.sent.length, 0);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("a user command cannot race an Agent tool that is still preparing", async () => {
+  const f = await fixture({ deferExec: true });
+  try {
+    const toolResult = f.handlers.tool.execute(
+      "call-race",
+      { name: "feature" },
+      new AbortController().signal,
+      undefined,
+      f.ctx,
+    );
+    await f.execStarted;
+    await f.handlers["command:worktree"]("start other", f.ctx);
+    assert.equal(f.execCalls.length, 1);
+    assert.equal(f.switchedTo(), undefined);
+    assert.equal(f.notifications.at(-1).type, "warning");
+    f.releaseExec();
+    await toolResult;
+    await f.handlers.agent_settled({ aborted: true });
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("cancelling session replacement deletes the derived session", async () => {
+  const f = await fixture({ cancelled: true });
+  try {
+    await schedule(f);
+    await f.handlers.agent_settled({ aborted: false });
+    await f.handlers["command:worktree"]("__enter_worktree_pending__", f.ctx);
+
+    assert.equal(existsSync(f.switchedTo()), false);
+    assert.match(f.notifications.at(-1).message, /切换已取消/);
+    assert.equal(f.notifications.at(-1).type, "warning");
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("a replacement error does not delete a session that may already be active", async () => {
+  const f = await fixture({ switchError: new Error("host rebind failed") });
+  try {
+    await schedule(f);
+    await f.handlers.agent_settled({ aborted: false });
+    await assert.rejects(
+      f.handlers["command:worktree"]("__enter_worktree_pending__", f.ctx),
+      /host rebind failed/,
+    );
+    assert.equal(existsSync(f.switchedTo()), true);
+  } finally {
+    f.cleanup();
+  }
 });
