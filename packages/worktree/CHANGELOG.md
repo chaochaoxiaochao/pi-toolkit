@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-09 - v0.3.2
+
+- continue Agent tasks automatically after switching into a worktree
+
 ## 2026-10-09 - v0.3.1
 
 - show a persistent in-conversation confirmation after switching worktrees
