@@ -243,8 +243,10 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 			const promise = dispatcher.submit(runId, async () => {
 				const result = await executeRun();
 				const details = result.details as HerdrSubagentsBatchDetails;
-				fleet.setActive(details.status === "blocked" ? details : undefined);
-				if (fleet.active) {
+				const ownsDispatcher = dispatcher.snapshot().activeRunId === runId;
+				if (ownsDispatcher) fleet.setActive(details.status === "blocked" ? details : undefined);
+				else if (details.status === "blocked") fleet.clearRun(runId);
+				if (ownsDispatcher && fleet.active) {
 					dispatcher.retain(runId);
 				}
 				return result;
@@ -299,6 +301,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 					await removeQueuedRun(ctx.cwd, runId);
 					return promise;
 				}
+				dispatcher.detach(runId);
 				startBackgroundLifecycle();
 				const failedTask = foregroundOutcome.details.tasks.find((task) => task.status === "failed");
 				const failure = failedTask?.error ?? failedTask?.summary ?? "Unknown task failure.";

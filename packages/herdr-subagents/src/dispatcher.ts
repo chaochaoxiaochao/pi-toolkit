@@ -37,6 +37,13 @@ export class RunDispatcher {
 		this.retainedRunId = id;
 		this.changed();
 	}
+	detach(id: string): boolean {
+		if (this.activeRunId !== id || this.retainedRunId === id) return false;
+		this.activeRunId = undefined;
+		this.changed();
+		void this.drain();
+		return true;
+	}
 	release(id: string): boolean {
 		if (this.activeRunId !== id || this.retainedRunId !== id) return false;
 		this.retainedRunId = undefined;
@@ -71,7 +78,7 @@ export class RunDispatcher {
 		try { run.resolve(await run.execute()); }
 		catch (error) { run.reject(error); }
 		finally {
-			if (this.retainedRunId !== run.id) {
+			if (this.activeRunId === run.id && this.retainedRunId !== run.id) {
 				this.activeRunId = undefined;
 				this.changed();
 				void this.drain();

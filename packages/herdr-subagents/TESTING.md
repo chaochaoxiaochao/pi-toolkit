@@ -12,7 +12,9 @@
 
 - Resolve package, global, and project personas and validate frontmatter/configuration, including the neutral read-only `analyst` persona.
 - Run foreground tasks and FIFO bounded-concurrency batches through an injectable Herdr boundary.
-- Simulate one fast failure beside a controlled slow success and verify the foreground call returns the stable run ID and failure before releasing the slow task, detaches caller cancellation without aborting that task, retains dispatcher ownership until it finishes, removes durable queue state, and emits exactly one final follow-up.
+- Simulate one fast failure beside a controlled slow success and verify the foreground call returns the stable run ID and failure before releasing the slow task, detaches caller cancellation without aborting that task, releases the dispatcher so the next batch starts before the slow task settles, removes durable queue state, and emits exactly one final follow-up.
+- Verify a detached dispatcher promise can settle normally after its successor starts without clearing or otherwise disturbing the successor's active slot, while blocked foreground runs retain their existing dispatcher ownership.
+- Let a detached run later block or be explicitly cancelled and verify the newer dispatcher owner remains intact and each detached run emits exactly one final notification.
 - Shut down the parent while a handed-off sibling is active and verify it is cancelled and joined, durable queue state is removed, and no stale follow-up is sent.
 - Verify all-success foreground batches still wait for every task and explicit `background: true` submissions still return immediately.
 - Verify all paths use interactive Agent start/prompt without print mode, shell injection, markers, or pane reuse.

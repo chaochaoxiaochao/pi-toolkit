@@ -125,14 +125,81 @@ async function verifyForegroundFailureHandoff() {
 		if (queuedAfterHandoff.length !== 1) throw new Error("early foreground handoff was not persisted as background work");
 		const second = instance.tool?.execute("second", { background: true, tasks: [{ name: "second", prompt: "later" }] }, undefined, undefined, { cwd, ui: instance.ui });
 		await second;
-		if (secondStarted) throw new Error("dispatcher started the next batch before the handed-off batch settled");
+		await waitUntil(() => secondStarted, "dispatcher did not start the next batch after the failed foreground batch detached");
+		if (slowSignal?.aborted) throw new Error("starting the next batch cancelled the detached slow sibling");
 		const handoffNotified = instance.waitForMessage((message) => message.details?.runId === early.details.runId);
 		slow.resolve();
 		await handoffNotified;
-		if (slowSignal?.aborted || !secondStarted) throw new Error("slow sibling did not finish before the dispatcher advanced");
+		if (slowSignal?.aborted) throw new Error("detached slow sibling was cancelled before it finished");
 		const handoffMessages = instance.messages.filter(({ message }) => message.details?.runId === early.details.runId);
 		if (handoffMessages.length !== 1 || handoffMessages[0].options?.deliverAs !== "followUp") throw new Error("handed-off run did not send exactly one final follow-up");
 		await waitUntil(() => !readdirSync(join(cwd, ".pi", "herdr-subagents", "queue")).some((name) => name.startsWith(early.details.runId)), "settled handed-off run left its durable queue record behind");
+
+		const blockedRoot = join(cwd, "blocked-handoff");
+		mkdirSync(blockedRoot, { recursive: true });
+		const becomeBlocked = deferred<void>();
+		const finishSuccessor = deferred<void>();
+		let blockedCalls = 0;
+		let successorStarted = false;
+		let thirdStarted = false;
+		const blockedTask = { index: 1, name: "needs input", status: "blocked", summary: "waiting for an answer", question: "Continue?", documents: [], paneId: "w1:p2", recordDirectory: "task-2", sessionFile: "task-2/session.jsonl" };
+		const blockedHandoff = harness(async (_params, _signal, onUpdate, _ctx, dependencies) => {
+			blockedCalls += 1;
+			if (blockedCalls === 2) {
+				successorStarted = true;
+				await finishSuccessor.promise;
+				return { content: [{ type: "text", text: "successor done" }], details: { runId: dependencies.runId, label: "successor", status: "completed", summary: "done", documents: [], tasks: [], activity: [] } };
+			}
+			if (blockedCalls === 3) {
+				thirdStarted = true;
+				return { content: [{ type: "text", text: "third done" }], details: { runId: dependencies.runId, label: "third", status: "completed", summary: "done", documents: [], tasks: [], activity: [] } };
+			}
+			onUpdate?.({
+				content: [{ type: "text", text: "1/2 tasks settled." }],
+				details: { runId: dependencies.runId, label: "blocks later", status: "running", summary: "1/2 tasks settled.", documents: [], tasks: [failedTask], activity: [{ index: 0, name: failedTask.name, status: "failed" }, { index: 1, name: blockedTask.name, status: "running" }], effectiveConcurrency: 2, requestedConcurrency: 2 },
+			});
+			await becomeBlocked.promise;
+			return { content: [{ type: "text", text: "run blocked" }], details: { runId: dependencies.runId, label: "blocks later", status: "blocked", summary: "waiting for input", documents: [], tasks: [failedTask, blockedTask], activity: [{ index: 0, name: failedTask.name, status: "failed" }, { index: 1, name: blockedTask.name, status: "blocked" }], effectiveConcurrency: 2, requestedConcurrency: 2 } };
+		});
+		await startHarness(blockedHandoff, blockedRoot);
+		const blockedEarly = await blockedHandoff.tool?.execute("blocks-later", { concurrency: 2, tasks: [{ name: failedTask.name, prompt: "fail" }, { name: blockedTask.name, prompt: "block" }] }, undefined, undefined, { cwd: blockedRoot, ui: blockedHandoff.ui });
+		await blockedHandoff.tool?.execute("successor", { background: true, tasks: [{ name: "successor", prompt: "wait" }] }, undefined, undefined, { cwd: blockedRoot, ui: blockedHandoff.ui });
+		await waitUntil(() => successorStarted, "successor did not start while detached run was still active");
+		const blockedNotified = blockedHandoff.waitForMessage((message) => message.details?.runId === blockedEarly.details.runId);
+		becomeBlocked.resolve();
+		await blockedNotified;
+		await blockedHandoff.tool?.execute("third", { background: true, tasks: [{ name: "third", prompt: "later" }] }, undefined, undefined, { cwd: blockedRoot, ui: blockedHandoff.ui });
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		if (thirdStarted) throw new Error("detached blocked settlement cleared the newer active dispatcher slot");
+		if (blockedHandoff.messages.filter(({ message }) => message.details?.runId === blockedEarly.details.runId).length !== 1) throw new Error("detached run that later blocked did not notify exactly once");
+		finishSuccessor.resolve();
+		await waitUntil(() => thirdStarted, "queued run did not start after the newer active run settled");
+
+		const cancelRoot = join(cwd, "cancel-handoff");
+		mkdirSync(cancelRoot, { recursive: true });
+		let detachedSignal: AbortSignal | undefined;
+		const cancelledHandoff = harness(async (params, signal, onUpdate, _ctx, dependencies) => {
+			if (params.action === "cancel") {
+				const result = await dependencies.cancelRun(params.runId);
+				return { content: [{ type: "text", text: "cancelled" }], details: { action: "cancel", runId: params.runId, ...result } };
+			}
+			detachedSignal = signal;
+			onUpdate?.({
+				content: [{ type: "text", text: "1/2 tasks settled." }],
+				details: { runId: dependencies.runId, label: "cancel detached", status: "running", summary: "1/2 tasks settled.", documents: [], tasks: [failedTask], activity: [{ index: 0, name: failedTask.name, status: "failed" }, { index: 1, name: slowTask.name, status: "running" }], effectiveConcurrency: 2, requestedConcurrency: 2 },
+			});
+			await new Promise<void>((_resolve, reject) => {
+				if (signal.aborted) reject(signal.reason);
+				else signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+			});
+		});
+		await startHarness(cancelledHandoff, cancelRoot);
+		const cancelEarly = await cancelledHandoff.tool?.execute("cancel-detached", { concurrency: 2, tasks: [{ name: failedTask.name, prompt: "fail" }, { name: slowTask.name, prompt: "wait" }] }, undefined, undefined, { cwd: cancelRoot, ui: cancelledHandoff.ui });
+		const cancelledNotice = cancelledHandoff.waitForMessage((message) => message.details?.runId === cancelEarly.details.runId);
+		const cancelResult = await cancelledHandoff.controlTool?.execute("cancel", { action: "cancel", runId: cancelEarly.details.runId }, undefined, undefined, { cwd: cancelRoot, ui: cancelledHandoff.ui });
+		await cancelledNotice;
+		if (!detachedSignal?.aborted || cancelResult?.details?.cancelled !== true) throw new Error("cancel did not abort the detached handed-off run");
+		if (cancelledHandoff.messages.filter(({ message }) => message.details?.runId === cancelEarly.details.runId).length !== 1) throw new Error("cancelled detached run did not notify exactly once");
 
 		const shutdownRoot = join(cwd, "shutdown-handoff");
 		mkdirSync(shutdownRoot, { recursive: true });

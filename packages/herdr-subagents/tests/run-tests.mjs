@@ -614,8 +614,33 @@ try {
 	const retainedFirst = retainedDispatcher.submit("blocked-run", async () => { retainedStarts.push("blocked-run"); retainedDispatcher.retain("blocked-run"); return "blocked"; });
 	const retainedSecond = retainedDispatcher.submit("queued-run", async () => { retainedStarts.push("queued-run"); return "completed"; });
 	check("blocked run retains dispatcher ownership after its call returns", await retainedFirst === "blocked" && retainedDispatcher.snapshot().activeRunId === "blocked-run" && retainedStarts.join(",") === "blocked-run" && retainedDispatcher.snapshot().queuedRunIds.join(",") === "queued-run");
+	check("dispatcher does not detach a retained blocked run", retainedDispatcher.detach("blocked-run") === false);
 	retainedDispatcher.release("blocked-run");
 	check("respond settlement releases dispatcher ownership to the queued run", await retainedSecond === "completed" && retainedStarts.join(",") === "blocked-run,queued-run");
+	const detachedDispatcher = new RunDispatcher();
+	let settleDetached;
+	let settleSuccessor;
+	let detachedSettled = false;
+	const detachedStarts = [];
+	const detachedFirst = detachedDispatcher.submit("detached-run", async () => {
+		detachedStarts.push("detached-run");
+		await new Promise((resolve) => { settleDetached = resolve; });
+		detachedSettled = true;
+		return "detached";
+	});
+	const afterDetached = detachedDispatcher.submit("after-detach", async () => {
+		detachedStarts.push("after-detach");
+		await new Promise((resolve) => { settleSuccessor = resolve; });
+		return "next";
+	});
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	const detached = detachedDispatcher.detach("detached-run");
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	check("dispatcher detaches an unsettled active run and starts its successor", detached && !detachedSettled && detachedStarts.join(",") === "detached-run,after-detach" && detachedDispatcher.snapshot().activeRunId === "after-detach");
+	settleDetached();
+	check("detached run still resolves normally without disturbing its active successor", await detachedFirst === "detached" && detachedDispatcher.snapshot().activeRunId === "after-detach");
+	settleSuccessor();
+	check("successor settles normally after detached predecessor", await afterDetached === "next" && detachedDispatcher.snapshot().activeRunId === undefined);
 	const backgroundId = "stable-background-id";
 	const stableHerdr = fakeHerdr();
 	const stable = await executeHerdrSubagents({ tasks: [{ name: "stable", prompt: "stable", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: stableHerdr, runId: backgroundId });

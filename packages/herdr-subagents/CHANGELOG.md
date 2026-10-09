@@ -1,8 +1,9 @@
 ## Unreleased
 
 - Return a foreground concurrent batch as soon as one task fails, keep surviving siblings running under durable background ownership, and send exactly one final follow-up after the whole batch settles.
+- Release the dispatcher slot at foreground failure handoff so later batches start immediately, while detached work remains cancellable, participates in shutdown, and cannot clear a newer active run when it settles.
 - Preserve full-batch waiting for successful foreground runs and the immediate-return behavior of explicit background runs.
-- Join every started batch worker before releasing dispatcher ownership, including when another worker's final state persistence fails.
+- Join every started batch worker before resolving its run promise, including when another worker's final state persistence fails.
 
 ## 2026-10-09 - v0.4.3
 
