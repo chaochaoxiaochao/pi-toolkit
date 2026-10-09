@@ -13,7 +13,7 @@ Installed by the package postinstall hook to `~/.local/bin/pi-worktree`, with ba
 
 | Command | Effect |
 |---|---|
-| `enter_worktree({ name, base? })` | Agent entrypoint: create/reuse a worktree and ask a compatible Harness to move this conversation there. Call it alone and stop after it returns. |
+| `enter_worktree({ name, base? })` | Agent entrypoint: create/reuse a worktree and automatically move this conversation there after the run settles. Call it alone and stop after it returns. |
 | `/worktree start <name> [--base <ref>]` | User entrypoint: fork the current persistent session into the worktree and switch the current Pi UI. |
 | `pi-worktree prepare [--base <ref>] [--json] <name>` | Create/reuse without launching Pi; `--json` is the machine interface. |
 | `pi-worktree start <name> [pi args...]` | Create or reuse `.worktrees/<name>`, then launch Pi inside it. Already inside a linked worktree, it just launches Pi there. |
@@ -27,14 +27,14 @@ Installed by the package postinstall hook to `~/.local/bin/pi-worktree`, with ba
 ## Isolating a task
 
 1. **Survey** — `pi-worktree list`, plus `pi-worktree info <name>` when the name you want is already taken. Reuse is free; a removed worktree is gone for good, because `remove` deletes its branch.
-2. **Enter** — as an Agent, call `enter_worktree` once and stop so the Harness can switch after settlement. A user can instead run `/worktree start <name>`. Use the CLI `start` only when a separate Pi process is wanted.
+2. **Enter** — as an Agent, call `enter_worktree` once and stop; the Extension switches automatically after settlement. A user can instead run `/worktree start <name>`. Use the CLI `start` only when a separate Pi process is wanted.
 3. **Work** — inside the worktree: commit there, and check `pi-worktree info <name>` before claiming progress. `ahead: N commits since base` is the evidence.
 4. **Land** — `pi-worktree out`, then `git merge <name>` in the main checkout. Done when the worktree's unique commits are in the target branch.
 5. **Clean up** — `pi-worktree remove <name>`. A merged branch goes without prompting; anything unmerged asks once.
 
 ## Entry-point rules
 
-- Prefer `enter_worktree` when it is available. Its `fork-and-switch` request requires Harness support: after `agent_settled`, the host forks the source session into the target cwd and switches to that persisted session. After the tool returns, do not read or modify repository files until the host has switched cwd.
+- Prefer `enter_worktree` when it is available. After the tool returns, do not read or modify repository files; the Extension waits for `agent_settled`, then forks the session into the target cwd and switches automatically.
 - `/worktree` is user-facing and cannot be invoked by the model. It requires a persisted session because it forks history into a session whose header owns the worktree cwd.
 - `pi-worktree start` **execs a new `pi`** in the worktree, and `out` execs a shell. Use this only for an intentionally separate process/session.
 - `prepare` is idempotent. It reports whether the target was created, attached, reused, or already active, and reports dirty reuse rather than discarding anything.
