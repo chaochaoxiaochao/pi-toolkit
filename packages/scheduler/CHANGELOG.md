@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-09 - v0.1.1
 
+- add clear-all controls and multi-line widget coexistence
 - Add `clear` to the Agent tool and `/schedule clear` for stopping every active schedule.
 - Replace the compact footer status with an above-editor multi-line widget that shows one row per schedule and coexists with the below-editor Herdr Fleet.
 

@@ -1,3 +1,6 @@
+## 2026-10-09 - v0.10.9
+
+- bundle scheduler v0.1.1: add clear-all controls and multi-line widget coexistence
 ## 2026-10-09 - v0.10.8
 
 - bundle worktree v0.2.0: add current-session worktree switching for users, Agents, and SDK Harnesses
