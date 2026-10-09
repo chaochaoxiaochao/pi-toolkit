@@ -122,12 +122,14 @@ export class Scheduler {
 		return released;
 	}
 
-	clear(): void {
+	clear(): number {
+		const count = this.schedules.size;
 		for (const schedule of this.schedules.values()) {
 			if (schedule.timer !== undefined) this.clock.clearTimeout(schedule.timer);
 		}
 		this.schedules.clear();
-		this.onChange();
+		if (count > 0) this.onChange();
+		return count;
 	}
 
 	private arm(schedule: Schedule): void {

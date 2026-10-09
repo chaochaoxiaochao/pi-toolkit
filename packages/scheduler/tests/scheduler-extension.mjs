@@ -6,6 +6,9 @@ const commands = new Map();
 const messages = [];
 const statuses = new Map();
 let tool;
+const widgets = new Map([["herdr-subagents", { render: () => ["Herdr Fleet"] }]]);
+const widgetOptions = new Map([["herdr-subagents", { placement: "belowEditor" }]]);
+let renderRequests = 0;
 const originalSetTimeout = globalThis.setTimeout;
 const originalClearTimeout = globalThis.clearTimeout;
 let nextTimer = 1;
@@ -34,18 +37,34 @@ const notifications = [];
 const asAppMessage = ({ message }) => ({ ...message, role: "custom" });
 const context = {
 	hasUI: true,
+	mode: "tui",
 	ui: {
 		setStatus(key, value) { if (value === undefined) statuses.delete(key); else statuses.set(key, value); },
+		setWidget(key, value, options) {
+			if (value === undefined) {
+				widgets.delete(key);
+				widgetOptions.delete(key);
+			} else {
+				widgets.set(key, value({ requestRender() { renderRequests += 1; } }, { fg(_color, text) { return text; } }));
+				widgetOptions.set(key, options);
+			}
+		},
 		notify(message, level) { notifications.push({ message, level }); },
 	},
 };
 await handlers.get("session_start")({}, context);
 assert.ok(tool);
 assert.ok(commands.has("schedule"));
+assert.deepEqual(tool.parameters.properties.action.enum, ["add", "list", "trigger", "cancel", "clear"]);
 
 const add = await tool.execute("add", { action: "add", every: "1h", prompt: "Check CI" });
 assert.match(add.content[0].text, /Created schedule-1/);
-assert.match(statuses.get("scheduler"), /1 schedule/);
+assert.equal(statuses.has("scheduler"), false, "scheduler no longer competes for footer status space");
+assert.deepEqual(widgetOptions.get("scheduler"), { placement: "aboveEditor" });
+assert.deepEqual(widgetOptions.get("herdr-subagents"), { placement: "belowEditor" });
+assert.match(widgets.get("scheduler").render(100).join("\n"), /1 active schedule/);
+assert.match(widgets.get("scheduler").render(100).join("\n"), /schedule-1 · 1h · next/);
+assert.ok(widgets.has("herdr-subagents"), "Scheduler mounting preserves the Herdr Fleet widget");
 
 const trigger = await tool.execute("trigger", { action: "trigger", id: "schedule-1" });
 assert.match(trigger.content[0].text, /Triggered schedule-1/);
@@ -71,11 +90,28 @@ await handlers.get("message_start")({ message: asAppMessage(messages[2]) });
 await commands.get("schedule").handler("cancel schedule-1", context);
 assert.match(notifications.at(-1).message, /Already queued prompts cannot be withdrawn/);
 assert.equal(statuses.has("scheduler"), false);
-await tool.execute("shutdown-add", { action: "add", every: "2h", prompt: "Check deployment" });
+assert.equal(widgets.has("scheduler"), false, "removing the final schedule removes the multi-line widget");
+assert.ok(widgets.has("herdr-subagents"), "Scheduler cleanup preserves the Herdr Fleet widget");
+await tool.execute("clear-add-one", { action: "add", every: "2h", prompt: "Check deployment" });
+await tool.execute("clear-add-two", { action: "add", every: "3h", prompt: "Check release" });
+assert.match(widgets.get("scheduler").render(100).join("\n"), /2 active schedules/);
+assert.match(widgets.get("scheduler").render(100).join("\n"), /schedule-2/);
+assert.match(widgets.get("scheduler").render(100).join("\n"), /schedule-3/);
+await commands.get("schedule").handler("clear", context);
+assert.match(notifications.at(-1).message, /Cleared 2 schedules/);
+assert.equal(timers.size, 0, "clear cancels every active timer");
+assert.equal(widgets.has("scheduler"), false, "clear removes the widget");
+assert.ok(widgets.has("herdr-subagents"), "clear does not remove Herdr Fleet");
+const emptyClear = await tool.execute("empty-clear", { action: "clear" });
+assert.equal(emptyClear.content[0].text, "No active schedules to clear.");
+await tool.execute("shutdown-add", { action: "add", every: "4h", prompt: "Check shutdown" });
 assert.equal(timers.size, 1, "active schedule owns one timer");
 await handlers.get("session_shutdown")({}, context);
 assert.equal(statuses.has("scheduler"), false);
 assert.equal(timers.size, 0, "session shutdown clears active timers");
+assert.equal(widgets.has("scheduler"), false);
+assert.ok(widgets.has("herdr-subagents"), "Scheduler shutdown does not remove Herdr Fleet");
+assert.ok(renderRequests >= 4, "schedule changes request widget rerenders");
 globalThis.setTimeout = originalSetTimeout;
 globalThis.clearTimeout = originalClearTimeout;
 console.log("Scheduler extension integration tests passed");

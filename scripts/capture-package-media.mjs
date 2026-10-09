@@ -146,19 +146,21 @@ function table(state) {
     }
   }
   const clock = new MediaClock();
-  const events = [];
-  const scheduler = new Scheduler({ clock, onTrigger: (schedule, source) => events.push(`${source}: ${schedule.id} → ${schedule.prompt}`) });
+  const scheduler = new Scheduler({ clock, onTrigger() {} });
   const created = scheduler.add("5m", "Check CI; report completion or failure.");
   const one = [
     `$ /schedule add 5m Check CI; report completion or failure.`,
     `Created ${created.id} · next 09:05:00`,
-    `TUI  ⏱ 1 schedule · next 09:05:00`,
+    ``,
+    `TUI widget above editor (Herdr Fleet stays below)`,
+    `⏱ 1 active schedule`,
+    `  ○ ${created.id} · 5m · next 09:05:00 · Check CI; report completion or failure.`,
   ].join("\n");
-  scheduler.trigger(created.id);
-  const two = [one, ``, `$ /schedule trigger ${created.id}`, events.at(-1), `Regular next time remains 09:05:00`].join("\n");
-  scheduler.acknowledge(created.id);
-  clock.advance(300_000);
-  const three = [two, ``, `09:05:00 timer fired`, events.at(-1), `Next trigger 09:10:00`, ``, `$ /schedule list`, `${created.id} · every 5m · next 09:10:00`].join("\n");
+  const second = scheduler.add("15m", "Check deployment health.");
+  const two = [one, ``, `$ /schedule add 15m Check deployment health.`, `Created ${second.id} · next 09:15:00`, ``, `TUI widget above editor (Herdr Fleet stays below)`, `⏱ 2 active schedules`, `  ○ ${created.id} · 5m · next 09:05:00 · Check CI; report completion or failure.`, `  ○ ${second.id} · 15m · next 09:15:00 · Check deployment health.`].join("\n");
+  const cleared = scheduler.clear();
+  const replacement = scheduler.add("10m", "Check release status.");
+  const three = [two, ``, `$ /schedule clear`, `Cleared ${cleared} schedules.`, ``, `$ /schedule add 10m Check release status.`, `Created ${replacement.id} · next 09:10:00`, ``, `TUI widget above editor (Herdr Fleet stays below)`, `⏱ 1 active schedule`, `  ○ ${replacement.id} · 10m · next 09:10:00 · Check release status.`].join("\n");
   pages("scheduler", [one, two, three]);
 }
 

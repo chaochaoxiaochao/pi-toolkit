@@ -1,3 +1,7 @@
+## Unreleased
+
+- Improve Scheduler with clear-all controls and a visible above-editor row for every active schedule, separate from the below-editor Herdr Fleet.
+
 ## 2026-10-09 - v0.10.7
 
 - bundle scheduler v0.1.0: add session-scoped interval prompts with Agent and user controls

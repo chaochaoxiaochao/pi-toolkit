@@ -59,5 +59,12 @@ assert.equal(scheduler.trigger(added.id).ok, true, "a settled run releases a fol
 assert.equal(scheduler.cancel(added.id), true);
 assert.equal(scheduler.cancel(added.id), false);
 assert.equal(scheduler.list().length, 0);
+const firstClear = scheduler.add("1h", "Check build");
+const secondClear = scheduler.add("2h", "Check deployment");
+assert.notEqual(firstClear.id, secondClear.id);
+assert.equal(clock.timers.size, 2);
+assert.equal(scheduler.clear(), 2);
+assert.equal(clock.timers.size, 0, "clear cancels every timer");
+assert.equal(scheduler.clear(), 0);
 assert.ok(changes >= 5);
 console.log("Scheduler core tests passed");

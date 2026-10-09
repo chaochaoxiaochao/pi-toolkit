@@ -1,11 +1,11 @@
 import { StringEnum } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { Scheduler, systemClock, type ScheduleSnapshot } from "../src/scheduler.ts";
 
 const Params = Type.Object({
-	action: StringEnum(["add", "list", "trigger", "cancel"] as const),
+	action: StringEnum(["add", "list", "trigger", "cancel", "clear"] as const),
 	every: Type.Optional(Type.String({ description: "Interval for add, for example 30s, 5m, or 1h30m" })),
 	prompt: Type.Optional(Type.String({ description: "Prompt delivered to the main agent on each trigger" })),
 	id: Type.Optional(Type.String({ description: "Schedule ID for trigger or cancel" })),
@@ -22,29 +22,94 @@ function formatList(schedules: ScheduleSnapshot[]): string {
 	).join("\n");
 }
 
-function parseCommand(input: string): { action: "add" | "list" | "trigger" | "cancel"; every?: string; prompt?: string; id?: string } {
+type ScheduleAction = "add" | "list" | "trigger" | "cancel" | "clear";
+
+function parseCommand(input: string): { action: ScheduleAction; every?: string; prompt?: string; id?: string } {
 	const text = input.trim();
 	if (!text || text === "list") return { action: "list" };
 	const [action, first, ...rest] = text.split(/\s+/);
 	if (action === "add") return { action, every: first, prompt: rest.join(" ") };
 	if (action === "trigger" || action === "cancel") return { action, id: first };
-	throw new Error("usage: /schedule add <interval> <prompt> | list | trigger <id> | cancel <id>");
+	if (action === "clear") return { action };
+	throw new Error("usage: /schedule add <interval> <prompt> | list | trigger <id> | cancel <id> | clear");
+}
+
+const WIDGET_KEY = "scheduler";
+
+export class ScheduleWidget {
+	private cachedWidth?: number;
+	private cachedLines?: string[];
+	private readonly getSchedules: () => ScheduleSnapshot[];
+	private readonly theme: Theme;
+
+	constructor(getSchedules: () => ScheduleSnapshot[], theme: Theme) {
+		this.getSchedules = getSchedules;
+		this.theme = theme;
+	}
+
+	render(width: number): string[] {
+		if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
+		const schedules = this.getSchedules();
+		this.cachedLines = [
+			truncateToWidth(this.theme.fg("accent", `⏱ ${schedules.length} active schedule${schedules.length === 1 ? "" : "s"}`), width),
+			...schedules.map((item) => {
+				const marker = item.pending ? this.theme.fg("warning", "●") : this.theme.fg("dim", "○");
+				const state = item.pending ? " · pending" : "";
+				return truncateToWidth(`  ${marker} ${this.theme.fg("accent", item.id)} · ${item.every} · next ${formatTime(item.nextRunAt)}${state} · ${this.theme.fg("text", item.prompt)}`, width);
+			}),
+		];
+		this.cachedWidth = width;
+		return this.cachedLines;
+	}
+
+	invalidate(): void {
+		this.cachedWidth = undefined;
+		this.cachedLines = undefined;
+	}
+}
+
+interface MountedWidget {
+	component: ScheduleWidget;
+	tui: { requestRender(): void };
 }
 
 export default function (pi: ExtensionAPI) {
 	if (process.env.PI_HERDR_SUBAGENTS_CHILD === "1") return;
 	let context: ExtensionContext | undefined;
+	let mountedWidget: MountedWidget | undefined;
 
-	const refreshStatus = () => {
+	const refreshUI = () => {
 		if (!context?.hasUI) return;
 		const schedules = scheduler.list();
-		const next = schedules[0];
-		context.ui.setStatus("scheduler", next ? `⏱ ${schedules.length} schedule${schedules.length === 1 ? "" : "s"} · next ${formatTime(next.nextRunAt)}` : undefined);
+		if (context.mode !== "tui") {
+			const next = schedules[0];
+			context.ui.setStatus(WIDGET_KEY, next ? `⏱ ${schedules.length} schedule${schedules.length === 1 ? "" : "s"} · next ${formatTime(next.nextRunAt)}` : undefined);
+			return;
+		}
+		context.ui.setStatus(WIDGET_KEY, undefined);
+		if (schedules.length === 0) {
+			if (mountedWidget) {
+				context.ui.setWidget(WIDGET_KEY, undefined);
+				mountedWidget.tui.requestRender();
+				mountedWidget = undefined;
+			}
+			return;
+		}
+		if (mountedWidget) {
+			mountedWidget.component.invalidate();
+			mountedWidget.tui.requestRender();
+			return;
+		}
+		context.ui.setWidget(WIDGET_KEY, (tui, theme) => {
+			const component = new ScheduleWidget(() => scheduler.list(), theme);
+			mountedWidget = { component, tui };
+			return component;
+		}, { placement: "aboveEditor" });
 	};
 
 	const scheduler = new Scheduler({
 		clock: systemClock,
-		onChange: refreshStatus,
+		onChange: refreshUI,
 		onTrigger(schedule, source) {
 			pi.sendMessage({
 				customType: "scheduler-trigger",
@@ -55,13 +120,17 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	const perform = (params: { action: "add" | "list" | "trigger" | "cancel"; every?: string; prompt?: string; id?: string }) => {
+	const perform = (params: { action: ScheduleAction; every?: string; prompt?: string; id?: string }) => {
 		if (params.action === "add") {
 			if (!params.every || !params.prompt) throw new Error("add requires every and prompt");
 			const item = scheduler.add(params.every, params.prompt);
 			return `Created ${item.id}: every ${item.every}; next ${formatTime(item.nextRunAt)}.`;
 		}
 		if (params.action === "list") return formatList(scheduler.list());
+		if (params.action === "clear") {
+			const count = scheduler.clear();
+			return count === 0 ? "No active schedules to clear." : `Cleared ${count} schedule${count === 1 ? "" : "s"}. Already queued prompts cannot be withdrawn.`;
+		}
 		if (!params.id) throw new Error(`${params.action} requires id`);
 		if (params.action === "cancel") {
 			if (!scheduler.cancel(params.id)) throw new Error(`unknown schedule: ${params.id}`);
@@ -77,7 +146,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		context = ctx;
-		refreshStatus();
+		refreshUI();
 	});
 	pi.on("message_start", async (event) => {
 		if (event.message.role !== "custom" || event.message.customType !== "scheduler-trigger") return;
@@ -91,14 +160,18 @@ export default function (pi: ExtensionAPI) {
 	});
 	pi.on("session_shutdown", async (_event, ctx) => {
 		scheduler.clear();
-		if (ctx.hasUI) ctx.ui.setStatus("scheduler", undefined);
+		if (ctx.hasUI) {
+			ctx.ui.setStatus(WIDGET_KEY, undefined);
+			if (ctx.mode === "tui") ctx.ui.setWidget(WIDGET_KEY, undefined);
+		}
+		mountedWidget = undefined;
 		context = undefined;
 	});
 
 	pi.registerTool({
 		name: "schedule",
 		label: "Schedule",
-		description: "Manage session-scoped interval prompts for the main agent. Use add when the user asks the agent to check something repeatedly. Use trigger for one immediate check without changing the regular cadence. Schedules end with the current session.",
+		description: "Manage session-scoped interval prompts for the main agent. Use add when the user asks the agent to check something repeatedly, cancel for one schedule, and clear for all schedules. Use trigger for one immediate check without changing the regular cadence. Schedules end with the current session.",
 		parameters: Params,
 		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
 		async execute(_toolCallId, params) {
@@ -120,7 +193,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("schedule", {
-		description: "Add, list, trigger, or cancel session-scoped interval prompts",
+		description: "Add, list, trigger, cancel, or clear session-scoped interval prompts",
 		handler: async (args, ctx) => {
 			try {
 				const text = perform(parseCommand(args));

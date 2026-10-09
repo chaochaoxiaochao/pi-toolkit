@@ -25,6 +25,7 @@ schedule({ action: "add", every: "5m", prompt: "Check CI; report completion or f
 schedule({ action: "list" })
 schedule({ action: "trigger", id: "schedule-1" })
 schedule({ action: "cancel", id: "schedule-1" })
+schedule({ action: "clear" })
 ```
 
 ## User command
@@ -34,9 +35,10 @@ schedule({ action: "cancel", id: "schedule-1" })
 /schedule list
 /schedule trigger schedule-1
 /schedule cancel schedule-1
+/schedule clear
 ```
 
-Manual trigger queues one prompt and does not move the regular next time. The TUI status line shows the active count and next trigger.
+Manual trigger queues one prompt and does not move the regular next time. A multi-line widget above the editor shows one row per active schedule with its ID, interval, next trigger, pending state, and prompt. Herdr Fleet remains below the editor, so the two live displays do not compete for the same area or overwrite each other.
 
 ## Semantics and limits
 
@@ -44,7 +46,7 @@ Manual trigger queues one prompt and does not move the regular next time. The TU
 - Prompts use Pi `followUp`: an active agent turn finishes before the scheduled prompt runs.
 - At most one prompt per schedule remains pending; missed intervals coalesce instead of flooding the queue.
 - Schedules live only in the current session and are cleared on new/resume/fork/reload/quit.
-- Cancel stops future timer events. Pi cannot selectively withdraw a prompt already in its follow-up queue.
+- Cancel stops one schedule; clear stops all active schedules. Pi cannot selectively withdraw a prompt already in its follow-up queue.
 - Timing is best-effort, not real-time. Recursive `setTimeout` uses absolute target times to avoid cumulative drift.
 - Calendar expressions, time zones, persistence, process monitoring, and script notifications are intentionally out of scope.
 
