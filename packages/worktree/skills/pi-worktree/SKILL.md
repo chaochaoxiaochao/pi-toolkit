@@ -1,11 +1,11 @@
 ---
 name: pi-worktree
-description: Create, inspect, and clean up git worktrees with the pi-worktree CLI (start/list/info/remove/prune), which also launches Pi inside the worktree. Use when a task warrants isolation in its own worktree, or when the user asks to handle something the worktree way.
+description: Create, enter, inspect, and clean up git worktrees through the enter_worktree tool, /worktree command, or pi-worktree CLI. Use when a task warrants isolation in its own worktree, or when the user asks to handle something the worktree way.
 ---
 
 # pi-worktree
 
-`pi-worktree` wraps git worktree creation and Pi launch into one command. Worktrees live in `.worktrees/<name>` (added to `.gitignore`), each with a branch of the same name, branched from the branch you are on now (or `HEAD` when detached). The base commit is recorded in `branch.<name>.base` / `branch.<name>.baseRef` so `info` can always report where the branch came from.
+Worktrees live in `.worktrees/<name>` (added to `.gitignore`), each with a branch of the same name, branched from the current branch (or `HEAD` when detached). The base commit is recorded in `branch.<name>.base` / `branch.<name>.baseRef` so `info` can report where the branch came from.
 
 Installed by the package postinstall hook to `~/.local/bin/pi-worktree`, with bash completion for subcommands and existing worktree names.
 
@@ -13,6 +13,9 @@ Installed by the package postinstall hook to `~/.local/bin/pi-worktree`, with ba
 
 | Command | Effect |
 |---|---|
+| `enter_worktree({ name, base? })` | Agent entrypoint: create/reuse a worktree and ask a compatible Harness to move this conversation there. Call it alone and stop after it returns. |
+| `/worktree start <name> [--base <ref>]` | User entrypoint: fork the current persistent session into the worktree and switch the current Pi UI. |
+| `pi-worktree prepare [--base <ref>] [--json] <name>` | Create/reuse without launching Pi; `--json` is the machine interface. |
 | `pi-worktree start <name> [pi args...]` | Create or reuse `.worktrees/<name>`, then launch Pi inside it. Already inside a linked worktree, it just launches Pi there. |
 | `pi-worktree start --base <ref> <name> [pi args...]` | Same, but branch from `<ref>` instead of the current branch. |
 | `pi-worktree list` | All worktrees; the main checkout is marked `(main checkout)`, stale registrations are flagged. |
@@ -24,13 +27,15 @@ Installed by the package postinstall hook to `~/.local/bin/pi-worktree`, with ba
 ## Isolating a task
 
 1. **Survey** — `pi-worktree list`, plus `pi-worktree info <name>` when the name you want is already taken. Reuse is free; a removed worktree is gone for good, because `remove` deletes its branch.
-2. **Start** — `pi-worktree start <name>` (with `--base <ref>` when the work must not start from the current branch). Done when `list` shows the new worktree on its own branch.
+2. **Enter** — as an Agent, call `enter_worktree` once and stop so the Harness can switch after settlement. A user can instead run `/worktree start <name>`. Use the CLI `start` only when a separate Pi process is wanted.
 3. **Work** — inside the worktree: commit there, and check `pi-worktree info <name>` before claiming progress. `ahead: N commits since base` is the evidence.
 4. **Land** — `pi-worktree out`, then `git merge <name>` in the main checkout. Done when the worktree's unique commits are in the target branch.
 5. **Clean up** — `pi-worktree remove <name>`. A merged branch goes without prompting; anything unmerged asks once.
 
-## Driving it from an agent
+## Entry-point rules
 
-- `start` **execs `pi`** in the worktree, and `out` execs a shell. With no trailing Pi args both want an interactive terminal, so either run `start <name> -p "<task>"` for a headless nested run, or hand the bare `start <name>` to the user to run themselves.
+- Prefer `enter_worktree` when it is available. Its `fork-and-switch` request requires Harness support: after `agent_settled`, the host forks the source session into the target cwd and switches to that persisted session. After the tool returns, do not read or modify repository files until the host has switched cwd.
+- `/worktree` is user-facing and cannot be invoked by the model. It requires a persisted session because it forks history into a session whose header owns the worktree cwd.
+- `pi-worktree start` **execs a new `pi`** in the worktree, and `out` execs a shell. Use this only for an intentionally separate process/session.
+- `prepare` is idempotent. It reports whether the target was created, attached, reused, or already active, and reports dirty reuse rather than discarding anything.
 - `remove` asks before discarding dirty files or unmerged commits, and a non-interactive stdin (EOF) aborts safely. Answer explicitly when the removal is intended: `printf 'y\ny\n' | pi-worktree remove <name>`.
-- Your own working directory cannot change. "Isolate this in a worktree" therefore means launching a nested headless Pi in the worktree, or telling the user to run `pi-worktree start <name>`.

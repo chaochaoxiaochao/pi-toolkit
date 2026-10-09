@@ -1,3 +1,8 @@
+## Unreleased
+
+- Bundle the Worktree Extension with `/worktree start`, the `enter_worktree` Agent Tool, and the structured Harness workspace-switch protocol.
+- Add the idempotent `pi-worktree prepare --json` machine interface so the CLI remains the single implementation for worktree creation and reuse.
+
 ## 2026-10-09 - v0.10.6
 
 - bundle herdr-subagents v0.4.3: add per-run status, neutral analyst persona, and tool-agnostic Agent Team protocol

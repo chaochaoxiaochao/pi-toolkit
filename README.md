@@ -34,7 +34,7 @@ Restart Pi after updating. The `todo` tool and widget will no longer load. `pi u
 | [pi-cache-export](packages/cache-export/README.md) | Tau-aligned interactive cache dashboard for Pi sessions | `pi install npm:@maxiaochao/pi-cache-export` | `pi update npm:@maxiaochao/pi-cache-export` |
 | [pi-codex-edit](packages/codex-edit/README.md) | Codex-harness `apply_patch` routing for selected GPT models | `pi install npm:@maxiaochao/pi-codex-edit` | `pi update npm:@maxiaochao/pi-codex-edit` |
 | [pi-herdr-subagents](packages/herdr-subagents/README.md) | Interactive Herdr Pi Agents with bounded concurrency, direct navigation, and recovery | `pi install npm:@maxiaochao/pi-herdr-subagents` | `pi update npm:@maxiaochao/pi-herdr-subagents` |
-| [pi-worktree](packages/worktree/README.md) | Worktree CLI, completion, installer, and agent skill | `pi install npm:@maxiaochao/pi-worktree` | `pi update npm:@maxiaochao/pi-worktree` |
+| [pi-worktree](packages/worktree/README.md) | Worktree CLI, current-session switching Extension, and agent skill | `pi install npm:@maxiaochao/pi-worktree` | `pi update npm:@maxiaochao/pi-worktree` |
 
 Each child README owns its feature description, motivation or upstream alignment, examples, screenshots/demos, configuration, and test documentation.
 

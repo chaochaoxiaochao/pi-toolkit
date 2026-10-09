@@ -4,6 +4,7 @@
 # Usage:
 #   pi-worktree start <name> [pi args...]  # enter worktree <name> and start pi
 #   pi-worktree start --base <ref> <name> [pi args...]  # branch from <ref> instead of current branch
+#   pi-worktree prepare [--base <ref>] [--json] <name>  # create/reuse without launching pi
 #   pi-worktree -l | --list                # list worktrees (main checkout marked "main checkout")
 #   pi-worktree -i <name>                  # show base commit, ahead/behind, unique commits
 #   pi-worktree -o | --out                 # cd back to the main checkout
@@ -18,7 +19,7 @@ else
   C_BOLD='' C_DIM='' C_RED='' C_GREEN='' C_YELLOW='' C_CYAN='' C_RESET=''
 fi
 
-ok()      { printf '%spi-worktree:%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
+ok()      { [[ "${QUIET:-0}" == 1 ]] || printf '%spi-worktree:%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
 warn()    { printf '%s⚠️  %s%s\n' "$C_YELLOW" "$C_RESET" "$*"; }
 die()     { printf '%spi-worktree: %s%s\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
 
@@ -39,6 +40,12 @@ in_linked_worktree() {
 }
 
 wt_dir() { echo ".worktrees/$1"; }
+
+validate_name() {
+  local name="$1"
+  [[ "$name" != */* ]] || die "worktree name must not contain '/': $name"
+  git check-ref-format --branch "$name" >/dev/null 2>&1 || die "invalid worktree/branch name: $name"
+}
 
 # Best available base ref: current branch > HEAD (worktrees should branch
 # from where you actually are; a stale origin/main must not win)
@@ -63,12 +70,14 @@ resolve_base() {
 }
 
 ensure_gitignore() {
+  local root
+  root=$(main_checkout)
   # The trailing slash is load-bearing: `.worktrees/` is a directory-only
   # pattern, and git check-ignore cannot match it against a path that does not
   # exist yet — so `.worktrees` would look unignored on every first run and the
   # rule would be appended again.
-  if ! git check-ignore -q .worktrees/ 2>/dev/null; then
-    printf '.worktrees/\n' >> .gitignore
+  if ! git -C "$root" check-ignore -q .worktrees/ 2>/dev/null; then
+    printf '.worktrees/\n' >> "$root/.gitignore"
     ok "added .worktrees/ to .gitignore"
   fi
 }
@@ -226,55 +235,140 @@ cmd_remove() {
   fi
 }
 
-cd_wt() {
-  local name="$1"; shift
+prepare_wt() {
+  local name="$1"
   require_repo
+  validate_name "$name"
 
-  # Already isolated? Just launch pi here (superpowers Step 0).
+  # A linked checkout cannot safely create another `.worktrees/` tree relative
+  # to itself. Re-entering the active branch is nevertheless idempotent.
   if in_linked_worktree; then
-    ok "already in an isolated worktree ($(pwd)), launching pi here"
-    exec pi "$@"
+    local current_branch
+    current_branch=$(git branch --show-current)
+    [[ "$current_branch" == "$name" ]] \
+      || die "already inside linked worktree '$current_branch'; return to the main checkout first"
+    PREPARE_STATUS="already-active"
+    PREPARE_DIR=$(pwd -P)
+    PREPARE_BRANCH="$current_branch"
+    PREPARE_DIRTY=false
+    if [[ -n "$(git status --porcelain)" ]]; then PREPARE_DIRTY=true; fi
+    return 0
   fi
 
-  local dir; dir="$(wt_dir "$name")"
+  local root worktrees_dir dir
+  root=$(main_checkout)
+  worktrees_dir="$root/.worktrees"
+  dir="$worktrees_dir/$name"
+  [[ ! -L "$worktrees_dir" ]] || die "$worktrees_dir must be a real directory, not a symlink"
+  [[ ! -L "$dir" ]] || die "$dir must not be a symlink"
 
   if [[ -d "$dir" ]]; then
     # Reuse: must be a registered worktree for this repo.
     # Skip the dirty-workspace prompt — the worktree already exists, nothing new to create.
+    local registered_path
+    registered_path=$(git worktree list --porcelain | sed -n 's/^worktree //p' | grep -Fx "$dir" || true)
+    [[ -n "$registered_path" ]] || die "$dir exists but is not a registered git worktree"
     git -C "$dir" rev-parse --git-dir >/dev/null 2>&1 || die "$dir exists but is not a git worktree"
+    [[ "$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir)" == "$(git rev-parse --path-format=absolute --git-common-dir)" ]] \
+      || die "$dir belongs to a different git repository"
+    [[ "$(git -C "$dir" branch --show-current)" == "$name" ]] \
+      || die "$dir is not checked out on expected branch '$name'"
     ensure_gitignore
     ok "reusing existing worktree $dir"
+    PREPARE_STATUS="reused"
   else
-    # Dirty workspace: uncommitted changes do NOT follow into the new worktree.
-    if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
-      warn "Uncommitted changes stay in THIS directory; they will NOT appear in the worktree:"
-      git status --short | head -20
-      read -rp "Continue? [y/N] " ans
-      [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
-    fi
-
-    # After the check above, so the tool's own .gitignore edit is not reported
-    # as (and does not prompt about) the user's uncommitted work.
+    local target_abs registered_path
+    target_abs="$dir"
+    registered_path=$(git worktree list --porcelain | sed -n 's/^worktree //p' | grep -Fx "$target_abs" || true)
+    [[ -z "$registered_path" ]] \
+      || die "stale worktree registration for $dir; run 'pi-worktree prune' first"
     ensure_gitignore
-    mkdir -p .worktrees
+    mkdir -p "$worktrees_dir"
     # Reuse branch if it exists, else create it
     if git show-ref --verify --quiet "refs/heads/$name"; then
-      git worktree add "$dir" "$name"
+      if [[ "${QUIET:-0}" == 1 ]]; then
+        git worktree add "$dir" "$name" >/dev/null
+      else
+        git worktree add "$dir" "$name"
+      fi
       ok "checked out existing branch '$name'"
+      PREPARE_STATUS="attached"
       # record a best-effort base for -i display
       local mb; mb=$(git merge-base main "$name" 2>/dev/null || true)
       [[ -n "$mb" ]] && git config "branch.$name.base" "$(git rev-parse --short "$mb")" \
         && git config "branch.$name.baseRef" main
     else
       local base; base=$(resolve_base)
-      git worktree add "$dir" -b "$name" "$base"
+      if [[ "${QUIET:-0}" == 1 ]]; then
+        git worktree add "$dir" -b "$name" "$base" >/dev/null
+      else
+        git worktree add "$dir" -b "$name" "$base"
+      fi
       git config "branch.$name.base" "$(git rev-parse --short "$base")"
       git config "branch.$name.baseRef" "$base"
       ok "created branch '$name' from $base @ $(git rev-parse --short "$base")"
+      PREPARE_STATUS="created"
     fi
   fi
 
-  cd "$dir"
+  PREPARE_DIR=$(cd "$dir" && pwd -P)
+  PREPARE_BRANCH=$(git -C "$dir" branch --show-current)
+  PREPARE_DIRTY=false
+  if [[ -n "$(git -C "$dir" status --porcelain)" ]]; then PREPARE_DIRTY=true; fi
+}
+
+print_prepare_json() {
+  PI_WORKTREE_STATUS="$PREPARE_STATUS" \
+  PI_WORKTREE_PATH="$PREPARE_DIR" \
+  PI_WORKTREE_BRANCH="$PREPARE_BRANCH" \
+  PI_WORKTREE_DIRTY="$PREPARE_DIRTY" \
+    node -e 'process.stdout.write(JSON.stringify({status:process.env.PI_WORKTREE_STATUS,path:process.env.PI_WORKTREE_PATH,branch:process.env.PI_WORKTREE_BRANCH,dirty:process.env.PI_WORKTREE_DIRTY==="true"})+"\n")'
+}
+
+cmd_prepare() {
+  BASE_OVERRIDE=""
+  local json=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --base)
+        shift; [[ $# -ge 1 ]] || die "usage: pi-worktree prepare [--base <ref>] [--json] <name>"
+        BASE_OVERRIDE="$1"; shift ;;
+      --json) json=1; QUIET=1; shift ;;
+      --*) die "unknown prepare option: $1" ;;
+      *) break ;;
+    esac
+  done
+  [[ $# -eq 1 ]] || die "usage: pi-worktree prepare [--base <ref>] [--json] <name>"
+  prepare_wt "$1"
+  if [[ "$json" == 1 ]]; then
+    print_prepare_json
+  else
+    ok "$PREPARE_STATUS worktree: $PREPARE_DIR ($PREPARE_BRANCH)"
+  fi
+}
+
+cd_wt() {
+  local name="$1"; shift
+  require_repo
+
+  # Already isolated? Preserve the original start behavior and launch Pi here.
+  if in_linked_worktree; then
+    ok "already in an isolated worktree ($(pwd)), launching pi here"
+    exec pi "$@"
+  fi
+
+  # Dirty workspace: uncommitted changes do NOT follow into the new worktree.
+  local dir; dir="$(main_checkout)/.worktrees/$name"
+  if [[ ! -d "$dir" ]] && { ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; }; then
+    warn "Uncommitted changes stay in THIS directory; they will NOT appear in the worktree:"
+    git status --short | head -20
+    read -rp "Continue? [y/N] " ans
+    [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
+  fi
+
+  prepare_wt "$name"
+
+  cd "$PREPARE_DIR"
   exec pi "$@"
 }
 
@@ -285,6 +379,7 @@ case "${1:-}" in
   -r|--remove|rm|remove) shift; cmd_remove "$@" ;;
   -p|--prune|prune) shift; subcmd_prune ;;
   -h|--help|help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' ;;
+  prepare) shift; cmd_prepare "$@" ;;
   start) shift
     BASE_OVERRIDE=""
     if [[ "${1:-}" == "--base" ]]; then
