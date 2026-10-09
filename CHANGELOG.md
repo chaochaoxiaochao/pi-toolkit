@@ -1,9 +1,10 @@
+## 2026-10-09 - v0.10.11
+
+- bundle herdr-subagents v0.4.4: return failed foreground batches early while surviving subagents continue in background
+
 ## 2026-10-09 - v0.10.10
 
 - require real Chrome frontend verification and remove the redundant chrome-cdp skill
-
-## Unreleased
-
 - Require real Chrome click, screenshot, and behavior verification through `web-browser` for frontend feature development, and remove the redundant `chrome-cdp` skill.
 
 ## 2026-10-09 - v0.10.9

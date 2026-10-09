@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-09 - v0.4.4
 
+- return failed foreground batches early while surviving subagents continue in background
 - Return a foreground concurrent batch as soon as one task fails, keep surviving siblings running under durable background ownership, and send exactly one final follow-up after the whole batch settles.
 - Release the dispatcher slot at foreground failure handoff so later batches start immediately, while detached work remains cancellable, participates in shutdown, and cannot clear a newer active run when it settles.
 - Preserve full-batch waiting for successful foreground runs and the immediate-return behavior of explicit background runs.
