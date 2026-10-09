@@ -1,3 +1,7 @@
+## 2026-10-09 - v0.10.13
+
+- bundle worktree v0.3.1: show a persistent in-conversation confirmation after switching worktrees
+
 ## 2026-10-09 - v0.10.12
 
 - bundle worktree v0.3.0: automatically move Agent conversations into prepared worktrees without external Harness support

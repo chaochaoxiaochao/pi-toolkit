@@ -1,6 +1,6 @@
 {
   "name": "@maxiaochao/pi-worktree",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Git worktree CLI, Pi extension, and skill for isolated coding tasks.",
   "type": "module",
   "keywords": [
