@@ -124,11 +124,11 @@ test("enter_worktree defers, forks the current session, and switches automatical
     assert.deepEqual(f.sessionMessages, [{
       message: {
         customType: "worktree-switch",
-        content: `✓ 已进入 worktree：${f.worktree}\nBranch: feature`,
+        content: `✓ 已进入 worktree：${f.worktree}\nBranch: feature\n\n在worktree继续任务`,
         display: true,
         details: { status: "created", path: f.worktree, branch: "feature", dirty: false },
       },
-      options: { triggerTurn: false },
+      options: { triggerTurn: true, deliverAs: "followUp" },
     }]);
   } finally {
     f.cleanup();

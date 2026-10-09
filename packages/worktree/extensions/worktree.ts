@@ -165,10 +165,10 @@ export default function worktreeExtension(pi: ExtensionAPI) {
             const dirtyNote = prepared.dirty ? "（已有未提交改动）" : "";
             await next.sendMessage({
               customType: "worktree-switch",
-              content: `✓ 已进入 worktree：${prepared.path}\nBranch: ${prepared.branch}${dirtyNote}`,
+              content: `✓ 已进入 worktree：${prepared.path}\nBranch: ${prepared.branch}${dirtyNote}\n\n在worktree继续任务`,
               display: true,
               details: prepared,
-            }, { triggerTurn: false });
+            }, { triggerTurn: true, deliverAs: "followUp" });
           },
         });
       } catch (error) {
