@@ -16,6 +16,8 @@ function harness(execute: (...args: any[]) => Promise<any>) {
 	const editor = { kind: "editor" };
 	const focusedPanes: string[] = [];
 	const notifications: Array<{ message: string; level?: string }> = [];
+	const messages: Array<{ message: any; options: any }> = [];
+	const messageWaiters: Array<{ predicate: (message: any) => boolean; resolve: () => void }> = [];
 	const ui = {
 		setWidget(_id: string, widget: unknown) {
 			widgetCalls += 1;
@@ -32,7 +34,13 @@ function harness(execute: (...args: any[]) => Promise<any>) {
 			if (definition.name === "herdr_subagents_control") controlTool = definition;
 		},
 		registerCommand(name: string) { commands.push(name); },
-		sendMessage() {},
+		sendMessage(message: any, options: any) {
+			messages.push({ message, options });
+			for (const waiter of messageWaiters.splice(0)) {
+				if (waiter.predicate(message)) waiter.resolve();
+				else messageWaiters.push(waiter);
+			}
+		},
 	};
 	registerHerdrSubagents(pi as never, {
 		herdr: { async focusPane(paneId: string) { focusedPanes.push(paneId); } } as never,
@@ -51,6 +59,11 @@ function harness(execute: (...args: any[]) => Promise<any>) {
 		get renderedLines() { return renderedLines; },
 		focusedPanes,
 		notifications,
+		messages,
+		waitForMessage(predicate: (message: any) => boolean) {
+			if (messages.some(({ message }) => predicate(message))) return Promise.resolve();
+			return new Promise<void>((resolve) => messageWaiters.push({ predicate, resolve }));
+		},
 		ui,
 	};
 }
@@ -62,6 +75,121 @@ async function startHarness(instance: ReturnType<typeof harness>, cwd: string) {
 		ui: instance.ui,
 		sessionManager: { getSessionId: () => "contract-session" },
 	});
+}
+
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((settle) => { resolve = settle; });
+	return { promise, resolve };
+}
+
+async function waitUntil(predicate: () => boolean, message: string) {
+	for (let attempt = 0; attempt < 100; attempt += 1) {
+		if (predicate()) return;
+		await new Promise<void>((resolve) => setImmediate(resolve));
+	}
+	throw new Error(message);
+}
+
+async function verifyForegroundFailureHandoff() {
+	const cwd = mkdtempSync(join(tmpdir(), "herdr-early-failure-"));
+	try {
+		const slow = deferred<void>();
+		let slowSignal: AbortSignal | undefined;
+		let secondStarted = false;
+		let callCount = 0;
+		const caller = new AbortController();
+		const failedTask = { index: 0, name: "fast failure", status: "failed", summary: "failed quickly", error: "boom", documents: [], paneId: "w1:p1", recordDirectory: "task-1", sessionFile: "task-1/session.jsonl" };
+		const slowTask = { index: 1, name: "slow success", status: "completed", summary: "finished slowly", documents: [], paneId: "w1:p2", recordDirectory: "task-2", sessionFile: "task-2/session.jsonl" };
+		const instance = harness(async (_params, signal, onUpdate, _ctx, dependencies) => {
+			callCount += 1;
+			if (callCount > 1) {
+				secondStarted = true;
+				return { content: [{ type: "text", text: "second done" }], details: { runId: dependencies.runId, label: "second", status: "completed", summary: "done", documents: [], tasks: [], activity: [] } };
+			}
+			slowSignal = signal;
+			onUpdate?.({
+				content: [{ type: "text", text: "1/2 tasks settled." }],
+				details: { runId: dependencies.runId, label: "handoff", status: "running", summary: "1/2 tasks settled.", documents: [], tasks: [failedTask], activity: [{ index: 0, name: failedTask.name, status: "failed" }, { index: 1, name: slowTask.name, status: "running" }], effectiveConcurrency: 2, requestedConcurrency: 2 },
+			});
+			queueMicrotask(() => caller.abort(new Error("foreground tool call ended")));
+			await slow.promise;
+			return { content: [{ type: "text", text: "1/2 tasks completed; 1 failed." }], details: { runId: dependencies.runId, label: "handoff", status: "partial", summary: "1/2 tasks completed; 1 failed.", documents: [], tasks: [failedTask, slowTask], activity: [{ index: 0, name: failedTask.name, status: "failed" }, { index: 1, name: slowTask.name, status: "completed" }], effectiveConcurrency: 2, requestedConcurrency: 2 }, isError: true };
+		});
+		await startHarness(instance, cwd);
+		const foreground = instance.tool?.execute("handoff", { concurrency: 2, tasks: [{ name: failedTask.name, prompt: "fail" }, { name: slowTask.name, prompt: "wait" }] }, caller.signal, undefined, { cwd, ui: instance.ui });
+		const early = await Promise.race([foreground, new Promise((_, reject) => setTimeout(() => reject(new Error("foreground did not return after the first task failed")), 100))]);
+		if (!early.details?.runId || early.details?.earlyReturn !== true || early.details?.background !== true || early.details?.failedTask?.error !== "boom" || !early.content?.[0]?.text.includes("boom")) throw new Error("early foreground result omitted the run ID or failure details");
+		if (slowSignal?.aborted) throw new Error("early foreground handoff cancelled the still-running sibling");
+		const queuedAfterHandoff = readdirSync(join(cwd, ".pi", "herdr-subagents", "queue")).filter((name) => name.endsWith(".json"));
+		if (queuedAfterHandoff.length !== 1) throw new Error("early foreground handoff was not persisted as background work");
+		const second = instance.tool?.execute("second", { background: true, tasks: [{ name: "second", prompt: "later" }] }, undefined, undefined, { cwd, ui: instance.ui });
+		await second;
+		if (secondStarted) throw new Error("dispatcher started the next batch before the handed-off batch settled");
+		const handoffNotified = instance.waitForMessage((message) => message.details?.runId === early.details.runId);
+		slow.resolve();
+		await handoffNotified;
+		if (slowSignal?.aborted || !secondStarted) throw new Error("slow sibling did not finish before the dispatcher advanced");
+		const handoffMessages = instance.messages.filter(({ message }) => message.details?.runId === early.details.runId);
+		if (handoffMessages.length !== 1 || handoffMessages[0].options?.deliverAs !== "followUp") throw new Error("handed-off run did not send exactly one final follow-up");
+		await waitUntil(() => !readdirSync(join(cwd, ".pi", "herdr-subagents", "queue")).some((name) => name.startsWith(early.details.runId)), "settled handed-off run left its durable queue record behind");
+
+		const shutdownRoot = join(cwd, "shutdown-handoff");
+		mkdirSync(shutdownRoot, { recursive: true });
+		let shutdownSignal: AbortSignal | undefined;
+		const shutdownHandoff = harness(async (_params, signal, onUpdate, _ctx, dependencies) => {
+			shutdownSignal = signal;
+			onUpdate?.({
+				content: [{ type: "text", text: "1/2 tasks settled." }],
+				details: { runId: dependencies.runId, label: "shutdown", status: "running", summary: "1/2 tasks settled.", documents: [], tasks: [failedTask], activity: [{ index: 0, name: failedTask.name, status: "failed" }, { index: 1, name: slowTask.name, status: "running" }], effectiveConcurrency: 2, requestedConcurrency: 2 },
+			});
+			await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+			return { content: [{ type: "text", text: "cancelled" }], details: { runId: dependencies.runId, label: "shutdown", status: "cancelled", summary: "cancelled", documents: [], tasks: [failedTask], activity: [{ index: 0, name: failedTask.name, status: "failed" }, { index: 1, name: slowTask.name, status: "cancelled" }], effectiveConcurrency: 2, requestedConcurrency: 2 }, isError: true };
+		});
+		await startHarness(shutdownHandoff, shutdownRoot);
+		const shutdownEarly = await shutdownHandoff.tool?.execute("shutdown", { concurrency: 2, tasks: [{ name: failedTask.name, prompt: "fail" }, { name: slowTask.name, prompt: "wait" }] }, undefined, undefined, { cwd: shutdownRoot, ui: shutdownHandoff.ui });
+		await Promise.race([
+			shutdownHandoff.handlers.get("session_shutdown")?.({}, { cwd: shutdownRoot, ui: shutdownHandoff.ui }),
+			new Promise((_, reject) => setTimeout(() => reject(new Error("session shutdown leaked a handed-off run")), 100)),
+		]);
+		if (!shutdownSignal?.aborted) throw new Error("session shutdown did not abort the active handed-off sibling");
+		if (shutdownHandoff.messages.some(({ message }) => message.details?.runId === shutdownEarly.details.runId)) throw new Error("handed-off run notified after its parent session shut down");
+		const shutdownQueue = join(shutdownRoot, ".pi", "herdr-subagents", "queue");
+		if (existsSync(shutdownQueue) && readdirSync(shutdownQueue).some((name) => name.endsWith(".json"))) throw new Error("session shutdown left a handed-off queue record behind");
+
+		const successGate = deferred<void>();
+		const successStarted = deferred<void>();
+		const allSuccess = harness(async (_params, _signal, _onUpdate, _ctx, dependencies) => {
+			successStarted.resolve();
+			await successGate.promise;
+			return { content: [{ type: "text", text: "all done" }], details: { runId: dependencies.runId, label: "success", status: "completed", summary: "2/2 tasks completed.", documents: [], tasks: [], activity: [], effectiveConcurrency: 2, requestedConcurrency: 2 } };
+		});
+		await startHarness(allSuccess, cwd);
+		let successSettled = false;
+		const successPromise = allSuccess.tool?.execute("success", { concurrency: 2, tasks: [{ name: "one", prompt: "one" }, { name: "two", prompt: "two" }] }, undefined, undefined, { cwd, ui: allSuccess.ui }).then((result: any) => { successSettled = true; return result; });
+		await successStarted.promise;
+		if (successSettled) throw new Error("all-success foreground batch returned before the full batch settled");
+		successGate.resolve();
+		await successPromise;
+
+		const backgroundGate = deferred<void>();
+		const explicitBackground = harness(async (_params, _signal, _onUpdate, _ctx, dependencies) => {
+			await backgroundGate.promise;
+			return { content: [{ type: "text", text: "background done" }], details: { runId: dependencies.runId, label: "background", status: "completed", summary: "done", documents: [], tasks: [], activity: [], effectiveConcurrency: 1, requestedConcurrency: 1 } };
+		});
+		await startHarness(explicitBackground, cwd);
+		const queued = await Promise.race([
+			explicitBackground.tool?.execute("background", { background: true, tasks: [{ name: "background", prompt: "wait" }] }, undefined, undefined, { cwd, ui: explicitBackground.ui }),
+			new Promise((_, reject) => setTimeout(() => reject(new Error("explicit background run stopped returning immediately")), 100)),
+		]);
+		if (queued.details?.background !== true || queued.details?.status !== "queued") throw new Error("explicit background result contract regressed");
+		const backgroundNotified = explicitBackground.waitForMessage((message) => message.details?.runId === queued.details.runId);
+		backgroundGate.resolve();
+		await backgroundNotified;
+		if (explicitBackground.messages.filter(({ message }) => message.details?.runId === queued.details.runId).length !== 1) throw new Error("explicit background run did not send one final follow-up");
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
 }
 
 async function verifyPublicUiWiring() {
@@ -194,6 +322,7 @@ try {
 	if (child.tool || child.commands.length || child.handlers.size) throw new Error("Subagents registered inside a child Agent");
 	delete process.env.PI_HERDR_SUBAGENTS_CHILD;
 	await verifyPublicUiWiring();
+	await verifyForegroundFailureHandoff();
 } finally {
 	if (originalHerdrEnv === undefined) delete process.env.HERDR_ENV;
 	else process.env.HERDR_ENV = originalHerdrEnv;
@@ -255,7 +384,7 @@ export default function (_pi: ExtensionAPI) {
 	if (!controlActions?.includes("status")) throw new Error("herdr_subagents_control action enum must include status");
 	if (!/status/.test(controlSchema.properties.runId.description)) throw new Error("control runId description must document status");
 	if (!/Use status for one run/.test(controlTool.description)) throw new Error("control tool description must distinguish status from history");
-	if (!/Foreground calls block/.test(tool.description) || !/background calls return a run ID immediately/.test(tool.description)) {
+	if (!/Foreground calls wait/.test(tool.description) || !/Explicit background calls always return a run ID immediately/.test(tool.description)) {
 		throw new Error("tool description does not distinguish foreground and background execution");
 	}
 }

@@ -66,6 +66,8 @@ herdr_subagents({
 
 `tasks` is always a non-empty array: one item is a single task and multiple items form a batch. Set `background: true` for either form to return a stable run ID immediately while the queue continues. One run is dispatched at a time by an extension instance; later runs remain queued and start FIFO. Each background run sends one compact parent notification only when the whole run completes, partially fails, fails, or blocks. Individual successful tasks do not wake the parent model.
 
+A foreground concurrent batch normally waits for the whole batch. If any task fails while siblings are still running, the call immediately returns the stable `runId` and that failure's details, then durably continues the same batch in the background without cancelling its siblings. Dispatcher ownership remains with that batch, so later submissions stay queued until every surviving task settles. The final aggregate is delivered exactly once through the same follow-up notification used by an explicit background run. This lets the parent dispatch other independent work immediately while retaining the failed batch's final outcome.
+
 Background work normally relies on that terminal notification. When the user asks for progress or the parent must confirm a review gate before continuing, query only that run's compact snapshot:
 
 ```text
@@ -96,7 +98,7 @@ Read-only tasks start FIFO up to the configured concurrency limit. A pane is cre
 
 The widget shows one row per queued, running, blocked, failed, or completed task. Answering a blocked task or resuming saved history refreshes authoritative persona, timing, session, status, and pane projections as work advances. Active duration accumulates only while the task is running, excluding time spent queued or waiting for an answer. Completed rows remain selectable until the whole batch settles. `/herdr-subagents active` shows the same compact state. Native labels stay short: `SA · <batch>` for the tab and `<order> · <task>` for each pane. When all tasks settle, the tab closes immediately if unfocused or after the user leaves it; a deferred close failure is persisted and shown as a warning. An already-missing tab is treated as successfully cleaned, so retries are idempotent.
 
-Foreground calls block until all children report completion, failure, or a request for input. Every child is started with Herdr's Agent lifecycle as a normal Pi TUI and prompted with wait semantics; no print-mode command or completion marker is injected into the pane.
+Foreground calls wait until all children report completion or a request for input when no task fails. On the first task failure, they return early as described above while the surviving children continue. Every child is started with Herdr's Agent lifecycle as a normal Pi TUI and prompted with wait semantics; no print-mode command or completion marker is injected into the pane.
 
 ## Reports and records
 

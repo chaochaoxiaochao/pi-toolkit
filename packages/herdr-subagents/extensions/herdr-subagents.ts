@@ -195,9 +195,9 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 	pi.registerTool({
 		name: "herdr_subagents",
 		label: "Herdr Subagents",
-		description: "Run one or more ordered tasks in visible interactive Herdr Pi Agents. Use one tasks item for a single task. Independent read-only tasks may run concurrently; write-capable runs are serialized. Foreground calls block, while background calls return a run ID immediately. Complete results and Pi sessions stay in project-local records.",
+		description: "Run one or more ordered tasks in visible interactive Herdr Pi Agents. Use one tasks item for a single task. Independent read-only tasks may run concurrently; write-capable runs are serialized. Foreground calls wait for the batch unless a task fails, when the run continues in the background and returns its run ID immediately. Explicit background calls always return a run ID immediately. Complete results and Pi sessions stay in project-local records.",
 		promptSnippet: "Run focused work in visible Herdr subagents",
-		promptGuidelines: ["Call herdr_subagents_control with action=list once before the first execution. Submit an ordered tasks list; use one item for a single task and concurrency only for independent read-only tasks. Foreground calls block until the run settles; background calls return a run ID immediately."],
+		promptGuidelines: ["Call herdr_subagents_control with action=list once before the first execution. Submit an ordered tasks list; use one item for a single task and concurrency only for independent read-only tasks. Foreground calls wait for full success or blocking input, but return a run ID as soon as one task fails while surviving siblings continue in the background. Explicit background calls return a run ID immediately."],
 		parameters: HerdrSubagentsParams,
 		prepareArguments: normalizeHerdrSubagentsArguments,
 
@@ -205,35 +205,65 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 			const generation = sessionGeneration;
 			const runId = randomUUID();
 			const controller = new AbortController();
+			const foregroundController = new AbortController();
+			let foregroundAttached = !params.background;
+			const abortForeground = () => {
+				if (foregroundAttached && signal?.aborted) foregroundController.abort(signal.reason);
+			};
+			if (foregroundAttached) {
+				if (signal?.aborted) abortForeground();
+				else signal?.addEventListener("abort", abortForeground, { once: true });
+			}
 			runControllers.set(runId, controller);
-			const runSignal = AbortSignal.any([controller.signal, sessionController.signal, ...(!params.background && signal ? [signal] : [])]);
+			const runSignal = AbortSignal.any([controller.signal, sessionController.signal, ...(!params.background ? [foregroundController.signal] : [])]);
+			let resolveEarlyFailure: ((details: HerdrSubagentsBatchDetails) => void) | undefined;
+			const earlyFailure = new Promise<HerdrSubagentsBatchDetails>((resolve) => { resolveEarlyFailure = resolve; });
+			let failureObserved = false;
+			let runSettled = false;
 			const executeRun = async () => {
 				const result = await execute(params, runSignal, (update) => {
-				const details = update.details as HerdrSubagentsBatchDetails | undefined;
-				if (details?.activity) fleet.sync(details);
-				const updateText = update.content.find((item) => item.type === "text")?.text;
-				const updateDetails = update.details as { warning?: string };
-				if (updateDetails.warning || updateText?.includes("cleanup failed") || (params.background && updateText?.includes("appears stalled"))) ctx.ui.notify(updateDetails.warning ?? updateText ?? "Subagent warning", "warning");
-				if (!params.background) onUpdate?.(update);
+					const details = update.details as HerdrSubagentsBatchDetails | undefined;
+					if (details?.activity) fleet.sync(details);
+					const hasUnfinishedSibling = details?.activity?.some((task) => task.status === "queued" || task.status === "running");
+					if (!params.background && !failureObserved && details?.effectiveConcurrency > 1 && hasUnfinishedSibling && details.tasks?.some((task) => task.status === "failed")) {
+						failureObserved = true;
+						foregroundAttached = false;
+						signal?.removeEventListener("abort", abortForeground);
+						resolveEarlyFailure?.(details);
+					}
+					const updateText = update.content.find((item) => item.type === "text")?.text;
+					const updateDetails = update.details as { warning?: string };
+					if (updateDetails.warning || updateText?.includes("cleanup failed") || (!foregroundAttached && updateText?.includes("appears stalled"))) ctx.ui.notify(updateDetails.warning ?? updateText ?? "Subagent warning", "warning");
+					if (foregroundAttached) onUpdate?.(update);
 				}, ctx, { agentsDirectory: packageAgentsDir, owner: { sessionId: ownerSessionId, processId: process.pid }, runId });
 				fleet.sync(result.details);
 				return result;
 			};
 			if (params.background) await persistQueuedRun(ctx.cwd, runId, params, { sessionId: ownerSessionId, processId: process.pid });
 			const promise = dispatcher.submit(runId, async () => {
-				const result = await executeRun().finally(async () => { if (params.background) await removeQueuedRun(ctx.cwd, runId); });
-					const details = result.details as HerdrSubagentsBatchDetails;
-					fleet.setActive(details.status === "blocked" ? details : undefined);
-					if (fleet.active) {
-						dispatcher.retain(runId);
+				const result = await executeRun();
+				const details = result.details as HerdrSubagentsBatchDetails;
+				fleet.setActive(details.status === "blocked" ? details : undefined);
+				if (fleet.active) {
+					dispatcher.retain(runId);
 				}
 				return result;
 			});
 			runPromises.set(runId, promise);
 			inFlight.add(promise);
-			void promise.finally(() => { inFlight.delete(promise); runControllers.delete(runId); runPromises.delete(runId); }).catch(() => undefined);
-			if (params.background) {
-				void promise.then((result) => {
+			void promise.finally(() => {
+				runSettled = true;
+				foregroundAttached = false;
+				signal?.removeEventListener("abort", abortForeground);
+				inFlight.delete(promise);
+				runControllers.delete(runId);
+				runPromises.delete(runId);
+			}).catch(() => undefined);
+			let backgroundLifecycleStarted = false;
+			const startBackgroundLifecycle = () => {
+				if (backgroundLifecycleStarted) return;
+				backgroundLifecycleStarted = true;
+				const lifecycle = promise.then((result) => {
 					if (generation !== sessionGeneration) return;
 					notifyRun(runId, result);
 					if (!fleet.active && !dispatcher.snapshot().activeRunId && dispatcher.snapshot().queuedRunIds.length === 0) fleet.render();
@@ -244,10 +274,41 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 						return;
 					}
 					pi.sendMessage({ customType: "herdr-subagents-run", content: `Subagent run ${runId} failed: ${error instanceof Error ? error.message : String(error)}`, display: true, details: { runId, status: "failed" } }, { triggerTurn: true, deliverAs: "followUp" });
-				});
+				}).finally(() => removeQueuedRun(ctx.cwd, runId));
+				inFlight.add(lifecycle);
+				void lifecycle.finally(() => inFlight.delete(lifecycle)).catch(() => undefined);
+			};
+			if (params.background) {
+				startBackgroundLifecycle();
 				return { content: [{ type: "text" as const, text: `Subagent run queued: ${runId}` }], details: { runId, status: "queued", background: true } };
 			}
-			const result = await promise;
+			const foregroundOutcome = await Promise.race([
+				promise.then((result) => ({ kind: "settled" as const, result })),
+				earlyFailure.then((details) => ({ kind: "failed" as const, details })),
+			]);
+			if (foregroundOutcome.kind === "failed") {
+				try {
+					await persistQueuedRun(ctx.cwd, runId, params, { sessionId: ownerSessionId, processId: process.pid });
+				} catch (error) {
+					controller.abort(new Error("Could not persist failed foreground run for background continuation."));
+					await promise.catch(() => undefined);
+					await removeQueuedRun(ctx.cwd, runId).catch(() => undefined);
+					throw error;
+				}
+				if (runSettled) {
+					await removeQueuedRun(ctx.cwd, runId);
+					return promise;
+				}
+				startBackgroundLifecycle();
+				const failedTask = foregroundOutcome.details.tasks.find((task) => task.status === "failed");
+				const failure = failedTask?.error ?? failedTask?.summary ?? "Unknown task failure.";
+				return {
+					content: [{ type: "text" as const, text: `Subagent run ${runId} continues in the background after ${failedTask?.name ?? "a task"} failed: ${failure}` }],
+					details: { ...foregroundOutcome.details, runId, background: true, earlyReturn: true, failedTask: failedTask ? { index: failedTask.index, name: failedTask.name, summary: failedTask.summary, ...(failedTask.error ? { error: failedTask.error } : {}) } : undefined },
+					isError: true,
+				};
+			}
+			const result = foregroundOutcome.result;
 			if (!fleet.active && !dispatcher.snapshot().activeRunId && dispatcher.snapshot().queuedRunIds.length === 0) fleet.resetSelection();
 			return result;
 		},

@@ -176,7 +176,9 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 				if (results[index]?.status === "blocked") return;
 			}
 		};
-		await Promise.all(Array.from({ length: effectiveConcurrency }, worker));
+		const workers = await Promise.allSettled(Array.from({ length: effectiveConcurrency }, worker));
+		const rejectedWorker = workers.find((worker): worker is PromiseRejectedResult => worker.status === "rejected");
+		if (rejectedWorker) throw rejectedWorker.reason;
 		if (options.signal?.aborted) {
 			for (let index = 0; index < tasks.length; index += 1) {
 				if (activity[index].status !== "queued") continue;
