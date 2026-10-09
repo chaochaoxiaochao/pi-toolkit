@@ -87,7 +87,7 @@ bash scripts/install.sh
 | `pdlog` | Decompress and inspect Pudu `.pdlog` files |
 | `herdr` | Control Herdr workspaces, tabs, panes, and agents |
 | `agent-team` | Run tool-agnostic, cross-vendor adversarial review with independent concurrent agents |
-| `tapd` | Use the TAPD CLI for requirements, defects, tasks, and wikis |
+| `tapd` | Investigate and operate on TAPD items with workspace, evidence, and safe-download guardrails |
 
 Package-specific skills, such as `pi-worktree`, are documented by their child package.
 

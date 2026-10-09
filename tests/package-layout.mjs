@@ -65,6 +65,73 @@ assert.equal(agentTeamModels.members.every((member) => !("role" in member) && !(
 assert.deepEqual(agentTeamModels.roles.map(({ name }) => name).sort(), ["adversary", "auditor", "replicator"]);
 assert.equal(agentTeamModels.roles.every((role) => typeof role.charter === "string" && !("model" in role)), true);
 
+const tapdSkill = readFileSync("skills/tapd/SKILL.md", "utf8");
+const tapdAttachmentReference = readFileSync("skills/tapd/references/attachment-download.md", "utf8");
+const tapdDownloadURLExtractor = "skills/tapd/scripts/extract-download-url.mjs";
+assert.match(tapdSkill, /^---\nname: tapd\ndescription: .+tapd CLI.+tapd\.cn.+时使用。\n---\n/);
+assert.match(tapdSkill, /tapd --help/);
+assert.match(tapdSkill, /tapd <group> --help/);
+assert.match(tapdSkill, /tapd <group> <command> --help/);
+for (const command of [
+  "tapd url '<tapd-url>'",
+  "tapd workspace info",
+  "tapd workspace list",
+  "tapd story show <id>",
+  "tapd bug show <id>",
+  "tapd task show <id>",
+  "tapd wiki show <id>",
+  "tapd comment list --entry-id=<id> --entry-type=<stories|bug|tasks|wiki>",
+  "tapd change list --entity-id=<id> --type=<story|bug|task>",
+  "tapd attachment list --entry-id=<id> --type=<story|bug|task>",
+  "tapd attachment download --id=<attachment-id>",
+  "tapd image get --image-path=<path>",
+  "tapd relation bugs --story-id=<id>",
+  "tapd bug related-stories --bug-id=<id>",
+  "tapd source list --object-id=<id> --type=<story|bug|task>",
+  "tapd workitem-type list",
+  "tapd workflow status-map --system=<story|bug> --workitem-type-id=<id>",
+  "tapd workflow transitions --system=<story|bug> --workitem-type-id=<id>",
+  "tapd <story|bug|task|wiki> create ...",
+  "tapd <story|bug|task|wiki> update <id> ...",
+  "tapd comment add --entry-id=<id> --entry-type=<stories|bug|tasks|wiki> --description='<text>'",
+]) assert.match(tapdSkill, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+assert.match(tapdSkill, /基础功能优先使用上表，不从完整命令树开始试错/);
+assert.doesNotMatch(tapdSkill, /先用逐层 `--help`/);
+assert.match(tapdSkill, /`tapd workspace list` 也不需要 workspace；`tapd workspace info` 和其他业务命令需要/);
+assert.match(tapdSkill, /后续每条命令显式传 `--workspace-id=<id>`/);
+assert.match(tapdSkill, /`attachment download` 和 `image get` 返回 JSON 下载描述/);
+assert.match(tapdSkill, /不要用 `sed`、`grep` 或正则假设键的排版/);
+assert.match(tapdSkill, /没有可用的图片读取或 OCR 能力时明确报告阻塞/);
+assert.match(tapdSkill, /调查完成标准/);
+assert.match(tapdSkill, /references\/attachment-download\.md/);
+assert.doesNotMatch(tapdSkill, /## 命令参考|tapd testx case|tapd skill init/);
+assert.match(tapdAttachmentReference, /scripts\/extract-download-url\.mjs/);
+assert.match(tapdAttachmentReference, /curl --fail --location --retry 3/);
+assert.match(tapdAttachmentReference, /--proto '=https' --proto-redir '=https'/);
+assert.match(tapdAttachmentReference, /--output "\$PART" -- "\$URL"/);
+assert.match(tapdAttachmentReference, /mv -- "\$PART" "\$OUTPUT"/);
+assert.match(tapdAttachmentReference, /\[ -e "\$OUTPUT" \] \|\| \[ -e "\$PART" \]/);
+assert.match(tapdAttachmentReference, /目标文件或 `.part` 已存在时必须在下载前失败/);
+assert.match(tapdAttachmentReference, /不要假设列表一定包含大小字段/);
+assert.match(tapdAttachmentReference, /本流程不续传失败的 `.part`/);
+assert.equal(
+  execFileSync(process.execPath, [tapdDownloadURLExtractor], {
+    input: '{"download_url":"https://example.test/file.zip"}',
+    encoding: "utf8",
+  }),
+  "https://example.test/file.zip\n",
+);
+for (const input of [
+  "{}",
+  '{"download_url":null}',
+  '{"download_url":"http://example.test/file.zip"}',
+  '{"download_url":"https://"}',
+  '{"download_url":"https://user:password@example.test/file.zip"}',
+  '{"download_url":"https://example.test/file.zip\\n"}',
+]) {
+  assert.throws(() => execFileSync(process.execPath, [tapdDownloadURLExtractor], { input, stdio: "pipe" }));
+}
+
 const releaseScript = readFileSync("scripts/release-package.sh", "utf8");
 execFileSync("bash", ["-n", "scripts/release-package.sh"]);
 assert.match(releaseScript, /git push --atomic origin main "\$CHILD_TAG" "\$ROOT_TAG"/);
