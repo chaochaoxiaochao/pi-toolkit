@@ -1,6 +1,6 @@
 {
   "name": "@maxiaochao/pi-toolkit",
-  "version": "0.10.5",
+  "version": "0.10.6",
   "description": "Personal pi coding agent toolkit: /btw, /cache_export and apply_patch extensions, browser automation, and bundled theme/skills.",
   "type": "module",
   "workspaces": [

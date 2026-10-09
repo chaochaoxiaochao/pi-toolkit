@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-09 - v0.10.6
 
+- bundle herdr-subagents v0.4.3: add per-run status, neutral analyst persona, and tool-agnostic Agent Team protocol
 - Add per-run Herdr Subagents status queries so background review gates can inspect one run without polling the full history archive.
 - Make Agent Team a tool-agnostic concurrent review protocol, decouple models from rotating methodological roles, and add a neutral read-only analyst persona.
 - Remove Todo from the default toolkit bundle and loadout; users who want its progress UI can install `@maxiaochao/pi-todo` explicitly.

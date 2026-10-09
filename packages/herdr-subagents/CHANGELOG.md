@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-09 - v0.4.3
 
+- add per-run status, neutral analyst persona, and tool-agnostic Agent Team protocol
 - Add `herdr_subagents_control({ action: "status", runId })` for a compact snapshot of one queued, active, blocked, or settled run without loading the full history archive.
 - Add a neutral read-only `analyst` persona for tasks that assign models and methodological roles dynamically.
 
