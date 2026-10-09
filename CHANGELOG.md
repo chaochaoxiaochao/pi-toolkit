@@ -1,3 +1,7 @@
+## 2026-10-09 - v0.10.12
+
+- bundle worktree v0.3.0: automatically move Agent conversations into prepared worktrees without external Harness support
+
 ## 2026-10-09 - v0.10.11
 
 - bundle herdr-subagents v0.4.4: return failed foreground batches early while surviving subagents continue in background
