@@ -163,7 +163,12 @@ export default function worktreeExtension(pi: ExtensionAPI) {
         switched = await ctx.switchSession(targetSessionFile, {
           withSession: async (next) => {
             const dirtyNote = prepared.dirty ? "（已有未提交改动）" : "";
-            next.ui.notify(`已切换到 ${prepared.branch}：${prepared.path}${dirtyNote}`, "info");
+            await next.sendMessage({
+              customType: "worktree-switch",
+              content: `✓ 已进入 worktree：${prepared.path}\nBranch: ${prepared.branch}${dirtyNote}`,
+              display: true,
+              details: prepared,
+            }, { triggerTurn: false });
           },
         });
       } catch (error) {

@@ -31,6 +31,7 @@ async function fixture({ cancelled = false, switchError, customSessionDir = true
 
   const handlers = {};
   const sent = [];
+  const sessionMessages = [];
   const notifications = [];
   const execCalls = [];
   let releaseExec;
@@ -71,13 +72,16 @@ async function fixture({ cancelled = false, switchError, customSessionDir = true
       switchedTo = path;
       if (cancelled) return { cancelled: true };
       if (switchError) throw switchError;
-      await options.withSession({ ui: ctx.ui });
+      await options.withSession({
+        ui: ctx.ui,
+        async sendMessage(message, options) { sessionMessages.push({ message, options }); },
+      });
       return { cancelled: false };
     },
   };
 
   return {
-    root, cwd, worktree, sessions, handlers, sent, notifications, execCalls, ctx,
+    root, cwd, worktree, sessions, handlers, sent, sessionMessages, notifications, execCalls, ctx,
     execStarted,
     releaseExec: () => releaseExec(),
     switchedTo: () => switchedTo,
@@ -117,10 +121,15 @@ test("enter_worktree defers, forks the current session, and switches automatical
     assert.equal(header.cwd, f.worktree);
     assert.equal(header.parentSession, join(f.sessions, "source.jsonl"));
     assert.match(readFileSync(target, "utf8"), /"id":"history-1"/);
-    assert.deepEqual(f.notifications.at(-1), {
-      message: `已切换到 feature：${f.worktree}`,
-      type: "info",
-    });
+    assert.deepEqual(f.sessionMessages, [{
+      message: {
+        customType: "worktree-switch",
+        content: `✓ 已进入 worktree：${f.worktree}\nBranch: feature`,
+        display: true,
+        details: { status: "created", path: f.worktree, branch: "feature", dirty: false },
+      },
+      options: { triggerTurn: false },
+    }]);
   } finally {
     f.cleanup();
   }
