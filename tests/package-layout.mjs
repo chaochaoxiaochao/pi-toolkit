@@ -6,15 +6,15 @@ import { join } from "node:path";
 
 const root = JSON.parse(readFileSync("package.json", "utf8"));
 const children = [
-  ["todo", "@maxiaochao/pi-todo", "extensions/todo.ts"],
-  ["cache-export", "@maxiaochao/pi-cache-export", "extensions/cache-export.ts"],
-  ["codex-edit", "@maxiaochao/pi-codex-edit", "extensions/codex-edit.ts"],
-  ["herdr-subagents", "@maxiaochao/pi-herdr-subagents", "extensions/herdr-subagents.ts"],
-  ["worktree", "@maxiaochao/pi-worktree", null],
+  ["todo", "@maxiaochao/pi-todo", "extensions/todo.ts", false],
+  ["cache-export", "@maxiaochao/pi-cache-export", "extensions/cache-export.ts", true],
+  ["codex-edit", "@maxiaochao/pi-codex-edit", "extensions/codex-edit.ts", true],
+  ["herdr-subagents", "@maxiaochao/pi-herdr-subagents", "extensions/herdr-subagents.ts", true],
+  ["worktree", "@maxiaochao/pi-worktree", null, true],
 ];
 
 assert.deepEqual(root.workspaces, ["packages/*"]);
-for (const [slug, name, extension] of children) {
+for (const [slug, name, extension, bundled] of children) {
   const directory = join("packages", slug);
   for (const file of ["package.json", "README.md", "TESTING.md", "CHANGELOG.md"]) {
     assert.equal(existsSync(join(directory, file)), true, `${slug} missing ${file}`);
@@ -37,11 +37,10 @@ for (const [slug, name, extension] of children) {
   assert.equal(manifest.scripts?.test !== undefined, true, `${slug} missing test script`);
   assert.equal(manifest.files.includes("docs"), true, `${slug} does not publish docs media`);
   if (extension) assert.deepEqual(manifest.pi.extensions, [`./${extension}`]);
-  assert.equal(root.files.includes(directory), true, `root tarball does not bundle ${slug}`);
+  assert.equal(root.files.includes(directory), bundled, `${slug} root bundle state is incorrect`);
 }
 
 assert.deepEqual(root.pi.extensions, [
-  "./packages/todo/extensions/todo.ts",
   "./packages/cache-export/extensions/cache-export.ts",
   "./extensions/btw/index.ts",
   "./packages/codex-edit/extensions/codex-edit.ts",
@@ -49,6 +48,19 @@ assert.deepEqual(root.pi.extensions, [
 ]);
 assert.equal(root.pi.skills.includes("./packages/worktree/skills"), true);
 assert.equal(root.bin["pi-worktree"], "packages/worktree/bin/pi-worktree");
+
+const agentTeamSkill = readFileSync("skills/agent-team/SKILL.md", "utf8");
+const agentTeamModels = JSON.parse(readFileSync("skills/agent-team/models.json", "utf8"));
+assert.match(agentTeamSkill, /每轮并发启动三个相互独立的子代理/);
+assert.doesNotMatch(agentTeamSkill, /herdr_subagents|herdr\s+(?:pane|agent)/i);
+assert.deepEqual(Object.keys(agentTeamModels).sort(), ["members", "roles"]);
+assert.equal(agentTeamModels.members.length, 3);
+assert.equal(new Set(agentTeamModels.members.map(({ name }) => name)).size, 3);
+assert.equal(new Set(agentTeamModels.members.map(({ vendor }) => vendor)).size, 3);
+assert.equal(new Set(agentTeamModels.members.map(({ model }) => model)).size, 3);
+assert.equal(agentTeamModels.members.every((member) => !("role" in member) && !("charter" in member)), true);
+assert.deepEqual(agentTeamModels.roles.map(({ name }) => name).sort(), ["adversary", "auditor", "replicator"]);
+assert.equal(agentTeamModels.roles.every((role) => typeof role.charter === "string" && !("model" in role)), true);
 
 const releaseScript = readFileSync("scripts/release-package.sh", "utf8");
 execFileSync("bash", ["-n", "scripts/release-package.sh"]);

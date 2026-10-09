@@ -66,6 +66,14 @@ herdr_subagents({
 
 `tasks` is always a non-empty array: one item is a single task and multiple items form a batch. Set `background: true` for either form to return a stable run ID immediately while the queue continues. One run is dispatched at a time by an extension instance; later runs remain queued and start FIFO. Each background run sends one compact parent notification only when the whole run completes, partially fails, fails, or blocks. Individual successful tasks do not wake the parent model.
 
+Background work normally relies on that terminal notification. When the user asks for progress or the parent must confirm a review gate before continuing, query only that run's compact snapshot:
+
+```text
+herdr_subagents_control({ action: "status", runId: "<run-id>" })
+```
+
+The snapshot reports the aggregate run state and every task's state, including a blocked question when present. It checks durable run state before queued state, never returns unrelated runs, and does not wait or trigger a parent turn. Do not poll full `history` for progress.
+
 A child missing required information reports `needs-input` with an exact question. The run becomes blocked, keeps its Herdr tab, pane, partial report, and Pi session, and returns control to the parent. Answer through the control tool to continue the original session:
 
 ```text
@@ -80,7 +88,7 @@ With an empty editor, press `↓` to enter the list, `↑`/`↓` to choose a tas
 
 ## History
 
-Run `/herdr-subagents history` or `herdr_subagents_control({ action: "history" })` to list compact project-local run and task reports after Herdr tabs close. Full results, described documents, artifacts, and persistent Pi sessions remain separate on disk and are not loaded into parent context.
+Run `/herdr-subagents history` or `herdr_subagents_control({ action: "history" })` to list the full compact project-local run and task archive after Herdr tabs close. History does not accept a run ID and is not a status interface. Full results, described documents, artifacts, and persistent Pi sessions remain separate on disk and are not loaded into parent context.
 
 Continue a saved conversation in a new Herdr tab with `herdr_subagents_control({ action: "resume", runId: "<run-id>", task: 1, prompt: "Follow up..." })`. Remove only a selected archive with `herdr_subagents_control({ action: "cleanup", runId: "<run-id>" })`. History has no automatic count-based eviction. The extension adds the runtime path to local Git excludes when available (and otherwise uses `.pi/.gitignore`) without overwriting unrelated rules.
 
@@ -192,6 +200,9 @@ The package includes these personas:
 | `worker` | write | `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls` | Focused implementation work |
 | `explorer` | read | `read`, `bash`, `grep`, `find`, `ls` | Fast codebase investigation |
 | `reviewer` | read | `read`, `bash`, `grep`, `find`, `ls` | Correctness and maintainability review |
+| `analyst` | read | `read`, `bash`, `grep`, `find`, `ls` | Neutral analysis with the method and role supplied by each task |
+
+`analyst` deliberately does not bind a model or review method. Use the task-level `model` field when independent tasks need different models, and put roles such as auditor, replicator, or adversary in each task prompt.
 
 Persona definitions use Markdown frontmatter followed by the child system prompt. For example, save this as `.pi/herdr-subagents/agents/security-reviewer.md`:
 

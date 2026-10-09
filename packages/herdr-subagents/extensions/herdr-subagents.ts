@@ -259,7 +259,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 	pi.registerTool({
 		name: "herdr_subagents_control",
 		label: "Herdr Subagents Control",
-		description: "Inspect Herdr personas and run history, cancel active or queued work, answer a blocked task, resume a saved task, or remove a selected archived run. Use herdr_subagents to start new work.",
+		description: "Inspect Herdr personas, query one run by ID, list run history, cancel active or queued work, answer a blocked task, resume a saved task, or remove a selected archived run. Use status for one run and history only for the full archive. Use herdr_subagents to start new work.",
 		promptSnippet: "Inspect and control Herdr subagent runs",
 		parameters: HerdrSubagentsControlParams,
 

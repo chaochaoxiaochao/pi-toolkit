@@ -29,9 +29,9 @@ pi-toolkit/
 
 ## 组织原则
 
-- `packages/*` 是子包功能实现的单一源码；根 manifest 直接加载这些路径，不设置 wrapper。`extensions/` 只放主包独有的 BTW。
-- 主包 tarball 直接包含子包运行源码，不依赖 npm 上的子包版本，因此主包与子包可以独立发版。
-- 用户在完整工具包和对应独立子包之间二选一；同时安装可能重复注册 extension、skill 或 bin。
+- `packages/*` 是子包功能实现的单一源码；根 manifest 直接加载默认启用子包的路径，不设置 wrapper。`extensions/` 只放主包独有的 BTW。
+- 主包 tarball 直接包含默认启用子包的运行源码，不依赖 npm 上的子包版本，因此主包与子包可以独立发版。Todo 不在根 tarball 或默认 loadout 中。
+- 用户在完整工具包和已内嵌的独立子包之间二选一；同时安装可能重复注册 extension、skill 或 bin。Todo 是例外，可以与完整工具包一起安装。
 - BTW 保留在主包，不发布子包。
 - 每个子包必须包含 `package.json`、`README.md`、`TESTING.md`、`CHANGELOG.md`、确定性测试，以及适合该包的加载或集成检查。
 - 每个子包 README 必须说明功能、来源/设计动机、安装与更新、可复制示例，并引用真实实现生成的媒体。除 Herdr Subagents 外，每个子包包含 `docs/screenshot.png` 和 `docs/demo.gif`；Herdr Subagents 包含 `docs/screenshot.png` 和完整的 `docs/demo.webm`，README 通过 GitHub attachment URL 直接显示视频，不保留 GIF。执行 `node scripts/capture-package-media.mjs` 统一重生成媒体并进入 tarball。
@@ -73,6 +73,8 @@ pi-toolkit/
 ```bash
 pi install npm:@maxiaochao/pi-toolkit
 ```
+
+完整工具包默认不启用 Todo；需要进度 UI 时单独安装 `npm:@maxiaochao/pi-todo`。
 
 按需单独安装：
 

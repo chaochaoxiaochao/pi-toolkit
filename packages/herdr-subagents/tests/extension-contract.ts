@@ -251,6 +251,10 @@ export default function (_pi: ExtensionAPI) {
 		if (!controlSchema.properties?.[name]?.description) throw new Error(`control schema property '${name}' is missing or undocumented`);
 	}
 	if (!controlSchema.required?.includes("action")) throw new Error("herdr_subagents_control action must be required");
+	const controlActions = controlSchema.properties.action.enum ?? controlSchema.properties.action.anyOf?.map((entry: Record<string, unknown>) => entry.const);
+	if (!controlActions?.includes("status")) throw new Error("herdr_subagents_control action enum must include status");
+	if (!/status/.test(controlSchema.properties.runId.description)) throw new Error("control runId description must document status");
+	if (!/Use status for one run/.test(controlTool.description)) throw new Error("control tool description must distinguish status from history");
 	if (!/Foreground calls block/.test(tool.description) || !/background calls return a run ID immediately/.test(tool.description)) {
 		throw new Error("tool description does not distinguish foreground and background execution");
 	}

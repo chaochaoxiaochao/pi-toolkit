@@ -141,14 +141,16 @@ function latestRunDirectory() {
 try {
 	check("run validation accepts one or more tasks", validateRunParams({ tasks: [{ name: "one", prompt: "do it" }], concurrency: 2, background: true }) === undefined);
 	check("control validation accepts supported calls", [
-		{ action: "list" }, { action: "history" }, { action: "cancel", runId: "run" }, { action: "cleanup", runId: "run" },
+		{ action: "list" }, { action: "history" }, { action: "status", runId: "run" }, { action: "cancel", runId: "run" }, { action: "cleanup", runId: "run" },
 		{ action: "respond", runId: "run", answer: "yes", task: 1 },
 		{ action: "resume", runId: "run", task: 1, prompt: "continue" },
 	].every((params) => validateControlParams(params) === undefined));
-	check("all supported actions have shared validation and rendering metadata", ["list", "history", "cancel", "cleanup", "respond", "resume"].every((action) => action in HERDR_ACTIONS));
+	check("all supported actions have shared validation and rendering metadata", ["list", "history", "status", "cancel", "cleanup", "respond", "resume"].every((action) => action in HERDR_ACTIONS));
 	check("split validation rejects missing tasks and invalid control fields", [
 		validateRunParams({ tasks: [] }),
 		validateControlParams({ action: "list", prompt: "not allowed" }),
+		validateControlParams({ action: "status" }),
+		validateControlParams({ action: "history", runId: "not-allowed" }),
 		validateControlParams({ action: "respond", runId: "run" }),
 		validateControlParams({ action: "resume", runId: "run", task: 1 }),
 	].every((message) => typeof message === "string" && message.length > 0));
@@ -404,6 +406,9 @@ try {
 	writeFileSync(join(agentsDir, "broken.md"), "not frontmatter");
 	const discovery = discoverPackageAgents(agentsDir);
 	check("persona discovery and diagnostics", discovery.agents.length === 1 && discovery.agents[0].name === "worker" && discovery.diagnostics.length === 1);
+	const packageDiscovery = discoverPackageAgents(join(process.cwd(), "agents"));
+	const analystPersona = packageDiscovery.agents.find((persona) => persona.name === "analyst");
+	check("built-in analyst is neutral and read-only", packageDiscovery.diagnostics.length === 0 && analystPersona?.access === "read" && analystPersona.model === undefined && analystPersona.tools?.join(",") === "read,bash,grep,find,ls" && /independent analyst/.test(analystPersona.systemPrompt) && /direct evidence, inference, and unknowns/.test(analystPersona.systemPrompt) && !/auditor|replicator|adversary/.test(analystPersona.systemPrompt));
 
 	const configRoot = join(root, "configuration");
 	const packageAgents = join(configRoot, "package-agents");
@@ -442,6 +447,18 @@ try {
 	const configuredRun = await executeHerdrSubagents({ agent: "worker", model: "task/model", prompt: "Use configured values" }, undefined, undefined, { cwd: configRoot, model: { provider: "parent", id: "model" }, thinkingLevel: "medium" }, { agentsDirectory: packageAgents, configurationPaths, herdr: configuredHerdr });
 	const configuredStart = configuredHerdr.calls.find(([name]) => name === "startAgent")[1];
 	check("configured persona uses displayed effective values", !configuredRun.isError && configuredStart.args.includes("task/model") && configuredStart.args.includes("high") && configuredStart.args.includes("--skill") && configuredStart.args.includes("project-skill"));
+
+	const analystHerdr = fakeHerdr();
+	const analystBatch = await executeHerdrSubagents({ label: "independent-analysis", concurrency: 3, tasks: [
+		{ name: "sol-audit", prompt: "slow audit", agent: "analyst", model: "vendor/sol" },
+		{ name: "grok-replicate", prompt: "slow replicate", agent: "analyst", model: "vendor/grok" },
+		{ name: "opus-challenge", prompt: "slow challenge", agent: "analyst", model: "vendor/opus" },
+	] }, undefined, undefined, { cwd: root, model: { provider: "parent", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: analystHerdr });
+	const analystStarts = analystHerdr.calls.filter(([name]) => name === "startAgent").map(([, request]) => request);
+	const analystModels = analystStarts.map((request) => request.args[request.args.indexOf("--model") + 1]);
+	check("three read-only analyst tasks run concurrently", !analystBatch.isError && analystBatch.details.effectiveConcurrency === 3 && analystHerdr.maxActive === 3);
+	check("analyst tasks preserve independent model overrides", analystModels.join(",") === "vendor/sol,vendor/grok,vendor/opus");
+	check("completed analyst batch closes its run tab", analystHerdr.calls.at(-1)?.[0] === "closeTab");
 
 	const batchHerdr = fakeHerdr();
 	const batchUpdates = [];
@@ -603,10 +620,31 @@ try {
 	const stableHerdr = fakeHerdr();
 	const stable = await executeHerdrSubagents({ tasks: [{ name: "stable", prompt: "stable", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: stableHerdr, runId: backgroundId });
 	check("preallocated background run id stays stable", stable.details.runId === backgroundId && readFileSync(join(stable.details.recordDirectory, "run.json"), "utf8").includes(backgroundId));
+	const stableStatus = await executeHerdrSubagents({ action: "status", runId: backgroundId }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents") });
+	check("status returns only one durable run with task details", !stableStatus.isError && stableStatus.details.runId === backgroundId && stableStatus.details.status === "completed" && stableStatus.details.settled === true && stableStatus.details.source === "run" && stableStatus.details.tasks[0].name === "stable" && !stableStatus.content[0].text.includes("run-one"));
+	await persistQueuedRun(root, backgroundId, { label: "stale-queue", tasks: [{ name: "wrong-source", prompt: "queued" }], background: true });
+	const durableFirstStatus = await executeHerdrSubagents({ action: "status", runId: backgroundId }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents") });
+	check("status prefers durable state over a stale queue record", durableFirstStatus.details.source === "run" && durableFirstStatus.details.label !== "stale-queue" && durableFirstStatus.details.tasks[0].name === "stable");
+	const queuedStatusId = "queued-status-id";
+	await persistQueuedRun(root, queuedStatusId, { label: "queued-status", tasks: [{ name: "waiting", prompt: "wait", agent: "reviewer" }], background: true });
+	const queuedStatus = await executeHerdrSubagents({ action: "status", runId: queuedStatusId }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents") });
+	check("status projects a queued run before durable records exist", !queuedStatus.isError && queuedStatus.details.source === "queue" && queuedStatus.details.status === "queued" && queuedStatus.details.settled === false && queuedStatus.details.tasks[0].status === "queued" && queuedStatus.details.tasks[0].agent === "reviewer");
+	const unknownStatus = await executeHerdrSubagents({ action: "status", runId: "unknown-status-id" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents") });
+	check("status rejects unknown run IDs without falling back to history", unknownStatus.isError && unknownStatus.content[0].text === "Unknown Subagent run 'unknown-status-id'.");
+	const staleStatusRoot = join(root, "stale-status-report");
+	const staleStatusTaskDirectory = join(staleStatusRoot, ".pi", "herdr-subagents", "runs", "stale", "tasks", "01-task");
+	mkdirSync(staleStatusTaskDirectory, { recursive: true });
+	writeFileSync(join(staleStatusTaskDirectory, "..", "..", "run.json"), JSON.stringify({ id: "stale-status", label: "stale-status", status: "running", startedAt: "2026-10-08T00:00:00.000Z" }));
+	writeFileSync(join(staleStatusTaskDirectory, "task.json"), JSON.stringify({ id: "stale-task", runId: "stale-status", order: 1, name: "stale-task", agent: "reviewer", status: "running" }));
+	writeFileSync(join(staleStatusTaskDirectory, "report.json"), JSON.stringify({ status: "needs-input", summary: "Old blocked report.", question: "Old question?", documents: [] }));
+	const runningStatus = await executeHerdrSubagents({ action: "status", runId: "stale-status" }, undefined, undefined, { cwd: staleStatusRoot }, { agentsDirectory: join(process.cwd(), "agents") });
+	check("running status does not expose a stale report from an earlier blocked turn", runningStatus.details.tasks[0].status === "running" && !runningStatus.details.tasks[0].question && !runningStatus.details.tasks[0].summary && !runningStatus.content[0].text.includes("Old question"));
 
 	const blockedHerdr = fakeHerdr("blocked");
 	const blocked = await executeHerdrSubagents({ concurrency: 1, tasks: [{ name: "question", prompt: "inspect branch", agent: "explorer" }, { name: "after-answer", prompt: "continue queued", agent: "reviewer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: blockedHerdr });
 	check("needs-input returns foreground control and preserves tab", blocked.details.status === "blocked" && blocked.details.tasks[0].question === "Which branch should I inspect?" && !blockedHerdr.calls.some(([name]) => name === "closeTab"));
+	const blockedStatus = await executeHerdrSubagents({ action: "status", runId: blocked.details.runId }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents") });
+	check("status exposes blocked task questions for respond", blockedStatus.details.status === "blocked" && blockedStatus.details.settled === false && blockedStatus.details.tasks[0].question === "Which branch should I inspect?" && blockedStatus.content[0].text.includes("Which branch should I inspect?"));
 	const activeCleanup = await executeHerdrSubagents({ action: "cleanup", runId: blocked.details.runId }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: blockedHerdr });
 	check("cleanup refuses to delete an active blocked run", activeCleanup.isError && activeCleanup.content[0].text.includes("still active") && existsSync(blocked.details.recordDirectory));
 	const resumeUpdates = [];

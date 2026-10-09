@@ -1,3 +1,8 @@
+## Unreleased
+
+- Add `herdr_subagents_control({ action: "status", runId })` for a compact snapshot of one queued, active, blocked, or settled run without loading the full history archive.
+- Add a neutral read-only `analyst` persona for tasks that assign models and methodological roles dynamically.
+
 ## 2026-10-08 - v0.4.2
 
 - add Alt+P and /parent controls to return from child Agents

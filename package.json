@@ -1,7 +1,7 @@
 {
   "name": "@maxiaochao/pi-toolkit",
   "version": "0.10.5",
-  "description": "Personal pi coding agent toolkit: execution plans, /btw, /cache_export and apply_patch extensions, browser automation, and bundled theme/skills.",
+  "description": "Personal pi coding agent toolkit: /btw, /cache_export and apply_patch extensions, browser automation, and bundled theme/skills.",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -12,7 +12,6 @@
   ],
   "files": [
     "extensions",
-    "packages/todo",
     "packages/cache-export",
     "packages/codex-edit",
     "packages/herdr-subagents",
@@ -30,7 +29,6 @@
   },
   "pi": {
     "extensions": [
-      "./packages/todo/extensions/todo.ts",
       "./packages/cache-export/extensions/cache-export.ts",
       "./extensions/btw/index.ts",
       "./packages/codex-edit/extensions/codex-edit.ts",
@@ -58,7 +56,7 @@
   },
   "scripts": {
     "test": "node tests/package-layout.mjs && npm --prefix packages/todo test && npm --prefix packages/cache-export test && npm --prefix packages/codex-edit test && npm --prefix packages/herdr-subagents test && npm --prefix packages/worktree test && node --experimental-strip-types extensions/btw/tests/history.mjs",
-    "load-test": "pi -ne -e ./packages/todo/extensions/todo.ts && pi -ne -e ./packages/cache-export/extensions/cache-export.ts && pi -ne -e ./extensions/btw/index.ts && pi -ne -e ./packages/codex-edit/extensions/codex-edit.ts && pi -ne -e ./packages/herdr-subagents/extensions/herdr-subagents.ts",
+    "load-test": "pi -ne -e ./packages/cache-export/extensions/cache-export.ts && pi -ne -e ./extensions/btw/index.ts && pi -ne -e ./packages/codex-edit/extensions/codex-edit.ts && pi -ne -e ./packages/herdr-subagents/extensions/herdr-subagents.ts",
     "eval:agents": "node evaluations/agents-md/run.mjs",
     "eval:agents:test": "node evaluations/agents-md/tests/run-tests.mjs",
     "postinstall": "node scripts/install-agents.mjs"

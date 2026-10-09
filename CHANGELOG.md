@@ -1,3 +1,9 @@
+## Unreleased
+
+- Add per-run Herdr Subagents status queries so background review gates can inspect one run without polling the full history archive.
+- Make Agent Team a tool-agnostic concurrent review protocol, decouple models from rotating methodological roles, and add a neutral read-only analyst persona.
+- Remove Todo from the default toolkit bundle and loadout; users who want its progress UI can install `@maxiaochao/pi-todo` explicitly.
+
 ## 2026-10-08 - v0.10.5
 
 - bundle herdr-subagents v0.4.2: add Alt+P and /parent controls to return from child Agents

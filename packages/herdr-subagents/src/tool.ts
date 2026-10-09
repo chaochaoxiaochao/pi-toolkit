@@ -8,6 +8,7 @@ import { HERDR_ACTIONS, validateControlParams, validateRunParams } from "./valid
 import type { OwnerIdentity } from "./ownership.ts";
 import { cancelActiveSubagentRuns } from "./reconcile.ts";
 import { cancelQueuedRuns, loadQueuedRuns } from "./queued-runs.ts";
+import { getSubagentRunStatus, runStatusText } from "./status.ts";
 
 export interface HerdrSubagentsTaskParams { name: string; prompt: string; agent?: string; model?: string; }
 
@@ -19,7 +20,7 @@ export interface HerdrSubagentsRunParams {
 }
 
 export interface HerdrSubagentsControlToolParams {
-	action: "list" | "respond" | "history" | "resume" | "cancel" | "cleanup";
+	action: "list" | "status" | "respond" | "history" | "resume" | "cancel" | "cleanup";
 	runId?: string;
 	answer?: string;
 	task?: number;
@@ -28,7 +29,7 @@ export interface HerdrSubagentsControlToolParams {
 
 /** Internal superset used by shared execution helpers. */
 export interface HerdrSubagentsToolParams {
-	action?: "list" | "respond" | "history" | "resume" | "cancel" | "cleanup";
+	action?: "list" | "status" | "respond" | "history" | "resume" | "cancel" | "cleanup";
 	prompt?: string;
 	agent?: string;
 	label?: string;
@@ -114,6 +115,16 @@ const errorResponse = (text: string, details: Record<string, unknown> = {}): Too
 });
 
 const actionHandlers = {
+	async status({ params, ctx }: ToolExecutionContext) {
+		try {
+			const runId = (params.runId as string).trim();
+			const status = await getSubagentRunStatus(ctx.cwd, runId);
+			if (!status) return errorResponse(`Unknown Subagent run '${runId}'.`, { action: "status", runId });
+			return { content: [{ type: "text", text: runStatusText(status) }], details: { action: "status", ...status } };
+		} catch (error) {
+			return errorResponse(error instanceof Error ? error.message : String(error), { action: "status", runId: params.runId });
+		}
+	},
 	async history({ ctx }: ToolExecutionContext) {
 		const history = await listSubagentHistory(ctx.cwd);
 		return { content: [{ type: "text", text: historyText(history) }], details: { action: "history", runs: history } };
