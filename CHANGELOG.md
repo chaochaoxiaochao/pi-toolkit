@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-09 - v0.10.7
 
+- bundle scheduler v0.1.0: add session-scoped interval prompts with Agent and user controls
 - Add the bundled and independently installable `@maxiaochao/pi-scheduler` package for session-scoped interval prompts, manual triggering, lightweight TUI status, and shared Agent/user controls.
 
 ## 2026-10-09 - v0.10.6
