@@ -1,3 +1,7 @@
+## 2026-10-10 - v0.10.16
+
+- tapd skill: handle large attachment timeouts without misdiagnosing download failures
+
 ## 2026-10-09 - v0.10.15
 
 - redesign the TAPD skill around executable workflows, explicit workspace and JSON contracts, and safe attachment handling
