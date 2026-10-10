@@ -1,10 +1,12 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import net from "node:net";
+import { dirname, resolve } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { resultPathForAttempt } from "../src/result-path.ts";
+import { resultPathForAttemptId } from "../src/result-path.ts";
 import { PARENT_PANE_ENV } from "../src/live-agent.ts";
+import { attemptReportPath, attemptStatePath, requireAttemptId, type AttemptState } from "../src/attempts.ts";
 
 const RETURN_SHORTCUT = "alt+p";
 
@@ -33,12 +35,52 @@ const ReportParams = Type.Object({
 });
 
 function writeAtomic(path: string, content: string): void {
+	mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 	const temporary = `${path}.tmp-${process.pid}`;
 	writeFileSync(temporary, content, { encoding: "utf8", mode: 0o600 });
 	renameSync(temporary, path);
 }
 
+function currentAttemptId(taskDirectory: string): string {
+	const task = JSON.parse(readFileSync(resolve(taskDirectory, "task.json"), "utf8")) as { currentAttemptId?: unknown };
+	return requireAttemptId(task.currentAttemptId);
+}
+
+function writeAttemptState(taskDirectory: string, attemptId: string, state: AttemptState): void {
+	writeAtomic(attemptStatePath(taskDirectory, attemptId), `${JSON.stringify({ attemptId, state, at: new Date().toISOString() }, null, 2)}\n`);
+}
+
+let herdrReportSeq = Date.now() * 1000;
+
+function reportHerdrState(state: "working" | "blocked" | "idle", message?: string): void {
+	const socketPath = process.env.HERDR_SOCKET_PATH;
+	const paneId = process.env.HERDR_PANE_ID;
+	if (process.env.HERDR_ENV !== "1" || !socketPath || !paneId) return;
+	const endpoint = process.platform === "win32" ? `\\\\.\\pipe\\${socketPath}` : socketPath;
+	const socket = net.createConnection(endpoint);
+	socket.on("error", () => undefined);
+	socket.on("connect", () => socket.end(`${JSON.stringify({ id: `herdr:subagent:${Date.now()}:${Math.random().toString(36).slice(2)}`, method: "pane.report_agent", params: { pane_id: paneId, source: "herdr:pi", agent: "pi", state, message, seq: ++herdrReportSeq } })}\n`));
+}
+
 export default function (pi: ExtensionAPI) {
+	let activeAttemptId: string | undefined;
+	let blockedCount = 0;
+	pi.on("before_agent_start", async () => {
+		const taskDirectory = process.env.PI_HERDR_SUBAGENTS_TASK_DIR?.trim();
+		if (!taskDirectory) return;
+		activeAttemptId = currentAttemptId(taskDirectory);
+		writeAttemptState(taskDirectory, activeAttemptId, "working");
+	});
+	pi.on("agent_start", () => reportHerdrState("working"));
+	pi.on("agent_settled", (_event, ctx) => {
+		const taskDirectory = process.env.PI_HERDR_SUBAGENTS_TASK_DIR?.trim();
+		if (taskDirectory && activeAttemptId) writeAttemptState(taskDirectory, activeAttemptId, "settled");
+		if (ctx?.isIdle?.() === true) reportHerdrState("idle");
+	});
+	pi.events.on("herdr:blocked", (data: { active?: boolean; label?: string }) => {
+		blockedCount = Math.max(0, blockedCount + (data?.active ? 1 : -1));
+		reportHerdrState(blockedCount > 0 ? "blocked" : "working", blockedCount > 0 ? data?.label : undefined);
+	});
 	pi.registerCommand("parent", {
 		description: "Return focus to the parent Agent pane",
 		async handler(_args, ctx) { await returnToParent(pi, ctx); },
@@ -58,12 +100,9 @@ export default function (pi: ExtensionAPI) {
 		async execute(_toolCallId, params) {
 			const taskDirectory = process.env.PI_HERDR_SUBAGENTS_TASK_DIR?.trim();
 			if (!taskDirectory) throw new Error("PI_HERDR_SUBAGENTS_TASK_DIR is not set");
+			const attemptId = activeAttemptId ?? currentAttemptId(taskDirectory);
 			mkdirSync(taskDirectory, { recursive: true, mode: 0o700 });
-			let attempt = 1;
-			const task = JSON.parse(readFileSync(resolve(taskDirectory, "task.json"), "utf8")) as { attempt?: unknown };
-			if (Number.isInteger(task.attempt) && Number(task.attempt) > 1) attempt = Number(task.attempt);
-			const resultPath = resultPathForAttempt(taskDirectory, attempt);
-			if (attempt > 1) mkdirSync(resolve(taskDirectory, "turns"), { recursive: true, mode: 0o700 });
+			const resultPath = resultPathForAttemptId(taskDirectory, attemptId);
 			writeAtomic(resultPath, params.result);
 			const documents = (params.documents ?? []).map((document) => ({
 				path: resolve(process.cwd(), document.path),
@@ -73,6 +112,7 @@ export default function (pi: ExtensionAPI) {
 				documents.unshift({ path: resultPath, description: "Complete task result" });
 			}
 			const report = {
+				attemptId,
 				status: params.status,
 				summary: params.summary,
 				documents,
@@ -80,7 +120,7 @@ export default function (pi: ExtensionAPI) {
 				...(params.question ? { question: params.question } : {}),
 				reportedAt: new Date().toISOString(),
 			};
-			writeAtomic(resolve(taskDirectory, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
+			writeAtomic(attemptReportPath(taskDirectory, attemptId), `${JSON.stringify(report, null, 2)}\n`);
 			return {
 				content: [{ type: "text" as const, text: `${params.status}: ${params.summary}` }],
 				details: report,

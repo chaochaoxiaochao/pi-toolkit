@@ -1,3 +1,10 @@
+## Unreleased
+
+- prevent transient Herdr states from finalizing live child attempts
+- Report authoritative child Pi lifecycle state even under `--no-extensions`, wait through provider retry/fallback until the matching structured report arrives, and bind every report to a unique attempt ID.
+- Reconcile matching attempt reports after interruption, serialize blocked responses, keep blocked results non-error, and preserve business outcomes when tab cleanup fails.
+- Aggregate mixed failed/cancelled task sets as partial instead of hiding one terminal outcome.
+
 ## 2026-10-09 - v0.4.4
 
 - return failed foreground batches early while surviving subagents continue in background

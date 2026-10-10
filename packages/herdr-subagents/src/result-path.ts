@@ -5,3 +5,7 @@ export function resultPathForAttempt(taskDirectory: string, attempt: number): st
 		? resolve(taskDirectory, "turns", `${String(attempt).padStart(2, "0")}-result.md`)
 		: resolve(taskDirectory, "result.md");
 }
+
+export function resultPathForAttemptId(taskDirectory: string, attemptId: string): string {
+	return resolve(taskDirectory, "attempt-results", `${attemptId}.md`);
+}

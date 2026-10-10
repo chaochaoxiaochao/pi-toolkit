@@ -82,6 +82,8 @@ A child missing required information reports `needs-input` with an exact questio
 herdr_subagents_control({ action: "respond", runId: "<run-id>", answer: "Use the main branch." })
 ```
 
+Blocked is a normal control state, not a failed tool call. Only terminal failure, cancellation, or a partial aggregate is returned as a tool error.
+
 Cancel one active or queued run with `herdr_subagents_control({ action: "cancel", runId: "<run-id>" })`. Cancellation aborts its live child prompts, archives active or queued tasks as cancelled, closes its run tab, and leaves unrelated runs alone.
 
 While a batch is active, a compact Fleet monitor stays below the editor. Its divider/title row summarizes the run, and each task row shows a hollow or filled status circle, the real persona and task name, status, live active duration, and cumulative child Pi token usage in one compact shared metrics column after the longest row rather than at the terminal edge. Running work uses Pi's warning/yellow semantic color and completed work uses success/green. Token totals use the child session's persisted assistant, tool-result, standalone usage, compaction, and branch-summary usage; they are never estimated. Queued tasks show neither fabricated time nor tokens. The monitor follows Pi theme semantics, truncates by visible terminal columns, and refreshes session usage from both file events and the running one-second timer.
@@ -96,13 +98,13 @@ Continue a saved conversation in a new Herdr tab with `herdr_subagents_control({
 
 Read-only tasks start FIFO up to the configured concurrency limit. A pane is created only when its task starts, belongs exclusively to that task, and is never reused. Completed panes remain inspectable while another task in the batch is unsettled. Results remain in input order, and one failed task does not cancel its siblings. Any batch containing a write-capable persona is forced to concurrency one.
 
-The widget shows one row per queued, running, blocked, failed, or completed task. Answering a blocked task or resuming saved history refreshes authoritative persona, timing, session, status, and pane projections as work advances. Active duration accumulates only while the task is running, excluding time spent queued or waiting for an answer. Completed rows remain selectable until the whole batch settles. `/herdr-subagents active` shows the same compact state. Native labels stay short: `SA · <batch>` for the tab and `<order> · <task>` for each pane. When all tasks settle, the tab closes immediately if unfocused or after the user leaves it; a deferred close failure is persisted and shown as a warning. An already-missing tab is treated as successfully cleaned, so retries are idempotent.
+The widget shows one row per queued, running, blocked, failed, or completed task. Answering a blocked task or resuming saved history refreshes authoritative persona, timing, session, status, and pane projections as work advances. Active duration accumulates only while the task is running, excluding time spent queued or waiting for an answer. Completed rows remain selectable until the whole batch settles. `/herdr-subagents active` shows the same compact state. Native labels stay short: `SA · <batch>` for the tab and `<order> · <task>` for each pane. When all tasks settle, the tab closes immediately if unfocused or after the user leaves it; a deferred close failure is persisted and shown as a warning without changing the completed/failed business result. An already-missing tab is treated as successfully cleaned, so retries are idempotent.
 
-Foreground calls wait until all children report completion or a request for input when no task fails. On the first task failure, they return early as described above while the surviving children continue. Every child is started with Herdr's Agent lifecycle as a normal Pi TUI and prompted with wait semantics; no print-mode command or completion marker is injected into the pane.
+Foreground calls wait until all children report completion or a request for input when no task fails. On the first task failure, they return early as described above while the surviving children continue. Every child is started with Herdr's Agent lifecycle as a normal Pi TUI and prompted with wait semantics; no print-mode command or completion marker is injected into the pane. The child extension reports Pi's authoritative `agent_start`/`agent_settled` lifecycle to Herdr, so provider retry and fallback screens cannot end a task early through screen detection alone.
 
 ## Reports and records
 
-The child must finish through the package's structured `subagent_report` tool. The parent receives only:
+The child must finish through the package's structured `subagent_report` tool. Every prompt gets a unique attempt ID; the child commits to an attempt-specific report, and the parent accepts only the matching report before updating the canonical task result. A late report from an older retry, response, or historical follow-up cannot settle a newer attempt. The parent receives only:
 
 - completion or failure status
 - a concise summary
@@ -115,7 +117,7 @@ The complete result is not copied into the parent model context. Each run is ret
 .pi/herdr-subagents/runs/<run>/tasks/<task>/
 ```
 
-The task directory contains the full result, structured report, task metadata, system prompt, and persistent Pi session. Run-level metadata is stored in the parent run directory.
+The task directory contains the full result, canonical structured report, attempt-scoped reports and lifecycle markers, task metadata, system prompt, and persistent Pi session. Run-level metadata is stored in the parent run directory.
 
 ## Configuration and personas
 

@@ -184,7 +184,9 @@ export async function runHerdrSubagents(prompt: string, options: HerdrSubagentsO
 		await writeJson(taskFile, taskRecord);
 		update("starting", "Starting child Pi in Herdr...");
 		update("running", "Child Pi is working...");
-		const report = (await promptLiveAgent({ herdr, task: { ...taskRecord, id: taskId, sessionFile }, paneId, prompt, systemPromptFile, agentName: name, signal: options.signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => options.onStalled?.(`${label} appears stalled; it is still running.`) })).report;
+		const prompted = await promptLiveAgent({ herdr, task: { ...taskRecord, id: taskId, sessionFile }, paneId, prompt, systemPromptFile, agentName: name, signal: options.signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => options.onStalled?.(`${label} appears stalled; it is still running.`) });
+		taskRecord.currentAttemptId = prompted.attemptId;
+		const report = prompted.report;
 		attempt = { status: applyReport(taskRecord, report), report };
 	} catch (error) {
 		const settled = await settleAttemptFailure(taskRecord, reportFile, {
@@ -224,19 +226,7 @@ export async function runHerdrSubagents(prompt: string, options: HerdrSubagentsO
 		}
 	} finally {
 		if (tabId && result?.status !== "blocked") {
-			try {
-				await cleanupRunTab({ herdr, tabId, runFile, runRecord, signal: options.signal, onError: options.onCleanupError, failureStatus: "failed" });
-			} catch (error) {
-				const cleanupError = error instanceof Error ? error.message : String(error);
-				if (result?.ok) {
-					const errorMessage = `Task completed but Herdr tab cleanup failed: ${cleanupError}`;
-					const completedAt = new Date().toISOString();
-					applyRunStatus(runRecord, "failed", { at: completedAt, error: errorMessage });
-					applyTaskStatus(taskRecord, "failed", { at: completedAt, error: errorMessage });
-					await Promise.all([writeJson(runFile, runRecord), writeJson(taskFile, taskRecord)]);
-					result = failure(cwd, startedAt, errorMessage, common());
-				}
-			}
+			await cleanupRunTab({ herdr, tabId, runFile, runRecord, signal: options.signal, onError: options.onCleanupError });
 		}
 	}
 

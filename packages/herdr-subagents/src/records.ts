@@ -19,6 +19,7 @@ export interface PersistedReport {
 	status: "completed" | "needs-input" | "failed";
 	summary: string;
 	documents: PersistedDocument[];
+	attemptId?: string;
 	error?: string;
 	question?: string;
 	reportedAt?: string;
@@ -74,6 +75,7 @@ export interface TaskRecord {
 	agentName?: string;
 	attempt?: number;
 	currentTurnFile?: string;
+	currentAttemptId?: string;
 	question?: string;
 	error?: string;
 }
@@ -176,6 +178,7 @@ export function parseReport(value: unknown, source = "structured report"): Persi
 	if (report.status === "needs-input" && (typeof report.question !== "string" || !report.question.trim())) throw new Error(`Missing report question in ${source}.`);
 	if (report.error !== undefined && typeof report.error !== "string") throw new Error(`Invalid report error in ${source}.`);
 	if (report.question !== undefined && typeof report.question !== "string") throw new Error(`Invalid report question in ${source}.`);
+	if (report.attemptId !== undefined && (typeof report.attemptId !== "string" || !report.attemptId.trim())) throw new Error(`Invalid report attemptId in ${source}.`);
 	return report as unknown as PersistedReport;
 }
 

@@ -13,7 +13,7 @@ import { RunPaneAllocator } from "./run-pane-allocator.ts";
 import { applyReport, applyTaskStatus, projectTaskActivity, settleAttemptFailure, type PersistedReport, type RunRecord, type TaskActivity, type TaskRecord, type TaskStatus } from "./records.ts";
 import { reportProtocolPrompt } from "./protocol.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
-import { applyRunStatus } from "./run-status.ts";
+import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
 import { isAbortError } from "./errors.ts";
 
 export interface BatchTask {
@@ -150,6 +150,7 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 				emit("running", `${settled}/${tasks.length} tasks settled.`);
 				const prompted = await promptLiveAgent({ herdr, task: { ...task, id: context.taskId, sessionFile: context.sessionFile }, paneId, prompt: task.prompt, systemPromptFile: context.systemPromptFile, agentName, signal: options.signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => emit("running", `${task.name} appears stalled; it is still running.`) });
 				agentName = prompted.agentName;
+				context.taskRecord.currentAttemptId = prompted.attemptId;
 				report = prompted.report;
 				status = applyReport(context.taskRecord, report);
 			} catch (error) {
@@ -190,9 +191,10 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 		const settledResults = results.filter(Boolean);
 		const blocked = settledResults.find((result) => result.status === "blocked");
 		const failed = settledResults.filter((result) => result.status === "failed").length;
-		const cancelled = options.signal?.aborted || activity.some((entry) => entry.status === "cancelled");
-		const status: BatchResult["status"] = cancelled ? "cancelled" : blocked || activity.some((entry) => entry.status === "queued") ? "blocked" : failed === 0 ? "completed" : failed === tasks.length ? "failed" : "partial";
-		const summary = status === "cancelled" ? "Subagent batch cancelled." : blocked ? `${blocked.name} needs input: ${blocked.question}` : failed ? `${tasks.length - failed}/${tasks.length} tasks completed; ${failed} failed.` : `${tasks.length}/${tasks.length} tasks completed.`;
+		const completed = settledResults.filter((result) => result.status === "completed").length;
+		const cancelled = settledResults.filter((result) => result.status === "cancelled").length;
+		const status = aggregateTaskStatus(activity.map((entry) => entry.status)) as BatchResult["status"];
+		const summary = status === "cancelled" ? "Subagent batch cancelled." : blocked ? `${blocked.name} needs input: ${blocked.question}` : status === "partial" ? `${completed}/${tasks.length} tasks completed; ${failed} failed; ${cancelled} cancelled.` : failed ? `${completed}/${tasks.length} tasks completed; ${failed} failed.` : `${tasks.length}/${tasks.length} tasks completed.`;
 		applyRunStatus(runRecord, status, { question: blocked?.question });
 		await writeJsonAtomic(runFile, runRecord);
 		return { ok: status === "completed", status, runId, label: options.label, requestedConcurrency, effectiveConcurrency, tasks: settledResults, activity, summary, documents: settledResults.flatMap((result) => result.documents), recordDirectory: runDirectory, tabId };
@@ -203,19 +205,11 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 	} finally {
 		const keepTab = !options.signal?.aborted && activity.some((entry) => entry.status === "blocked" || entry.status === "queued" || entry.status === "running");
 		if (tabId && !keepTab) {
-			try {
-				await cleanupRunTab({
-					herdr, tabId, runFile, runRecord, signal: options.signal, failureStatus: "failed",
-					errorPrefix: "Task results settled, but Herdr tab cleanup failed",
-					onError: (message) => options.onCleanupError?.(message),
-				});
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				const cleanupError = new Error(`Task results settled, but Herdr tab cleanup failed: ${message}`) as Error & { recordDirectory: string; runId: string };
-				cleanupError.recordDirectory = runDirectory;
-				cleanupError.runId = runId;
-				throw cleanupError;
-			}
+			await cleanupRunTab({
+				herdr, tabId, runFile, runRecord, signal: options.signal,
+				errorPrefix: "Task results settled, but Herdr tab cleanup failed",
+				onError: (message) => options.onCleanupError?.(message),
+			});
 		}
 	}
 }

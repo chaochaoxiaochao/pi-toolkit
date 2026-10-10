@@ -1,3 +1,7 @@
+## Unreleased
+
+- bundle Herdr Subagents lifecycle and attempt-isolation fixes so provider retries cannot create false failed tasks or overwrite newer attempts
+
 ## 2026-10-10 - v0.10.16
 
 - tapd skill: handle large attachment timeouts without misdiagnosing download failures

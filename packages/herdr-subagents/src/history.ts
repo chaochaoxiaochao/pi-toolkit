@@ -161,7 +161,9 @@ async function resumeHistoricalTaskLocked(cwd: string, runId: string, taskNumber
 			]);
 			const runningActivity = await Promise.all(run.tasks.map(async (entry, index) => projectTaskActivity(await readTaskRecord(join(entry.recordDirectory, "task.json")), index)));
 			options.onUpdate?.({ runId, label: run.label, status: "running", summary: `${historical.name} is continuing.`, documents: [], tabId: tab.tabId, paneId: tab.paneId, sessionFile: historical.sessionFile, activity: runningActivity });
-			report = (await promptLiveAgent({ herdr, task: { ...task, id: historical.id, sessionFile: historical.sessionFile }, paneId: tab.paneId, prompt, systemPromptFile: followupPrompt, agentName, signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => options.onStalled?.(`${historical.name} appears stalled; it is still running.`) })).report;
+			const prompted = await promptLiveAgent({ herdr, task: { ...task, id: historical.id, sessionFile: historical.sessionFile }, paneId: tab.paneId, prompt, systemPromptFile: followupPrompt, agentName, signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => options.onStalled?.(`${historical.name} appears stalled; it is still running.`) });
+			task.currentAttemptId = prompted.attemptId;
+			report = prompted.report;
 			status = applyReport(task, report);
 		} catch (error) {
 			const settled = await settleAttemptFailure(task, join(historical.recordDirectory, "report.json"), {
@@ -183,7 +185,7 @@ async function resumeHistoricalTaskLocked(cwd: string, runId: string, taskNumber
 		Object.assign(runRecord, { ...ownerRecord(options.owner), tabId: tab.tabId });
 		await writeJsonAtomic(join(run.recordDirectory, "run.json"), runRecord);
 		if (status !== "blocked") {
-			await cleanupRunTab({ herdr, tabId: tab.tabId, runFile: join(run.recordDirectory, "run.json"), runRecord, signal, onError: onCleanupError, failureStatus: "failed" });
+			await cleanupRunTab({ herdr, tabId: tab.tabId, runFile: join(run.recordDirectory, "run.json"), runRecord, signal, onError: onCleanupError });
 		}
 		const activity = await Promise.all(run.tasks.map(async (entry, index) => projectTaskActivity(await readTaskRecord(join(entry.recordDirectory, "task.json")), index)));
 		return { runId, label: run.label, status, summary: report.summary, documents: report.documents ?? [], tabId: tab.tabId, paneId: tab.paneId, sessionFile: historical.sessionFile, activity };
@@ -210,7 +212,7 @@ async function resumeHistoricalTaskLocked(cwd: string, runId: string, taskNumber
 		]);
 		const activity = await Promise.all(run.tasks.map(async (entry, index) => projectTaskActivity(await readTaskRecord(join(entry.recordDirectory, "task.json")), index)));
 		options.onUpdate?.({ runId, label: run.label, status, summary: report.summary, documents: report.documents, tabId: tab?.tabId ?? "", paneId: tab?.paneId ?? "", sessionFile: historical.sessionFile, activity });
-		if (tab) await cleanupRunTab({ herdr, tabId: tab.tabId, runFile: join(run.recordDirectory, "run.json"), runRecord, signal, onError: onCleanupError, failureStatus: "failed" });
+		if (tab) await cleanupRunTab({ herdr, tabId: tab.tabId, runFile: join(run.recordDirectory, "run.json"), runRecord, signal, onError: onCleanupError });
 		throw error;
 	}
 }

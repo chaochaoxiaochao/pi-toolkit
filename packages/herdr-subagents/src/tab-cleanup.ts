@@ -15,7 +15,6 @@ export async function cleanupRunTab(options: {
 	signal?: AbortSignal;
 	onError?: (message: string) => void;
 	onClosed?: (runRecord: RunRecord) => void | Promise<void>;
-	failureStatus?: "failed";
 	errorPrefix?: string;
 }): Promise<{ deferred: boolean }> {
 	const mergeLatest = async (update: (run: RunRecord) => void | Promise<void>, requirePending = false, clearPending = true) => {
@@ -34,14 +33,17 @@ export async function cleanupRunTab(options: {
 	const reportFailure = async (error: unknown, requirePending = false) => {
 		const detail = error instanceof Error ? error.message : String(error);
 		try {
-			await mergeLatest((latest) => Object.assign(latest, { cleanupPendingTabIds: [...new Set([...(latest.cleanupPendingTabIds ?? []), options.tabId])], cleanupError: detail, ...(options.failureStatus ? { status: options.failureStatus } : {}) }), requirePending, false);
+			await mergeLatest((latest) => Object.assign(latest, { cleanupPendingTabIds: [...new Set([...(latest.cleanupPendingTabIds ?? []), options.tabId])], cleanupError: detail }), requirePending, false);
 		} catch (persistError) {
 			options.onError?.(`${options.errorPrefix ?? "Herdr tab cleanup failed"}: ${detail}; could not persist cleanup state: ${persistError instanceof Error ? persistError.message : String(persistError)}`);
 			return;
 		}
 		options.onError?.(`${options.errorPrefix ?? "Herdr tab cleanup failed"}: ${detail}`);
 	};
-	const finishClosed = async (requirePending = false) => mergeLatest(async (latest) => options.onClosed?.(latest), requirePending);
+	const finishClosed = async (requirePending = false) => mergeLatest(async (latest) => {
+		await options.onClosed?.(latest);
+		if (!latest.cleanupPendingTabIds?.length) delete latest.cleanupError;
+	}, requirePending);
 	try {
 		if (options.signal?.aborted) {
 			await options.herdr.closeTab(options.tabId);
@@ -78,7 +80,7 @@ export async function cleanupRunTab(options: {
 			return { deferred: false };
 		}
 		await reportFailure(error);
-		throw error;
+		return { deferred: false };
 	}
 	return { deferred: false };
 }

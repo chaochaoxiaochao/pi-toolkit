@@ -48,7 +48,9 @@ export async function continueQueuedRun(runDirectory: string, herdr: HerdrAutoma
 			Object.assign(task, { tabId: run.tabId, paneId, paneLabel, agentName, attempt: Number(task.attempt ?? 0) + 1, startedAt: new Date().toISOString() });
 			await writeJsonAtomic(taskFile, task);
 			await options.onUpdate?.();
-			const report = (await promptLiveAgent({ herdr, task: { ...task, id: task.id, sessionFile: task.sessionFile }, paneId, prompt: task.prompt, systemPromptFile: join(directory, "system-prompt.md"), agentName, signal: options.signal, stalledWarningMs: run.stalledWarningSeconds ? Number(run.stalledWarningSeconds) * 1000 : undefined, onStalled: () => options.onStalled?.(`${task.name ?? task.agent} appears stalled; it is still running.`) })).report;
+			const prompted = await promptLiveAgent({ herdr, task: { ...task, id: task.id, sessionFile: task.sessionFile }, paneId, prompt: task.prompt, systemPromptFile: join(directory, "system-prompt.md"), agentName, signal: options.signal, stalledWarningMs: run.stalledWarningSeconds ? Number(run.stalledWarningSeconds) * 1000 : undefined, onStalled: () => options.onStalled?.(`${task.name ?? task.agent} appears stalled; it is still running.`) });
+			task.currentAttemptId = prompted.attemptId;
+			const report = prompted.report;
 			applyReport(task, report);
 		} catch (error) {
 			await settleAttemptFailure(task, reportFile, {
@@ -79,9 +81,9 @@ export async function continueQueuedRun(runDirectory: string, herdr: HerdrAutoma
 		}
 	}
 	const statuses = await Promise.all(taskDirectories.map(async (directory) => (await readTaskRecord(join(directory, "task.json"))).status));
-	applyRunStatus(run, options.signal?.aborted ? "cancelled" : aggregateTaskStatus(statuses));
+	applyRunStatus(run, aggregateTaskStatus(statuses));
 	await writeJsonAtomic(runFile, run);
 	if (options.cleanup !== false && run.status !== "blocked" && run.tabId) {
-		await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, signal: options.signal, onError: options.onCleanupError, failureStatus: "failed" });
+		await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, signal: options.signal, onError: options.onCleanupError });
 	}
 }

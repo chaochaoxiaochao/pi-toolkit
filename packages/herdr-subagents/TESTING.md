@@ -27,7 +27,9 @@
 - Verify selected active/queued run cancellation, blocked-response live Fleet updates, authoritative stale-field replacement, parent-shutdown cancellation, idempotent missing-tab cleanup, cleanup notifications, atomic state replacement, non-retried uncertain startup operations, and stalled warnings.
 - Verify `status(runId)` isolates one run, projects queue-only state, prefers durable state over a stale queue record, exposes blocked questions, marks terminal states settled, rejects unknown IDs, and leaves full `history` semantics unchanged.
 - Verify resumed batches retain newly allocated pane IDs and historical follow-ups exclude simultaneous session writers.
+- Simulate a false screen-settled return while the authoritative Pi lifecycle remains working, then write the report later and verify the task completes without a transient failed state.
+- Verify reports are bound to unique attempt IDs, blocked results are not tool errors, duplicate blocked responses are serialized, mixed failed/cancelled aggregates remain partial, and cleanup failures never overwrite business outcomes.
 
 ## Latest baseline
 
-All 179 deterministic scheduler, recovery, process-boundary, schema-validation, navigation, metrics, responsive-formatting, and persona cases plus the extension-contract lifecycle simulations must pass. Release validation also requires extension loading and a real Herdr read-only batch smoke with distinct task panes and final tab cleanup. The latest smoke completed two concurrent tasks, retained its focused run tab through settlement, and closed it automatically after focus moved away.
+All 194 deterministic scheduler, recovery, process-boundary, schema-validation, navigation, metrics, responsive-formatting, lifecycle, attempt-isolation, and persona cases plus the extension-contract lifecycle simulations must pass. Release validation also requires extension loading and a real Herdr read-only batch smoke with distinct task panes and final tab cleanup. The latest smoke completed a read-only package inspection with matching durable attempt/report IDs and automatic tab cleanup.

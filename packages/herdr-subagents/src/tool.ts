@@ -216,7 +216,8 @@ async function executeBatch({ params, signal, onUpdate, ctx, dependencies, disco
 		});
 		const lines = [result.summary, ...result.tasks.map((task) => `- ${task.name}: ${task.status} — ${task.summary}`)];
 		if (result.documents.length) lines.push("", "Documents:", ...result.documents.map((document) => `- ${document.description}: ${document.path}`));
-		return { content: [{ type: "text", text: lines.join("\n") }], details: { ...result, prompts: tasks.map((task) => task.prompt) }, ...(result.ok ? {} : { isError: true }) };
+		const isError = result.status === "failed" || result.status === "partial" || result.status === "cancelled";
+		return { content: [{ type: "text", text: lines.join("\n") }], details: { ...result, prompts: tasks.map((task) => task.prompt) }, ...(isError ? { isError: true } : {}) };
 	} catch (error) {
 		const text = error instanceof Error ? error.message : String(error);
 		const diagnostic = error as { recordDirectory?: string; runId?: string };
@@ -248,10 +249,11 @@ async function executeSingle({ params, signal, onUpdate, ctx, dependencies, disc
 		herdr: dependencies.herdr,
 		stalledWarningSeconds: discovery.settings.stalledWarningSeconds,
 		onStalled: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { status: "running", stalled: true } }),
-		onCleanupError: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { status: "failed", cleanupError: text } }),
+		onCleanupError: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { status: "warning", cleanupError: text } }),
 		onUpdate: (partial) => onUpdate?.({ content: [{ type: "text", text: partial.summary }], details: details(partial) }),
 	});
-	return { content: [{ type: "text", text: summaryText(result) }], details: details(result), ...(result.ok ? {} : { isError: true }) };
+	const isError = result.status === "failed" || result.status === "cancelled";
+	return { content: [{ type: "text", text: summaryText(result) }], details: details(result), ...(isError ? { isError: true } : {}) };
 }
 
 export async function executeHerdrSubagents(

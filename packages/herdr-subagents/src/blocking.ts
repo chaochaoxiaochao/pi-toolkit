@@ -1,5 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
-import { mkdir, rename } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { CliHerdrAutomation, type HerdrAutomation } from "./herdr.ts";
 import { continueQueuedRun } from "./continue-run.ts";
@@ -7,7 +8,7 @@ import { liveAgentName, promptLiveAgent } from "./live-agent.ts";
 import { writeJsonAtomic, writeTextAtomic } from "./state.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
 import type { OwnerIdentity } from "./ownership.ts";
-import { ownerRecord } from "./ownership.ts";
+import { isProcessAlive, ownerRecord } from "./ownership.ts";
 import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
 import { applyReport, applyTaskStatus, isActiveStatus, persistFailureReport, projectTaskActivity, readReport, readRunRecord, readTaskRecord, readTurnRecord, settleAttemptFailure, type PersistedDocument, type PersistedReport, type RunRecord, type TaskActivity, type TaskRecord, type TaskStatus, type TurnRecord } from "./records.ts";
 import { isAbortError } from "./errors.ts";
@@ -30,6 +31,36 @@ export interface ResumeBlockedResult {
 	tasks?: Array<{ index: number; name: string; status: TaskStatus; summary: string; documents: PersistedDocument[]; error?: string; question?: string; paneId: string; recordDirectory: string; sessionFile: string }>;
 	activity?: TaskActivity[];
 	tabId?: string;
+}
+
+interface ResponseLock { token?: string; processId?: unknown; sessionId?: unknown; createdAt?: unknown; }
+
+async function readResponseLock(lockFile: string): Promise<ResponseLock | undefined> {
+	try {
+		const lock = JSON.parse(await readFile(lockFile, "utf8")) as unknown;
+		return lock && typeof lock === "object" ? lock as ResponseLock : undefined;
+	} catch { return undefined; }
+}
+
+async function releaseResponseLock(lockFile: string, token: string): Promise<void> {
+	if ((await readResponseLock(lockFile))?.token !== token) return;
+	try { await unlink(lockFile); }
+	catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+}
+
+async function acquireResponseLock(lockFile: string, runId: string, owner?: OwnerIdentity): Promise<string> {
+	const token = randomUUID();
+	try {
+		await writeFile(lockFile, `${JSON.stringify({ token, processId: process.pid, sessionId: owner?.sessionId, createdAt: new Date().toISOString() })}\n`, { flag: "wx", mode: 0o600 });
+		return token;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+		const lock = await readResponseLock(lockFile);
+		if (lock && Number.isInteger(lock.processId) && !isProcessAlive(lock.processId)) {
+			throw new Error(`Subagent run '${runId}' has a stale blocked-response lock from process ${lock.processId}; remove ${lockFile} and retry.`);
+		}
+		throw new Error(`Subagent run '${runId}' already has a blocked response in progress (lock: ${lockFile}).`);
+	}
 }
 
 async function emitProgress(options: RespondToBlockedTaskOptions, runDirectory: string, run: RunRecord, taskDirectories: string[], summary: string): Promise<void> {
@@ -71,7 +102,7 @@ async function projectSettledRun(runDirectory: string, runFile: string, run: Run
 	run = await readRunRecord(runFile);
 	applyRunStatus(run, runStatus, { question: blockedReport?.question });
 	await writeJsonAtomic(runFile, run);
-	if (runStatus !== "blocked" && run.tabId) await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, onError: onCleanupError, failureStatus: "failed" });
+	if (runStatus !== "blocked" && run.tabId) await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, onError: onCleanupError });
 	const summary = runStatus === "completed" ? "All tasks completed after the answer." : runStatus === "blocked" ? `${finalTasks[blockedIndex]?.name ?? "Task"} needs input: ${blockedReport?.question ?? "Input required."}` : finalReports.map((entry, index) => `${finalTasks[index].name}: ${entry.summary}`).join("\n");
 	const activity = finalTasks.map((entry, index) => projectTaskActivity(entry, index));
 	const tasks = finalTasks.map((entry, index) => ({ index, name: activity[index].name, status: entry.status, summary: String(finalReports[index].summary ?? "Task has no report."), documents: finalReports[index].documents ?? [], ...(entry.error ? { error: String(entry.error) } : {}), ...(entry.question ? { question: String(entry.question) } : {}), paneId: String(entry.paneId ?? ""), recordDirectory: taskDirectories[index], sessionFile: String(entry.sessionFile ?? "") }));
@@ -79,11 +110,18 @@ async function projectSettledRun(runDirectory: string, runFile: string, run: Run
 }
 
 export async function respondToBlockedTask(cwd: string, runId: string, answer: string, options: RespondToBlockedTaskOptions = {}): Promise<ResumeBlockedResult> {
-	const herdr = options.herdr ?? new CliHerdrAutomation();
-	const { taskNumber, signal, onCleanupError } = options;
 	const runsDirectory = join(cwd, ".pi", "herdr-subagents", "runs");
 	const runDirectory = await findRunDirectory(runsDirectory, runId);
 	if (!runDirectory) throw new Error(`Unknown Subagent run '${runId}'.`);
+	const lockFile = join(runDirectory, ".respond.lock");
+	const lockToken = await acquireResponseLock(lockFile, runId, options.owner);
+	try { return await respondToBlockedTaskLocked(cwd, runId, answer, runDirectory, options); }
+	finally { await releaseResponseLock(lockFile, lockToken); }
+}
+
+async function respondToBlockedTaskLocked(cwd: string, runId: string, answer: string, runDirectory: string, options: RespondToBlockedTaskOptions): Promise<ResumeBlockedResult> {
+	const herdr = options.herdr ?? new CliHerdrAutomation();
+	const { taskNumber, signal, onCleanupError } = options;
 	const runFile = join(runDirectory, "run.json");
 	const run = await readRunRecord(runFile);
 	const taskDirectories = readdirSync(join(runDirectory, "tasks")).sort().map((entry) => join(runDirectory, "tasks", entry));
@@ -131,7 +169,9 @@ export async function respondToBlockedTask(cwd: string, runId: string, answer: s
 	let status: "blocked" | "completed" | "failed" | "cancelled";
 	let attemptError: unknown;
 	try {
-		report = (await promptLiveAgent({ herdr, task: { ...task, id: task.id, sessionFile: task.sessionFile }, paneId, prompt: answer, systemPromptFile: resumePrompt, agentName, start: !live, signal, stalledWarningMs: run.stalledWarningSeconds ? Number(run.stalledWarningSeconds) * 1000 : undefined, onStalled: () => options.onStalled?.(`${task.name ?? task.agent} appears stalled; it is still running.`) })).report;
+		const prompted = await promptLiveAgent({ herdr, task: { ...task, id: task.id, sessionFile: task.sessionFile }, paneId, prompt: answer, systemPromptFile: resumePrompt, agentName, start: !live, signal, stalledWarningMs: run.stalledWarningSeconds ? Number(run.stalledWarningSeconds) * 1000 : undefined, onStalled: () => options.onStalled?.(`${task.name ?? task.agent} appears stalled; it is still running.`) });
+		task.currentAttemptId = prompted.attemptId;
+		report = prompted.report;
 		status = applyReport(task, report);
 	} catch (error) {
 		attemptError = error;
@@ -158,7 +198,7 @@ export async function respondToBlockedTask(cwd: string, runId: string, answer: s
 				await writeJsonAtomic(siblingFile, sibling);
 			}
 			await Promise.all([writeJsonAtomic(join(taskDirectory, "task.json"), task), writeJsonAtomic(runFile, run), writeJsonAtomic(turnFile, turn)]);
-			if (run.tabId) await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, signal, onError: onCleanupError, failureStatus: "failed" });
+			if (run.tabId) await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, signal, onError: onCleanupError });
 			return { ok: false, runId, label: String(run.label ?? "batch"), status: "cancelled", summary: "Subagent response cancelled.", documents: [], recordDirectory: runDirectory, requestedConcurrency: Number(run.requestedConcurrency ?? 1), effectiveConcurrency: Number(run.effectiveConcurrency ?? 1), ...(run.tabId ? { tabId: String(run.tabId) } : {}) };
 	}
 	turn.events.push({ type: "report", status, summary: report.summary, question: report.question, error: report.error, at: new Date().toISOString() });

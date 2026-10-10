@@ -6,6 +6,7 @@ import { writeJsonAtomic } from "./state.ts";
 import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
 import { applyReport, applyTaskStatus, isActiveStatus, persistFailureReport, readReport, readRunRecord, readTaskRecord, type RunRecord, type TaskStatus } from "./records.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
+import { attemptReportPath } from "./attempts.ts";
 
 
 export interface CancellationResult { cancelledRuns: number; cleanupErrors: string[]; }
@@ -109,24 +110,34 @@ export async function reconcileSubagentRuns(cwd: string, herdr: HerdrAutomation,
 				continue;
 			}
 			if (isActiveStatus(task.status)) {
-				const reportFile = join(tasksDirectory, taskEntry, "report.json");
-				if (existsSync(reportFile) && (task.status === "running" || task.status === "starting")) {
+				let recoveredCurrentReport = false;
+				const canonicalReportFile = join(tasksDirectory, taskEntry, "report.json");
+				let currentAttemptReport: string | undefined;
+				if (task.currentAttemptId) {
+					try { currentAttemptReport = attemptReportPath(join(tasksDirectory, taskEntry), task.currentAttemptId); }
+					catch (error) { result.cleanupErrors.push(`Invalid current attempt for Subagent task ${taskFile}: ${error instanceof Error ? error.message : String(error)}`); }
+				}
+				// Once an attempt is identified, the canonical report is only history from
+				// an earlier attempt until this attempt publishes its scoped report.
+				const reportFile = task.currentAttemptId ? currentAttemptReport : canonicalReportFile;
+				if (reportFile && existsSync(reportFile) && (task.status === "running" || task.status === "starting")) {
 					try {
 						const report = await readReport(reportFile);
+						if (task.currentAttemptId && report.attemptId !== task.currentAttemptId) throw new Error(`Report attempt '${report.attemptId ?? "unknown"}' does not match current attempt '${task.currentAttemptId}'.`);
 						applyReport(task, report, report.reportedAt ?? new Date().toISOString());
+						recoveredCurrentReport = reportFile !== canonicalReportFile;
+						if (reportFile !== canonicalReportFile) await writeJsonAtomic(canonicalReportFile, report);
 						result.settledTasks += 1;
 					} catch (error) {
 						const detail = error instanceof Error ? error.message : String(error);
 						result.cleanupErrors.push(`Invalid Subagent report ${reportFile}: ${detail}`);
-						await persistFailureReport(reportFile, { status: "failed", summary: "Recovered task had an invalid structured report.", documents: [], error: detail, reportedAt: new Date().toISOString() });
-						if (!differentOwner) {
-							applyTaskStatus(task, "failed", { error: `Invalid structured report: ${detail}` });
-							result.settledTasks += 1;
-							result.interruptedTasks += 1;
-						}
+						await persistFailureReport(canonicalReportFile, { status: "failed", summary: "Recovered task had an invalid structured report.", documents: [], error: detail, reportedAt: new Date().toISOString() }, reportFile !== canonicalReportFile);
+						applyTaskStatus(task, "failed", { error: `Invalid structured report: ${detail}` });
+						result.settledTasks += 1;
+						result.interruptedTasks += 1;
 					}
 				}
-				if (differentOwner && isActiveStatus(task.status)) {
+				if (differentOwner && isActiveStatus(task.status) && !(recoveredCurrentReport && task.status === "blocked")) {
 					applyTaskStatus(task, "cancelled", { error: "Owning parent Pi session is no longer active." });
 					result.cancelledTasks += 1;
 					result.interruptedTasks += 1;
@@ -158,8 +169,8 @@ export async function reconcileSubagentRuns(cwd: string, herdr: HerdrAutomation,
 			result.interruptedTasks += unreadableTasks;
 			continue;
 		}
-		if (differentOwner || !statuses.some((status) => status === "running" || status === "starting")) {
-			applyRunStatus(run, differentOwner ? "cancelled" : aggregateTaskStatus(statuses), { error: differentOwner ? "Owning parent Pi session is no longer active." : undefined });
+		if (!statuses.some((status) => status === "running" || status === "starting")) {
+			applyRunStatus(run, aggregateTaskStatus(statuses));
 			await writeJsonAtomic(runFile, run);
 			if (differentOwner || run.status === "cancelled") await closeRunTab(run, runFile, herdr, result.cleanupErrors);
 		}
