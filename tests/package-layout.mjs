@@ -106,12 +106,16 @@ assert.match(tapdSkill, /调查完成标准/);
 assert.match(tapdSkill, /references\/attachment-download\.md/);
 assert.doesNotMatch(tapdSkill, /## 命令参考|tapd testx case|tapd skill init/);
 assert.match(tapdAttachmentReference, /scripts\/extract-download-url\.mjs/);
+assert.match(tapdAttachmentReference, /set -euo pipefail/);
 assert.match(tapdAttachmentReference, /curl --fail --location --retry 3/);
 assert.match(tapdAttachmentReference, /--proto '=https' --proto-redir '=https'/);
 assert.match(tapdAttachmentReference, /--output "\$PART" -- "\$URL"/);
 assert.match(tapdAttachmentReference, /mv -- "\$PART" "\$OUTPUT"/);
 assert.match(tapdAttachmentReference, /\[ -e "\$OUTPUT" \] \|\| \[ -e "\$PART" \]/);
 assert.match(tapdAttachmentReference, /目标文件或 `.part` 已存在时必须在下载前失败/);
+assert.match(tapdAttachmentReference, /附件大小未知或大于 50 MB 时，工具超时至少设为 600 秒/);
+assert.match(tapdAttachmentReference, /timeout 仅表示本地执行被终止/);
+assert.match(tapdAttachmentReference, /删除残留 `.part`，重新获取临时 URL后从头下载|删除残留 `.part`，重新获取临时 URL 后从头下载/);
 assert.match(tapdAttachmentReference, /不要假设列表一定包含大小字段/);
 assert.match(tapdAttachmentReference, /本流程不续传失败的 `.part`/);
 assert.equal(
