@@ -1,3 +1,7 @@
+## 2026-10-10 - v0.1.10
+
+- remove redundant apply_patch prompt metadata
+
 ## 2026-10-08 - v0.1.9
 
 - install the pinned Pi runtime for clean-runner publication tests

@@ -1,3 +1,7 @@
+## 2026-10-10 - v0.10.19
+
+- bundle codex-edit v0.1.10: remove redundant apply_patch prompt metadata
+
 ## 2026-10-10 - v0.10.18
 
 - allow models to invoke Agent Team autonomously for costly decisions and long evidence-chain investigations
