@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-10 - v0.4.7
 
+- fix blocked-run scheduling and limit interactive blocking to serial runs
 - prevent foreground runs from hanging behind a blocked dispatcher owner, return the blocking run ID immediately, and remove cancelled foreground calls from the queue while preserving background queuing
 - limit interactive blocking to effectively serial runs; concurrent input requests become structured `missing_input` failures while independent siblings continue
 - accept full run UUIDs, saved run-directory names, and unique UUID prefixes in run controls

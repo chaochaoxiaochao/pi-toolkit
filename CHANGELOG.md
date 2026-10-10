@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-10 - v0.10.21
 
+- bundle herdr-subagents v0.4.7: fix blocked-run scheduling and limit interactive blocking to serial runs
 - bundle the Herdr Subagents blocked-dispatch deadlock fix, serial-only interactive blocking, structured concurrent `missing_input` failures, and flexible run ID controls
 
 ## 2026-10-10 - v0.10.20
