@@ -102,11 +102,6 @@ export default async function (pi) {
     name: "apply_patch",
     label: "apply_patch",
     description: "Apply a Codex-style patch. This is a FREEFORM tool, so provide raw patch text and never wrap it in JSON or a Markdown fence.",
-    promptSnippet: "Apply Codex-style freeform patches to add, delete, update, or move files",
-    promptGuidelines: [
-      "Use apply_patch for file changes and provide raw text between *** Begin Patch and *** End Patch.",
-      "Do not wrap apply_patch input in JSON or a Markdown code fence.",
-    ],
     parameters: Type.Object({
       patch: Type.String({ description: "Raw Codex-style patch text" }),
     }),
