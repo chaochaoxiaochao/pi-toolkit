@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-10 - v0.4.5
 
+- fix transient retry lifecycle, attempt isolation, and recovery semantics
 - prevent transient Herdr states from finalizing live child attempts
 - Report authoritative child Pi lifecycle state even under `--no-extensions`, wait through provider retry/fallback until the matching structured report arrives, and bind every report to a unique attempt ID.
 - Reconcile matching attempt reports after interruption, serialize blocked responses, keep blocked results non-error, and preserve business outcomes when tab cleanup fails.

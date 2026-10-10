@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-10 - v0.10.17
 
+- bundle herdr-subagents v0.4.5: fix transient retry lifecycle, attempt isolation, and recovery semantics
 - bundle Herdr Subagents lifecycle and attempt-isolation fixes so provider retries cannot create false failed tasks or overwrite newer attempts
 
 ## 2026-10-10 - v0.10.16
