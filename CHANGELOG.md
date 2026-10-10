@@ -1,3 +1,7 @@
+## 2026-10-10 - v0.10.20
+
+- bundle herdr-subagents v0.4.6: reduce global prompt noise by keeping Subagent workflow guidance in tool descriptions
+
 ## 2026-10-10 - v0.10.19
 
 - bundle codex-edit v0.1.10: remove redundant apply_patch prompt metadata
