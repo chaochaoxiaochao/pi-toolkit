@@ -197,7 +197,6 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 		label: "Herdr Subagents",
 		description: "Run one or more ordered tasks in visible interactive Herdr Pi Agents. Use one tasks item for a single task. Independent read-only tasks may run concurrently; write-capable runs are serialized. Foreground calls wait for the batch unless a task fails, when the run continues in the background and returns its run ID immediately. Explicit background calls always return a run ID immediately. Complete results and Pi sessions stay in project-local records.",
 		promptSnippet: "Run focused work in visible Herdr subagents",
-		promptGuidelines: ["Call herdr_subagents_control with action=list once before the first execution. Submit an ordered tasks list; use one item for a single task and concurrency only for independent read-only tasks. Foreground calls wait for full success or blocking input, but return a run ID as soon as one task fails while surviving siblings continue in the background. Explicit background calls return a run ID immediately."],
 		parameters: HerdrSubagentsParams,
 		prepareArguments: normalizeHerdrSubagentsArguments,
 
@@ -324,7 +323,6 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 		name: "herdr_subagents_control",
 		label: "Herdr Subagents Control",
 		description: "Inspect Herdr personas, query one run by ID, list run history, cancel active or queued work, answer a blocked task, resume a saved task, or remove a selected archived run. Use status for one run and history only for the full archive. Use herdr_subagents to start new work.",
-		promptSnippet: "Inspect and control Herdr subagent runs",
 		parameters: HerdrSubagentsControlParams,
 
 		async execute(_toolCallId, params: HerdrSubagentsControlToolParams, signal, onUpdate, ctx) {
