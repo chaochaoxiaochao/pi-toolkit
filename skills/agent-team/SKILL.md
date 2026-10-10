@@ -1,14 +1,13 @@
 ---
 name: agent-team
-description: 以对抗评审的方式让不同厂商的模型交叉验证同一个结论，当前会话担任管理者。Use when the user asks for 对抗评审 / 交叉验证, or wants a long-running investigation red-teamed by independent agents.
-disable-model-invocation: true
+description: 以对抗评审的方式让不同厂商的模型交叉验证同一个结论，当前会话担任管理者。Use when the user asks for 对抗评审 / 交叉验证, or when a costly decision or long evidence chain warrants independent red-teaming.
 ---
 
 当前会话是**管理者**，不是转述人：自己也承担一份实证工作，并对每一轮的裁决负责。每轮并发启动三个相互独立的子代理，统一收集结果后由管理者裁决。子代理不需要常驻；跨轮连续性来自持久调查档案和逻辑成员身份，而不是聊天记忆。
 
 ## 何时值得开
 
-只在用户要求组队时开。值得开的条件：结论会驱动一个代价高的动作（改内核、下线设备、向客户定责），或者证据链已经长到单模型容易自我确认。查一个事实、读一份文件用不上。
+用户明确要求组队时开启；模型也可在结论会驱动高代价动作（改内核、下线设备、向客户定责），或证据链已经长到单模型容易自我确认时主动开启。查一个事实、读一份文件用不上。
 
 ## 1. 建立调查档案
 

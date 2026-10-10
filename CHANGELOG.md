@@ -1,3 +1,7 @@
+## 2026-10-10 - v0.10.18
+
+- allow models to invoke Agent Team autonomously for costly decisions and long evidence-chain investigations
+
 ## 2026-10-10 - v0.10.17
 
 - bundle herdr-subagents v0.4.5: fix transient retry lifecycle, attempt isolation, and recovery semantics
