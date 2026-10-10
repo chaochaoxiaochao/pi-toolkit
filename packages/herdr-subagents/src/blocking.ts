@@ -199,7 +199,7 @@ async function respondToBlockedTaskLocked(cwd: string, runId: string, answer: st
 			}
 			await Promise.all([writeJsonAtomic(join(taskDirectory, "task.json"), task), writeJsonAtomic(runFile, run), writeJsonAtomic(turnFile, turn)]);
 			if (run.tabId) await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, signal, onError: onCleanupError });
-			return { ok: false, runId, label: String(run.label ?? "batch"), status: "cancelled", summary: "Subagent response cancelled.", documents: [], recordDirectory: runDirectory, requestedConcurrency: Number(run.requestedConcurrency ?? 1), effectiveConcurrency: Number(run.effectiveConcurrency ?? 1), ...(run.tabId ? { tabId: String(run.tabId) } : {}) };
+			return { ok: false, runId: run.id, label: String(run.label ?? "batch"), status: "cancelled", summary: "Subagent response cancelled.", documents: [], recordDirectory: runDirectory, requestedConcurrency: Number(run.requestedConcurrency ?? 1), effectiveConcurrency: Number(run.effectiveConcurrency ?? 1), ...(run.tabId ? { tabId: String(run.tabId) } : {}) };
 	}
 	turn.events.push({ type: "report", status, summary: report.summary, question: report.question, error: report.error, at: new Date().toISOString() });
 	Object.assign(turn, { summary: report.summary, documents: report.documents ?? [] });

@@ -6,8 +6,9 @@ import { writeJsonAtomic } from "./state.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
 import { RunPaneAllocator } from "./run-pane-allocator.ts";
 import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
-import { applyReport, applyTaskStatus, readRunRecord, readTaskRecord, settleAttemptFailure } from "./records.ts";
+import { applyReport, applyTaskStatus, normalizeNeedsInputReport, readRunRecord, readTaskRecord, settleAttemptFailure } from "./records.ts";
 import { isAbortError } from "./errors.ts";
+import { attemptReportPath } from "./attempts.ts";
 
 export interface ContinueQueuedRunOptions {
 	cleanup?: boolean;
@@ -50,7 +51,8 @@ export async function continueQueuedRun(runDirectory: string, herdr: HerdrAutoma
 			await options.onUpdate?.();
 			const prompted = await promptLiveAgent({ herdr, task: { ...task, id: task.id, sessionFile: task.sessionFile }, paneId, prompt: task.prompt, systemPromptFile: join(directory, "system-prompt.md"), agentName, signal: options.signal, stalledWarningMs: run.stalledWarningSeconds ? Number(run.stalledWarningSeconds) * 1000 : undefined, onStalled: () => options.onStalled?.(`${task.name ?? task.agent} appears stalled; it is still running.`) });
 			task.currentAttemptId = prompted.attemptId;
-			const report = prompted.report;
+			const report = normalizeNeedsInputReport(prompted.report, Number(run.effectiveConcurrency) || 1);
+			if (report !== prompted.report) await Promise.all([writeJsonAtomic(reportFile, report), writeJsonAtomic(attemptReportPath(directory, prompted.attemptId), report)]);
 			applyReport(task, report);
 		} catch (error) {
 			await settleAttemptFailure(task, reportFile, {

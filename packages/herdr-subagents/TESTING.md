@@ -17,6 +17,9 @@
 - Let a detached run later block or be explicitly cancelled and verify the newer dispatcher owner remains intact and each detached run emits exactly one final notification.
 - Shut down the parent while a handed-off sibling is active and verify it is cancelled and joined, durable queue state is removed, and no stale follow-up is sent.
 - Verify all-success foreground batches still wait for every task and explicit `background: true` submissions still return immediately.
+- Verify a blocked dispatcher owner immediately rejects both newly submitted and already-queued foreground runs with its full run ID, keeps explicit background runs queued, and removes queued foreground runs when their caller cancels.
+- Verify only effectively serial runs can block; concurrent input requests settle as structured `missing_input` failures, including owner-loss reconciliation, while independent siblings continue.
+- Verify historical follow-ups cannot create unowned blocked work and owner-loss reconciliation cancels serial blocked work instead of reconstructing hidden dispatcher ownership.
 - Verify all paths use interactive Agent start/prompt without print mode, shell injection, markers, or pane reuse.
 - Force write-capable batches to serial execution while allowing bounded read-only parallelism, including three concurrent `analyst` tasks with independent task-level models.
 - Preserve compact reports, full results, Pi sessions, blocked questions, and historical follow-ups.
@@ -32,4 +35,4 @@
 
 ## Latest baseline
 
-All 194 deterministic scheduler, recovery, process-boundary, schema-validation, navigation, metrics, responsive-formatting, lifecycle, attempt-isolation, and persona cases plus the extension-contract lifecycle simulations must pass. Release validation also requires extension loading and a real Herdr read-only batch smoke with distinct task panes and final tab cleanup. The latest smoke completed a read-only package inspection with matching durable attempt/report IDs and automatic tab cleanup.
+All 198 deterministic scheduler, recovery, process-boundary, schema-validation, navigation, metrics, responsive-formatting, lifecycle, attempt-isolation, and persona cases plus the extension-contract lifecycle simulations must pass. Release validation also requires extension loading and a real Herdr read-only batch smoke with distinct task panes and final tab cleanup. The latest smoke completed a read-only package inspection with matching durable attempt/report IDs and automatic tab cleanup.

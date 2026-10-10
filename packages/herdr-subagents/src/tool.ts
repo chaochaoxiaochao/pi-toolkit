@@ -131,17 +131,20 @@ const actionHandlers = {
 	},
 	async cleanup({ params, ctx }: ToolExecutionContext) {
 		try {
-			const cleaned = await cleanSubagentRun(ctx.cwd, params.runId as string);
-			const text = cleaned ? `Removed Subagent run ${params.runId}.` : `Unknown Subagent run '${params.runId}'.`;
-			return { content: [{ type: "text", text }], details: { action: "cleanup", runId: params.runId, cleaned }, ...(cleaned ? {} : { isError: true }) };
+			const requestedRunId = params.runId as string;
+			const runId = (await getSubagentRunStatus(ctx.cwd, requestedRunId))?.runId ?? requestedRunId;
+			const cleaned = await cleanSubagentRun(ctx.cwd, runId);
+			const text = cleaned ? `Removed Subagent run ${runId}.` : `Unknown Subagent run '${requestedRunId}'.`;
+			return { content: [{ type: "text", text }], details: { action: "cleanup", runId, cleaned }, ...(cleaned ? {} : { isError: true }) };
 		} catch (error) {
 			const text = error instanceof Error ? error.message : String(error);
 			return errorResponse(text, { action: "cleanup", runId: params.runId, cleaned: false });
 		}
 	},
 	async cancel({ params, ctx, dependencies }: ToolExecutionContext) {
-		const runId = (params.runId as string).trim();
+		const requestedRunId = (params.runId as string).trim();
 		try {
+			const runId = (await getSubagentRunStatus(ctx.cwd, requestedRunId))?.runId ?? requestedRunId;
 			let result: { cancelled: boolean; queued?: boolean; cleanupErrors?: string[] };
 			if (dependencies.cancelRun) result = await dependencies.cancelRun(runId);
 			else {
@@ -159,7 +162,7 @@ const actionHandlers = {
 			const text = result.cancelled ? `Cancelled Subagent run ${runId}.${suffix}` : `Subagent run '${runId}' is not active or queued.`;
 			return { content: [{ type: "text", text }], details: { action: "cancel", runId, ...result }, ...(result.cancelled ? {} : { isError: true }) };
 		} catch (error) {
-			return errorResponse(error instanceof Error ? error.message : String(error), { action: "cancel", runId, cancelled: false });
+			return errorResponse(error instanceof Error ? error.message : String(error), { action: "cancel", runId: requestedRunId, cancelled: false });
 		}
 	},
 	async resume({ params, signal, onUpdate, ctx, dependencies, discovery }: ToolExecutionContext) {
@@ -182,8 +185,9 @@ const actionHandlers = {
 				onWarning: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "respond", runId: params.runId, warning: text } }),
 				onCleanupError: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "respond", runId: params.runId, cleanupError: text } }),
 			});
-			const text = [result.summary, ...(result.question ? [`Question: ${result.question}`] : []), ...result.documents.map((document) => `${document.description}: ${document.path}`)].join("\n");
-			return { content: [{ type: "text", text }], details: result, ...(result.status === "failed" || result.status === "partial" || result.status === "cancelled" ? { isError: true } : {}) };
+			const blockedControl = result.status === "blocked" ? { allowedActions: ["respond", "cancel"] as const } : {};
+			const text = [result.summary, ...(result.question ? [`Question: ${result.question}`] : []), ...(result.status === "blocked" ? [`Run ID: ${result.runId}`, `Answer with herdr_subagents_control({ action: "respond", runId: "${result.runId}", answer: "..." }) or cancel this run.`] : []), ...result.documents.map((document) => `${document.description}: ${document.path}`)].join("\n");
+			return { content: [{ type: "text", text }], details: { ...result, ...blockedControl }, ...(result.status === "failed" || result.status === "partial" || result.status === "cancelled" ? { isError: true } : {}) };
 		} catch (error) { return errorResponse(error instanceof Error ? error.message : String(error)); }
 	},
 	async list({ discovery }: ToolExecutionContext) {
@@ -215,9 +219,10 @@ async function executeBatch({ params, signal, onUpdate, ctx, dependencies, disco
 			onUpdate: (partial) => onUpdate?.({ content: [{ type: "text", text: partial.summary }], details: { ...partial, prompts: tasks.map((task) => task.prompt) } }),
 		});
 		const lines = [result.summary, ...result.tasks.map((task) => `- ${task.name}: ${task.status} — ${task.summary}`)];
+		if (result.status === "blocked") lines.push("", `Run ID: ${result.runId}`, `Answer with herdr_subagents_control({ action: "respond", runId: "${result.runId}", answer: "..." }) or cancel this run before starting another foreground run.`);
 		if (result.documents.length) lines.push("", "Documents:", ...result.documents.map((document) => `- ${document.description}: ${document.path}`));
 		const isError = result.status === "failed" || result.status === "partial" || result.status === "cancelled";
-		return { content: [{ type: "text", text: lines.join("\n") }], details: { ...result, prompts: tasks.map((task) => task.prompt) }, ...(isError ? { isError: true } : {}) };
+		return { content: [{ type: "text", text: lines.join("\n") }], details: { ...result, prompts: tasks.map((task) => task.prompt), ...(result.status === "blocked" ? { allowedActions: ["respond", "cancel"] } : {}) }, ...(isError ? { isError: true } : {}) };
 	} catch (error) {
 		const text = error instanceof Error ? error.message : String(error);
 		const diagnostic = error as { recordDirectory?: string; runId?: string };

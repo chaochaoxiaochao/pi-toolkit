@@ -195,12 +195,18 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 	pi.registerTool({
 		name: "herdr_subagents",
 		label: "Herdr Subagents",
-		description: "Run one or more ordered tasks in visible interactive Herdr Pi Agents. Use one tasks item for a single task. Independent read-only tasks may run concurrently; write-capable runs are serialized. Foreground calls wait for the batch unless a task fails, when the run continues in the background and returns its run ID immediately. Explicit background calls always return a run ID immediately. Complete results and Pi sessions stay in project-local records.",
+		description: "Run one or more ordered tasks in visible interactive Herdr Pi Agents. Use one tasks item for a single task. Independent read-only tasks may run concurrently; write-capable runs are serialized. Only effectively serial runs can pause for input; concurrent input requests become missing_input failures while independent siblings continue. Foreground calls wait for the batch unless a task fails, when the run continues in the background and returns its run ID immediately. Explicit background calls always return a run ID immediately. Complete results and Pi sessions stay in project-local records.",
 		promptSnippet: "Run focused work in visible Herdr subagents",
 		parameters: HerdrSubagentsParams,
 		prepareArguments: normalizeHerdrSubagentsArguments,
 
 		async execute(_toolCallId, params: HerdrSubagentsRunParams, signal, onUpdate, ctx) {
+			const blockedForegroundResponse = (blockingRunId: string) => {
+				const text = `Cannot start a foreground Subagent run while blocked run ${blockingRunId} is waiting for input. Respond to or cancel that run first, or submit this run with background: true.`;
+				return { content: [{ type: "text" as const, text }], details: { errorMessage: text, blockingRunId }, isError: true };
+			};
+			const blockingRunId = dispatcher.snapshot().retainedRunId;
+			if (!params.background && blockingRunId) return blockedForegroundResponse(blockingRunId);
 			const generation = sessionGeneration;
 			const runId = randomUUID();
 			const controller = new AbortController();
@@ -249,7 +255,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 					dispatcher.retain(runId);
 				}
 				return result;
-			});
+			}, params.background ? undefined : { ...(signal ? { signal } : {}), onRetained: blockedForegroundResponse });
 			runPromises.set(runId, promise);
 			inFlight.add(promise);
 			void promise.finally(() => {
@@ -369,11 +375,12 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 			const result = await promise.finally(() => { inFlight.delete(promise); runControllers.delete(executionId); });
 			fleet.sync(result.details);
 			if (params.action === "respond") {
-				const details = result.details as { status?: string };
+				const details = result.details as { runId?: string; status?: string };
 				if (details.status === "blocked") fleet.sync(result.details);
 				else if (isSettledRunStatus(details.status)) {
-					fleet.clearRun(params.runId);
-					if (params.runId) dispatcher.release(params.runId);
+					const canonicalRunId = details.runId ?? params.runId;
+					fleet.clearRun(canonicalRunId);
+					if (canonicalRunId) dispatcher.release(canonicalRunId);
 				}
 			}
 			return result;

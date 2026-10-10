@@ -1,3 +1,7 @@
+## Unreleased
+
+- bundle the Herdr Subagents blocked-dispatch deadlock fix, serial-only interactive blocking, structured concurrent `missing_input` failures, and flexible run ID controls
+
 ## 2026-10-10 - v0.10.20
 
 - bundle herdr-subagents v0.4.6: reduce global prompt noise by keeping Subagent workflow guidance in tool descriptions

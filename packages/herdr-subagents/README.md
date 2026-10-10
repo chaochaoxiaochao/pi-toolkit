@@ -64,7 +64,7 @@ herdr_subagents({
 })
 ```
 
-`tasks` is always a non-empty array: one item is a single task and multiple items form a batch. Set `background: true` for either form to return a stable run ID immediately while the queue continues. The dispatcher starts batches FIFO, with one batch holding its active slot at a time; a failed foreground handoff releases that slot as described below. Each background run sends one compact parent notification only when the whole run completes, partially fails, fails, or blocks. Individual successful tasks do not wake the parent model.
+`tasks` is always a non-empty array: one item is a single task and multiple items form a batch. Set `background: true` for either form to return a stable run ID immediately while the queue continues. The dispatcher starts batches FIFO, with one batch holding its active slot at a time; a failed foreground handoff releases that slot as described below. A blocked run retains the slot so its queued siblings can continue after an answer. While that slot is blocked, a new foreground submission fails immediately with the blocking run ID instead of waiting indefinitely; a background submission remains queued. Cancelling a foreground tool call while it is queued removes it from the queue immediately. Each background run sends one compact parent notification only when the whole run completes, partially fails, fails, or blocks. Individual successful tasks do not wake the parent model.
 
 A foreground concurrent batch normally waits for the whole batch. If any task fails while siblings are still running, the call immediately returns the stable `runId` and that failure's details, then durably continues the same batch in the background without cancelling its siblings. The handed-off batch releases its dispatcher slot immediately, so a later submission can start while its surviving tasks are still running. The detached batch remains cancellable and is still joined during session shutdown. Its final aggregate is delivered exactly once through the same follow-up notification used by an explicit background run.
 
@@ -76,6 +76,8 @@ herdr_subagents_control({ action: "status", runId: "<run-id>" })
 
 The snapshot reports the aggregate run state and every task's state, including a blocked question when present. It checks durable run state before queued state, never returns unrelated runs, and does not wait or trigger a parent turn. Do not poll full `history` for progress.
 
+Run controls accept the complete run UUID, the saved run-directory name, or any unique UUID prefix. Results always return the canonical complete UUID.
+
 A child missing required information reports `needs-input` with an exact question. The run becomes blocked, keeps its Herdr tab, pane, partial report, and Pi session, and returns control to the parent. Answer through the control tool to continue the original session:
 
 ```text
@@ -83,6 +85,10 @@ herdr_subagents_control({ action: "respond", runId: "<run-id>", answer: "Use the
 ```
 
 Blocked is a normal control state, not a failed tool call. Only terminal failure, cancellation, or a partial aggregate is returned as a tool error.
+
+Blocking is limited to effectively serial runs (`effectiveConcurrency: 1`), where task order can depend on the answer. In a concurrent read-only run, tasks must be independent: a task that requests input is recorded as `failed` with `failureKind: "missing_input"` and `requiredInput`, while its independent siblings continue. This prevents a blocked concurrent task from holding the parent tool call behind unrelated long-running siblings.
+
+Only work owned by the current parent session's main dispatcher can remain blocked. Historical follow-ups that need more input settle as `missing_input` failures, and startup reconciliation cancels blocked work whose parent session disappeared; neither path creates an unowned blocked run.
 
 Cancel one active or queued run with `herdr_subagents_control({ action: "cancel", runId: "<run-id>" })`. Cancellation aborts its live child prompts, archives active or queued tasks as cancelled, closes its run tab, and leaves unrelated runs alone.
 

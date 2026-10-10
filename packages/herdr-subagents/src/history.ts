@@ -8,7 +8,8 @@ import { cleanupRunTab } from "./tab-cleanup.ts";
 import type { OwnerIdentity } from "./ownership.ts";
 import { ownerRecord } from "./ownership.ts";
 import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
-import { applyReport, applyTaskStatus, isActiveStatus, projectTaskActivity, readReport, readRunRecord, readTaskRecord, settleAttemptFailure, type PersistedDocument, type PersistedReport, type RunRecord, type RunStatus, type TaskActivity, type TaskRecord, type TaskStatus } from "./records.ts";
+import { applyReport, applyTaskStatus, isActiveStatus, normalizeNeedsInputReport, projectTaskActivity, readReport, readRunRecord, readTaskRecord, settleAttemptFailure, type PersistedDocument, type PersistedReport, type RunRecord, type RunStatus, type TaskActivity, type TaskRecord, type TaskStatus } from "./records.ts";
+import { attemptReportPath } from "./attempts.ts";
 import { continuationSystemPrompt } from "./protocol.ts";
 import { isAbortError } from "./errors.ts";
 import { findRunDirectory } from "./run-locator.ts";
@@ -88,10 +89,13 @@ export function historyText(history: HistoricalRun[]): string {
 }
 
 export async function cleanSubagentRun(cwd: string, runId: string): Promise<boolean> {
-	const run = (await listSubagentHistory(cwd)).find((candidate) => candidate.id === runId);
+	const runDirectory = await findRunDirectory(join(cwd, ".pi", "herdr-subagents", "runs"), runId);
+	if (!runDirectory) return false;
+	const canonicalRunId = (await readRunRecord(join(runDirectory, "run.json"))).id;
+	const run = (await listSubagentHistory(cwd)).find((candidate) => candidate.id === canonicalRunId);
 	if (!run) return false;
-	if (isActiveStatus(run.status)) throw new Error(`Subagent run '${runId}' is still active and cannot be cleaned.`);
-	if (run.cleanupPendingTabIds?.length) throw new Error(`Subagent run '${runId}' is still waiting to clean up Herdr tabs ${run.cleanupPendingTabIds.join(", ")}.`);
+	if (isActiveStatus(run.status)) throw new Error(`Subagent run '${canonicalRunId}' is still active and cannot be cleaned.`);
+	if (run.cleanupPendingTabIds?.length) throw new Error(`Subagent run '${canonicalRunId}' is still waiting to clean up Herdr tabs ${run.cleanupPendingTabIds.join(", ")}.`);
 	await rm(run.recordDirectory, { recursive: true, force: false });
 	return true;
 }
@@ -102,13 +106,14 @@ export interface ResumeHistoricalTaskResult { runId: string; label: string; stat
 export async function resumeHistoricalTask(cwd: string, runId: string, taskNumber: number, prompt: string, options: ResumeHistoricalTaskOptions = {}): Promise<ResumeHistoricalTaskResult> {
 	const runDirectory = await findRunDirectory(join(cwd, ".pi", "herdr-subagents", "runs"), runId);
 	if (!runDirectory) throw new Error(`Unknown Subagent run '${runId}'.`);
+	const canonicalRunId = (await readRunRecord(join(runDirectory, "run.json"))).id;
 	const lockDirectory = join(runDirectory, ".resume.lock");
 	try { await mkdir(lockDirectory); }
 	catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error(`Subagent run '${runId}' already has a historical resume in progress (lock: ${lockDirectory}).`);
 		throw error;
 	}
-	try { return await resumeHistoricalTaskLocked(cwd, runId, taskNumber, prompt, options); }
+	try { return await resumeHistoricalTaskLocked(cwd, canonicalRunId, taskNumber, prompt, options); }
 	finally { await rmdir(lockDirectory); }
 }
 
@@ -163,7 +168,11 @@ async function resumeHistoricalTaskLocked(cwd: string, runId: string, taskNumber
 			options.onUpdate?.({ runId, label: run.label, status: "running", summary: `${historical.name} is continuing.`, documents: [], tabId: tab.tabId, paneId: tab.paneId, sessionFile: historical.sessionFile, activity: runningActivity });
 			const prompted = await promptLiveAgent({ herdr, task: { ...task, id: historical.id, sessionFile: historical.sessionFile }, paneId: tab.paneId, prompt, systemPromptFile: followupPrompt, agentName, signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => options.onStalled?.(`${historical.name} appears stalled; it is still running.`) });
 			task.currentAttemptId = prompted.attemptId;
-			report = prompted.report;
+			report = normalizeNeedsInputReport(prompted.report, Number.POSITIVE_INFINITY);
+			if (report !== prompted.report) await Promise.all([
+				writeJsonAtomic(join(historical.recordDirectory, "report.json"), report),
+				writeJsonAtomic(attemptReportPath(historical.recordDirectory, prompted.attemptId), report),
+			]);
 			status = applyReport(task, report);
 		} catch (error) {
 			const settled = await settleAttemptFailure(task, join(historical.recordDirectory, "report.json"), {

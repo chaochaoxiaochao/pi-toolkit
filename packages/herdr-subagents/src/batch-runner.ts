@@ -10,11 +10,12 @@ import { writeJsonAtomic } from "./state.ts";
 import type { OwnerIdentity } from "./ownership.ts";
 import { ownerRecord } from "./ownership.ts";
 import { RunPaneAllocator } from "./run-pane-allocator.ts";
-import { applyReport, applyTaskStatus, projectTaskActivity, settleAttemptFailure, type PersistedReport, type RunRecord, type TaskActivity, type TaskRecord, type TaskStatus } from "./records.ts";
+import { applyReport, applyTaskStatus, normalizeNeedsInputReport, projectTaskActivity, settleAttemptFailure, type PersistedReport, type RunRecord, type TaskActivity, type TaskRecord, type TaskStatus } from "./records.ts";
 import { reportProtocolPrompt } from "./protocol.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
 import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
 import { isAbortError } from "./errors.ts";
+import { attemptReportPath } from "./attempts.ts";
 
 export interface BatchTask {
 	name: string;
@@ -51,6 +52,8 @@ export interface BatchTaskResult {
 	documents: HerdrSubagentsDocument[];
 	error?: string;
 	question?: string;
+	failureKind?: "missing_input";
+	requiredInput?: string;
 	paneId: string;
 	recordDirectory: string;
 	sessionFile: string;
@@ -68,6 +71,8 @@ export interface BatchResult {
 	documents: HerdrSubagentsDocument[];
 	recordDirectory: string;
 	tabId?: string;
+	question?: string;
+	allowedActions?: Array<"respond" | "cancel">;
 }
 
 type TaskContext = {
@@ -151,7 +156,8 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 				const prompted = await promptLiveAgent({ herdr, task: { ...task, id: context.taskId, sessionFile: context.sessionFile }, paneId, prompt: task.prompt, systemPromptFile: context.systemPromptFile, agentName, signal: options.signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => emit("running", `${task.name} appears stalled; it is still running.`) });
 				agentName = prompted.agentName;
 				context.taskRecord.currentAttemptId = prompted.attemptId;
-				report = prompted.report;
+				report = normalizeNeedsInputReport(prompted.report, effectiveConcurrency);
+				if (report !== prompted.report) await Promise.all([writeJsonAtomic(context.reportFile, report), writeJsonAtomic(attemptReportPath(context.taskDirectory, prompted.attemptId), report)]);
 				status = applyReport(context.taskRecord, report);
 			} catch (error) {
 				const settled = await settleAttemptFailure(context.taskRecord, context.reportFile, {
@@ -164,7 +170,7 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 			}
 			Object.assign(context.taskRecord, { paneId, agentName });
 			await writeJsonAtomic(context.taskFile, context.taskRecord);
-			results[index] = { index, name: task.name, status, summary: report.summary, documents: report.documents, ...(report.error ? { error: report.error } : {}), ...(report.question ? { question: report.question } : {}), paneId, recordDirectory: context.taskDirectory, sessionFile: context.sessionFile };
+			results[index] = { index, name: task.name, status, summary: report.summary, documents: report.documents, ...(report.error ? { error: report.error } : {}), ...(report.question ? { question: report.question } : {}), ...(report.failureKind ? { failureKind: report.failureKind } : {}), ...(report.requiredInput ? { requiredInput: report.requiredInput } : {}), paneId, recordDirectory: context.taskDirectory, sessionFile: context.sessionFile };
 			activity[index] = projectTaskActivity(context.taskRecord, index);
 			settled += 1;
 			emit("running", `${settled}/${tasks.length} tasks settled.`);
@@ -197,7 +203,7 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 		const summary = status === "cancelled" ? "Subagent batch cancelled." : blocked ? `${blocked.name} needs input: ${blocked.question}` : status === "partial" ? `${completed}/${tasks.length} tasks completed; ${failed} failed; ${cancelled} cancelled.` : failed ? `${completed}/${tasks.length} tasks completed; ${failed} failed.` : `${tasks.length}/${tasks.length} tasks completed.`;
 		applyRunStatus(runRecord, status, { question: blocked?.question });
 		await writeJsonAtomic(runFile, runRecord);
-		return { ok: status === "completed", status, runId, label: options.label, requestedConcurrency, effectiveConcurrency, tasks: settledResults, activity, summary, documents: settledResults.flatMap((result) => result.documents), recordDirectory: runDirectory, tabId };
+		return { ok: status === "completed", status, runId, label: options.label, requestedConcurrency, effectiveConcurrency, tasks: settledResults, activity, summary, documents: settledResults.flatMap((result) => result.documents), recordDirectory: runDirectory, tabId, ...(blocked?.question ? { question: blocked.question, allowedActions: ["respond", "cancel"] } : {}) };
 	} catch (error) {
 		applyRunStatus(runRecord, options.signal?.aborted ? "cancelled" : "failed", { error: error instanceof Error ? error.message : String(error) });
 		await writeJsonAtomic(runFile, runRecord);

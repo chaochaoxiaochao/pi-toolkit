@@ -2,7 +2,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { loadQueuedRuns } from "./queued-runs.ts";
 import { isSettledRunStatus, readReport, readRunRecord, readTaskRecord, type RunStatus, type TaskStatus } from "./records.ts";
-import { findRunDirectory } from "./run-locator.ts";
+import { findRunDirectory, resolveRunIdReference } from "./run-locator.ts";
 
 export interface RunStatusTask {
 	order: number;
@@ -12,6 +12,8 @@ export interface RunStatusTask {
 	summary?: string;
 	question?: string;
 	error?: string;
+	failureKind?: "missing_input";
+	requiredInput?: string;
 }
 
 export interface RunStatusSnapshot {
@@ -44,6 +46,8 @@ async function loadDurableStatus(cwd: string, runId: string): Promise<RunStatusS
 		const report = reportIsCurrent && existsSync(reportFile) ? await readReport(reportFile) : undefined;
 		const question = report?.question ?? task.question;
 		const error = report?.error ?? task.error;
+		const failureKind = report?.failureKind ?? task.failureKind;
+		const requiredInput = report?.requiredInput ?? task.requiredInput;
 		tasks.push({
 			order: task.order,
 			name: task.name ?? task.agent ?? `Task ${task.order}`,
@@ -52,6 +56,8 @@ async function loadDurableStatus(cwd: string, runId: string): Promise<RunStatusS
 			...(report?.summary ? { summary: report.summary } : {}),
 			...(question ? { question } : {}),
 			...(error ? { error } : {}),
+			...(failureKind ? { failureKind } : {}),
+			...(requiredInput ? { requiredInput } : {}),
 		});
 	}
 	return {
@@ -70,9 +76,14 @@ async function loadDurableStatus(cwd: string, runId: string): Promise<RunStatusS
 }
 
 export async function getSubagentRunStatus(cwd: string, runId: string): Promise<RunStatusSnapshot | undefined> {
+	const queuedRuns = await loadQueuedRuns(cwd);
 	const durable = await loadDurableStatus(cwd, runId);
-	if (durable) return durable;
-	const queued = (await loadQueuedRuns(cwd)).find((candidate) => candidate.runId === runId);
+	if (durable) {
+		resolveRunIdReference(runId, [durable.runId, ...queuedRuns.map((candidate) => candidate.runId)]);
+		return durable;
+	}
+	const queuedId = resolveRunIdReference(runId, queuedRuns.map((candidate) => candidate.runId));
+	const queued = queuedRuns.find((candidate) => candidate.runId === queuedId);
 	if (!queued) return undefined;
 	return {
 		runId: queued.runId,

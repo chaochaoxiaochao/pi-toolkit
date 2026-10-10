@@ -4,7 +4,7 @@ import type { HerdrAutomation } from "./herdr.ts";
 import { isProcessAlive, type OwnerIdentity } from "./ownership.ts";
 import { writeJsonAtomic } from "./state.ts";
 import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
-import { applyReport, applyTaskStatus, isActiveStatus, persistFailureReport, readReport, readRunRecord, readTaskRecord, type RunRecord, type TaskStatus } from "./records.ts";
+import { applyReport, applyTaskStatus, isActiveStatus, normalizeNeedsInputReport, persistFailureReport, readReport, readRunRecord, readTaskRecord, type RunRecord, type TaskStatus } from "./records.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
 import { attemptReportPath } from "./attempts.ts";
 
@@ -110,7 +110,6 @@ export async function reconcileSubagentRuns(cwd: string, herdr: HerdrAutomation,
 				continue;
 			}
 			if (isActiveStatus(task.status)) {
-				let recoveredCurrentReport = false;
 				const canonicalReportFile = join(tasksDirectory, taskEntry, "report.json");
 				let currentAttemptReport: string | undefined;
 				if (task.currentAttemptId) {
@@ -122,11 +121,12 @@ export async function reconcileSubagentRuns(cwd: string, herdr: HerdrAutomation,
 				const reportFile = task.currentAttemptId ? currentAttemptReport : canonicalReportFile;
 				if (reportFile && existsSync(reportFile) && (task.status === "running" || task.status === "starting")) {
 					try {
-						const report = await readReport(reportFile);
+						const submittedReport = await readReport(reportFile);
+						const report = normalizeNeedsInputReport(submittedReport, Number(run.effectiveConcurrency) || 1);
 						if (task.currentAttemptId && report.attemptId !== task.currentAttemptId) throw new Error(`Report attempt '${report.attemptId ?? "unknown"}' does not match current attempt '${task.currentAttemptId}'.`);
 						applyReport(task, report, report.reportedAt ?? new Date().toISOString());
-						recoveredCurrentReport = reportFile !== canonicalReportFile;
-						if (reportFile !== canonicalReportFile) await writeJsonAtomic(canonicalReportFile, report);
+						if (report !== submittedReport) await writeJsonAtomic(reportFile, report);
+						if (reportFile !== canonicalReportFile || report !== submittedReport) await writeJsonAtomic(canonicalReportFile, report);
 						result.settledTasks += 1;
 					} catch (error) {
 						const detail = error instanceof Error ? error.message : String(error);
@@ -137,7 +137,19 @@ export async function reconcileSubagentRuns(cwd: string, herdr: HerdrAutomation,
 						result.interruptedTasks += 1;
 					}
 				}
-				if (differentOwner && isActiveStatus(task.status) && !(recoveredCurrentReport && task.status === "blocked")) {
+				if (differentOwner && isActiveStatus(task.status)) {
+					if (task.status === "blocked") {
+						const cancelledReport = {
+							status: "failed",
+							summary: "Blocked task was cancelled because its parent Pi session is no longer active.",
+							documents: [],
+							error: "Owning parent Pi session is no longer active.",
+							...(task.currentAttemptId ? { attemptId: task.currentAttemptId } : {}),
+							reportedAt: new Date().toISOString(),
+						} as const;
+						await persistFailureReport(canonicalReportFile, cancelledReport, true);
+						if (currentAttemptReport) await writeJsonAtomic(currentAttemptReport, cancelledReport);
+					}
 					applyTaskStatus(task, "cancelled", { error: "Owning parent Pi session is no longer active." });
 					result.cancelledTasks += 1;
 					result.interruptedTasks += 1;

@@ -240,6 +240,81 @@ async function verifyForegroundFailureHandoff() {
 		await successPromise;
 
 		const backgroundGate = deferred<void>();
+		const queuedCancellationRoot = join(cwd, "queued-cancellation");
+		mkdirSync(queuedCancellationRoot, { recursive: true });
+		const activeGate = deferred<void>();
+		let queuedCancellationCalls = 0;
+		const queuedCancellation = harness(async (_params, _signal, _onUpdate, _ctx, dependencies) => {
+			queuedCancellationCalls += 1;
+			await activeGate.promise;
+			return { content: [{ type: "text", text: "done" }], details: { runId: dependencies.runId, label: "active", status: "completed", summary: "done", documents: [], tasks: [], activity: [], effectiveConcurrency: 1, requestedConcurrency: 1 } };
+		});
+		await startHarness(queuedCancellation, queuedCancellationRoot);
+		const activeBackground = await queuedCancellation.tool?.execute("active", { background: true, tasks: [{ name: "active", prompt: "wait" }] }, undefined, undefined, { cwd: queuedCancellationRoot, ui: queuedCancellation.ui });
+		await waitUntil(() => queuedCancellationCalls === 1, "active background run did not start");
+		const queuedCaller = new AbortController();
+		const queuedForeground = queuedCancellation.tool?.execute("queued", { tasks: [{ name: "queued", prompt: "later" }] }, queuedCaller.signal, undefined, { cwd: queuedCancellationRoot, ui: queuedCancellation.ui });
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		queuedCaller.abort(new Error("foreground tool call cancelled"));
+		const queuedCancellationError = await Promise.race([
+			queuedForeground.then(() => "resolved", (error: Error) => error.message),
+			new Promise<string>((_, reject) => setTimeout(() => reject(new Error("queued foreground call ignored cancellation")), 100)),
+		]);
+		if (queuedCancellationError !== "foreground tool call cancelled" || queuedCancellationCalls !== 1) throw new Error("extension did not remove a cancelled foreground run from the dispatcher queue");
+		const activeNotification = queuedCancellation.waitForMessage((message) => message.details?.runId === activeBackground.details.runId);
+		activeGate.resolve();
+		await activeNotification;
+
+		const blockedOwnerRoot = join(cwd, "blocked-owner");
+		mkdirSync(blockedOwnerRoot, { recursive: true });
+		let blockedOwnerCalls = 0;
+		let blockedOwnerRunId = "";
+		let blockedSuccessorStarted = false;
+		const becomeRetained = deferred<void>();
+		const blockedOwner = harness(async (params, _signal, _onUpdate, _ctx, dependencies) => {
+			if (params.action === "respond") {
+				return { content: [{ type: "text", text: "answered" }], details: { runId: blockedOwnerRunId, label: "blocked owner", status: "completed", summary: "answered", documents: [], tasks: [], activity: [], effectiveConcurrency: 1, requestedConcurrency: 1 } };
+			}
+			blockedOwnerCalls += 1;
+			if (blockedOwnerCalls > 1) {
+				blockedSuccessorStarted = true;
+				return { content: [{ type: "text", text: "successor done" }], details: { runId: dependencies.runId, label: "successor", status: "completed", summary: "done", documents: [], tasks: [], activity: [], effectiveConcurrency: 1, requestedConcurrency: 1 } };
+			}
+			blockedOwnerRunId = dependencies.runId;
+			if (blockedOwnerCalls === 1) await becomeRetained.promise;
+			return {
+				content: [{ type: "text", text: "waiting for input" }],
+				details: {
+					runId: dependencies.runId, label: "blocked owner", status: "blocked", summary: "waiting for input", question: "Continue?", documents: [],
+					tasks: [blockedTask], activity: [{ index: 1, name: blockedTask.name, status: "blocked" }], effectiveConcurrency: 1, requestedConcurrency: 1,
+				},
+			};
+		});
+		await startHarness(blockedOwner, blockedOwnerRoot);
+		const ownerPromise = blockedOwner.tool?.execute("blocked-owner", { tasks: [{ name: blockedTask.name, prompt: "block" }] }, undefined, undefined, { cwd: blockedOwnerRoot, ui: blockedOwner.ui });
+		await waitUntil(() => blockedOwnerCalls === 1, "blocked owner did not start");
+		const queuedBeforeBlocked = blockedOwner.tool?.execute("queued-before-blocked", { tasks: [{ name: "queued", prompt: "later" }] }, undefined, undefined, { cwd: blockedOwnerRoot, ui: blockedOwner.ui });
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		becomeRetained.resolve();
+		const ownerResult = await ownerPromise;
+		const retainedForeground = await Promise.race([
+			queuedBeforeBlocked,
+			new Promise((_, reject) => setTimeout(() => reject(new Error("foreground run queued before blocked transition remained stuck")), 100)),
+		]);
+		if (!retainedForeground.isError || retainedForeground.details?.blockingRunId !== ownerResult.details.runId || blockedOwnerCalls !== 1) throw new Error("blocked transition did not reject an already-queued foreground run");
+		const blockedForeground = await Promise.race([
+			blockedOwner.tool?.execute("blocked-successor", { tasks: [{ name: "successor", prompt: "later" }] }, undefined, undefined, { cwd: blockedOwnerRoot, ui: blockedOwner.ui }),
+			new Promise((_, reject) => setTimeout(() => reject(new Error("foreground run waited behind a blocked dispatcher owner")), 100)),
+		]);
+		if (!blockedForeground.isError || blockedForeground.details?.blockingRunId !== ownerResult.details.runId || !blockedForeground.content?.[0]?.text.includes(ownerResult.details.runId)) {
+			throw new Error("foreground run blocked by dispatcher omitted the blocking run ID");
+		}
+		const queuedBehindBlocked = await blockedOwner.tool?.execute("blocked-background", { background: true, tasks: [{ name: "background", prompt: "later" }] }, undefined, undefined, { cwd: blockedOwnerRoot, ui: blockedOwner.ui });
+		if (queuedBehindBlocked.details?.status !== "queued" || blockedOwnerCalls !== 1) throw new Error("background run did not remain queued behind the blocked dispatcher owner");
+		await blockedOwner.controlTool?.execute("respond-prefix", { action: "respond", runId: ownerResult.details.runId.slice(0, 8), answer: "continue" }, undefined, undefined, { cwd: blockedOwnerRoot, ui: blockedOwner.ui });
+		await waitUntil(() => blockedSuccessorStarted, "responding through a run ID prefix did not release the blocked dispatcher owner");
+		await blockedOwner.handlers.get("session_shutdown")?.({}, { cwd: blockedOwnerRoot, ui: blockedOwner.ui });
+
 		const explicitBackground = harness(async (_params, _signal, _onUpdate, _ctx, dependencies) => {
 			await backgroundGate.promise;
 			return { content: [{ type: "text", text: "background done" }], details: { runId: dependencies.runId, label: "background", status: "completed", summary: "done", documents: [], tasks: [], activity: [], effectiveConcurrency: 1, requestedConcurrency: 1 } };

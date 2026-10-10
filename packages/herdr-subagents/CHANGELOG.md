@@ -1,3 +1,9 @@
+## Unreleased
+
+- prevent foreground runs from hanging behind a blocked dispatcher owner, return the blocking run ID immediately, and remove cancelled foreground calls from the queue while preserving background queuing
+- limit interactive blocking to effectively serial runs; concurrent input requests become structured `missing_input` failures while independent siblings continue
+- accept full run UUIDs, saved run-directory names, and unique UUID prefixes in run controls
+
 ## 2026-10-10 - v0.4.6
 
 - reduce global prompt noise by keeping Subagent workflow guidance in tool descriptions
