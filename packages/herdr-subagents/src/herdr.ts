@@ -32,10 +32,13 @@ export interface SplitPaneRequest {
 	signal?: AbortSignal;
 }
 
+export type HerdrAgentState = "working" | "blocked" | "idle" | "done" | "unknown";
+
 export interface HerdrAutomation {
 	createTab(request: CreateTabRequest): Promise<{ tabId: string; paneId: string }>;
 	startAgent(request: StartAgentRequest): Promise<void>;
 	promptAgent(request: PromptAgentRequest): Promise<{ status?: string }>;
+	getAgentState(target: string, signal?: AbortSignal): Promise<HerdrAgentState>;
 	splitPane(request: SplitPaneRequest): Promise<{ paneId: string }>;
 	renamePane(paneId: string, label: string, signal?: AbortSignal): Promise<void>;
 	renameTab(tabId: string, label: string, signal?: AbortSignal): Promise<void>;
@@ -52,7 +55,7 @@ interface HerdrResponse {
 		tab?: { tab_id?: string; focused?: boolean };
 		root_pane?: { pane_id?: string };
 		pane?: { pane_id?: string };
-		agent?: { status?: string };
+		agent?: { status?: string; agent_status?: string };
 		process_info?: { foreground_processes?: Array<{ name?: string; argv?: string[] }> };
 	};
 }
@@ -154,6 +157,12 @@ export class CliHerdrAutomation implements HerdrAutomation {
 			"herdr agent prompt",
 		);
 		return { status: response.result?.agent?.status };
+	}
+
+	async getAgentState(target: string, signal?: AbortSignal): Promise<HerdrAgentState> {
+		const response = parseResponse(await runCommand(this.binary, ["agent", "get", target], signal), "herdr agent get");
+		const state = response.result?.agent?.agent_status ?? response.result?.agent?.status;
+		return state === "working" || state === "blocked" || state === "idle" || state === "done" ? state : "unknown";
 	}
 
 	async splitPane(request: SplitPaneRequest): Promise<{ paneId: string }> {

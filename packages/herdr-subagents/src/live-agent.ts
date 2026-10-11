@@ -2,9 +2,9 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { HerdrAutomation } from "./herdr.ts";
+import type { HerdrAgentState, HerdrAutomation } from "./herdr.ts";
 import type { HerdrSubagentsReport } from "./runner.ts";
-import { parseReport } from "./records.ts";
+import { applyTaskRuntime, parseReport, readTaskRecord, type TaskRecord, type TaskRuntimeState } from "./records.ts";
 import { attemptReportPath, attemptStatePath, createAttemptId, type AttemptState } from "./attempts.ts";
 import { writeJsonAtomic } from "./state.ts";
 
@@ -64,11 +64,13 @@ export async function promptLiveAgent(options: {
 	start?: boolean;
 	stalledWarningMs?: number;
 	onStalled?: () => void;
+	onRuntimeUpdate?: (task: TaskRecord) => void | Promise<void>;
+	attemptId?: string;
 }): Promise<{ report: HerdrSubagentsReport; agentName: string; attemptId: string }> {
 	const taskDirectory = dirname(options.task.sessionFile);
 	const reportFile = join(taskDirectory, "report.json");
 	const taskFile = join(taskDirectory, "task.json");
-	const attemptId = createAttemptId();
+	const attemptId = options.attemptId ?? createAttemptId();
 	const attemptReportFile = attemptReportPath(taskDirectory, attemptId);
 	const attemptStateFile = attemptStatePath(taskDirectory, attemptId);
 	await Promise.all([mkdir(dirname(attemptReportFile), { recursive: true, mode: 0o700 }), mkdir(dirname(attemptStateFile), { recursive: true, mode: 0o700 })]);
@@ -85,39 +87,102 @@ export async function promptLiveAgent(options: {
 			signal: options.signal,
 		});
 	}
-	const stalledTimer = options.stalledWarningMs ? setTimeout(() => options.onStalled?.(), options.stalledWarningMs) : undefined;
+	const persistRuntime = async (state: TaskRuntimeState, diagnostic?: string) => {
+		const task = await readTaskRecord(taskFile);
+		if (task.currentAttemptId !== attemptId || (task.status !== "running" && task.status !== "starting")) return;
+		if (task.runtimeState === state && task.runtimeDiagnostic === diagnostic) return;
+		applyTaskRuntime(task, state, diagnostic);
+		await writeJsonAtomic(taskFile, task);
+		await options.onRuntimeUpdate?.(task);
+	};
+	const readAttemptState = async (): Promise<AttemptState | undefined> => {
+		if (!existsSync(attemptStateFile)) return undefined;
+		try {
+			const value = JSON.parse(await readFile(attemptStateFile, "utf8")) as { attemptId?: unknown; state?: unknown };
+			if (value.attemptId === attemptId && (value.state === "working" || value.state === "settled")) return value.state;
+		} catch { /* a concurrent atomic replacement will be retried */ }
+		return undefined;
+	};
+	const wait = () => new Promise<void>((resolve, reject) => {
+		const onAbort = () => {
+			clearTimeout(timer);
+			if (existsSync(attemptReportFile)) resolve();
+			else reject(options.signal?.reason ?? new Error("Subagent attempt aborted."));
+		};
+		const timer = setTimeout(() => { options.signal?.removeEventListener("abort", onAbort); resolve(); }, 100);
+		if (options.signal?.aborted) onAbort();
+		else options.signal?.addEventListener("abort", onAbort, { once: true });
+	});
+	const promptController = new AbortController();
+	const abortPrompt = () => promptController.abort(options.signal?.reason ?? new Error("Subagent prompt wait stopped."));
+	if (options.signal?.aborted) abortPrompt();
+	else options.signal?.addEventListener("abort", abortPrompt, { once: true });
+	const promptOutcome = options.herdr.promptAgent({ target: agentName, prompt: options.prompt, signal: promptController.signal })
+		.then((result) => ({ result }), (error: unknown) => ({ error }));
+	let promptSettled = false;
+	let promptStatus: HerdrAgentState | undefined;
 	let promptError: unknown;
-	try { await options.herdr.promptAgent({ target: agentName, prompt: options.prompt, signal: options.signal }); }
-	catch (error) { promptError = error; }
-	finally { if (stalledTimer) clearTimeout(stalledTimer); }
-	while (!existsSync(attemptReportFile)) {
-		let state: AttemptState | undefined;
-		if (existsSync(attemptStateFile)) {
-			try {
-				const value = JSON.parse(await readFile(attemptStateFile, "utf8")) as { attemptId?: unknown; state?: unknown };
-				if (value.attemptId === attemptId && (value.state === "working" || value.state === "settled")) state = value.state;
-			} catch { /* a concurrent atomic replacement will be retried */ }
-		}
-		if (state === "working") {
-			try {
-				if (!(await options.herdr.isTaskRunning(options.paneId, options.signal))) {
-					if (promptError) throw promptError;
-					throw new Error("Child Pi stopped while its authoritative attempt state was still working and did not submit a subagent_report.");
+	const promptSettlementWork = promptOutcome.then(async (outcome) => {
+		promptSettled = true;
+		if ("error" in outcome) {
+			promptError = outcome.error;
+			const detail = outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
+			if (/agent_prompt_stalled|timed?\s*out|timeout/i.test(detail)) await persistRuntime("delivery_unknown", detail);
+			else if (/agent_blocked/i.test(detail)) await persistRuntime("waiting_interaction", "Herdr is waiting for an approval or interaction; no business input request has been reported.");
+		} else if (outcome.result.status === "working" || outcome.result.status === "blocked" || outcome.result.status === "idle" || outcome.result.status === "done") promptStatus = outcome.result.status;
+	});
+	const stalledTimer = options.stalledWarningMs ? setTimeout(() => options.onStalled?.(), options.stalledWarningMs) : undefined;
+	let terminalObservedAt: number | undefined;
+	let turnObserved = false;
+	try {
+		await persistRuntime("working");
+		while (!existsSync(attemptReportFile)) {
+			await Promise.resolve();
+			let agentState = promptStatus;
+			let observationDiagnostic: string | undefined;
+			try { agentState = await options.herdr.getAgentState(agentName, options.signal); }
+			catch (error) { observationDiagnostic = `Could not observe Herdr agent state: ${error instanceof Error ? error.message : String(error)}`; }
+			const attemptState = await readAttemptState();
+			if (agentState === "working" || agentState === "blocked" || attemptState === "working") turnObserved = true;
+			const promptDetail = promptError instanceof Error ? promptError.message : promptError === undefined ? "" : String(promptError);
+			if (agentState === "blocked" || /agent_blocked/i.test(promptDetail)) {
+				await persistRuntime("waiting_interaction", observationDiagnostic ?? "Herdr is waiting for an approval or interaction; no business input request has been reported.");
+				terminalObservedAt = undefined;
+			} else if (promptError && /agent_prompt_stalled|timed?\s*out|timeout/i.test(promptDetail)) {
+				await persistRuntime("delivery_unknown", observationDiagnostic ?? promptDetail);
+				let live = false;
+				try { live = await options.herdr.isTaskRunning(options.paneId, options.signal); } catch { live = true; }
+				if (attemptState !== "working" || !live) {
+					terminalObservedAt ??= Date.now();
+					if (Date.now() - terminalObservedAt >= 50) throw promptError;
 				}
-			} catch (error) {
-				if (error === promptError || (error instanceof Error && error.message.startsWith("Child Pi stopped while"))) throw error;
-				// A transient liveness query is not evidence that the child stopped.
+			} else if (promptError && promptSettled) {
+				terminalObservedAt ??= Date.now();
+				if (Date.now() - terminalObservedAt >= 50) throw promptError;
+			} else if ((promptSettled || turnObserved || attemptState === "settled") && (agentState === "idle" || agentState === "done" || attemptState === "settled")) {
+				if (attemptState === "working") {
+					let live = false;
+					try { live = await options.herdr.isTaskRunning(options.paneId, options.signal); } catch { live = true; }
+					if (!live) throw new Error("Child Pi stopped while its authoritative attempt state was still working and did not submit a subagent_report.");
+				}
+				terminalObservedAt ??= Date.now();
+				if (Date.now() - terminalObservedAt >= 50) throw new Error("Child Pi did not submit a subagent_report before settling.");
+			} else {
+				await persistRuntime("working", observationDiagnostic);
+				terminalObservedAt = undefined;
+				if (!observationDiagnostic && agentState === "unknown") {
+					let live = false;
+					try { live = await options.herdr.isTaskRunning(options.paneId, options.signal); } catch { live = true; }
+					if (!live) throw new Error("Child Pi stopped without submitting a subagent_report.");
+				}
 			}
-			await new Promise<void>((resolve, reject) => {
-				const onAbort = () => { clearTimeout(timer); reject(options.signal?.reason ?? new Error("Subagent attempt aborted.")); };
-				const timer = setTimeout(() => { options.signal?.removeEventListener("abort", onAbort); resolve(); }, 100);
-				if (options.signal?.aborted) onAbort();
-				else options.signal?.addEventListener("abort", onAbort, { once: true });
-			});
-			continue;
+			await wait();
 		}
-		if (promptError) throw promptError;
-		throw new Error(state === "settled" ? "Child Pi settled but did not submit a subagent_report." : "Child Pi stopped without an authoritative lifecycle state and did not submit a subagent_report.");
+	} finally {
+		if (stalledTimer) clearTimeout(stalledTimer);
+		promptController.abort(new Error("Authoritative subagent_report observed; stop waiting for prompt acknowledgement."));
+		await promptSettlementWork;
+		options.signal?.removeEventListener("abort", abortPrompt);
 	}
 	let value: unknown;
 	try { value = JSON.parse(await readFile(attemptReportFile, "utf8")); }

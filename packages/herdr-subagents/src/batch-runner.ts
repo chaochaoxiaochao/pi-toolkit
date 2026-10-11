@@ -153,7 +153,11 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 				await writeJsonAtomic(context.taskFile, context.taskRecord);
 				activity[index] = projectTaskActivity(context.taskRecord, index);
 				emit("running", `${settled}/${tasks.length} tasks settled.`);
-				const prompted = await promptLiveAgent({ herdr, task: { ...task, id: context.taskId, sessionFile: context.sessionFile }, paneId, prompt: task.prompt, systemPromptFile: context.systemPromptFile, agentName, signal: options.signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => emit("running", `${task.name} appears stalled; it is still running.`) });
+				const prompted = await promptLiveAgent({ herdr, task: { ...task, id: context.taskId, sessionFile: context.sessionFile }, paneId, prompt: task.prompt, systemPromptFile: context.systemPromptFile, agentName, signal: options.signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => emit("running", `${task.name} appears stalled; it is still running.`), onRuntimeUpdate: (updated) => {
+					Object.assign(context.taskRecord, updated);
+					activity[index] = projectTaskActivity(context.taskRecord, index);
+					emit("running", `${settled}/${tasks.length} tasks settled.`);
+				} });
 				agentName = prompted.agentName;
 				context.taskRecord.currentAttemptId = prompted.attemptId;
 				report = normalizeNeedsInputReport(prompted.report, effectiveConcurrency);

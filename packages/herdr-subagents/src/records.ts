@@ -4,6 +4,7 @@ import { writeJsonAtomic } from "./state.ts";
 
 export type TaskStatus = "starting" | "queued" | "running" | "blocked" | "completed" | "failed" | "cancelled";
 export type RunStatus = TaskStatus | "partial";
+export type TaskRuntimeState = "working" | "waiting_interaction" | "retrying" | "delivery_unknown";
 export const ACTIVE_STATUSES = new Set<RunStatus>(["starting", "queued", "running", "blocked"]);
 const SETTLED_RUN_STATUSES = new Set<RunStatus>(["completed", "partial", "failed", "cancelled"]);
 
@@ -25,6 +26,25 @@ export interface PersistedReport {
 	failureKind?: "missing_input";
 	requiredInput?: string;
 	reportedAt?: string;
+}
+
+export interface ResumeMember {
+	paneId: string;
+	generation: number;
+	agentName: string;
+	attemptId: string;
+	ownerSessionId?: string;
+	ownerProcessId?: number;
+	ownerToken: string;
+	phase: "allocating" | "running" | "blocked";
+}
+
+export interface ResumeState {
+	generation: number;
+	phase: "active" | "closing";
+	tabId: string;
+	paneIds: string[];
+	active: Record<string, ResumeMember>;
 }
 
 export interface RunRecord {
@@ -51,6 +71,7 @@ export interface RunRecord {
 	requiredInput?: string;
 	cleanupError?: string;
 	cleanupPendingTabIds?: string[];
+	resume?: ResumeState;
 }
 
 export interface TaskRecord {
@@ -80,6 +101,9 @@ export interface TaskRecord {
 	attempt?: number;
 	currentTurnFile?: string;
 	currentAttemptId?: string;
+	runtimeState?: TaskRuntimeState;
+	runtimeDiagnostic?: string;
+	runtimeUpdatedAt?: string;
 	question?: string;
 	error?: string;
 }
@@ -97,6 +121,9 @@ export interface TaskActivity {
 	elapsedMs?: number;
 	completedAt?: string;
 	updatedAt?: string;
+	runtimeState?: TaskRuntimeState;
+	runtimeDiagnostic?: string;
+	runtimeUpdatedAt?: string;
 }
 
 export function projectTaskActivity(task: TaskRecord, index = task.order - 1): TaskActivity {
@@ -113,6 +140,9 @@ export function projectTaskActivity(task: TaskRecord, index = task.order - 1): T
 		...(typeof task.elapsedMs === "number" ? { elapsedMs: task.elapsedMs } : {}),
 		...(task.completedAt ? { completedAt: task.completedAt } : {}),
 		...(task.updatedAt ? { updatedAt: task.updatedAt } : {}),
+		...(task.runtimeState ? { runtimeState: task.runtimeState } : {}),
+		...(task.runtimeDiagnostic ? { runtimeDiagnostic: task.runtimeDiagnostic } : {}),
+		...(task.runtimeUpdatedAt ? { runtimeUpdatedAt: task.runtimeUpdatedAt } : {}),
 	};
 }
 
@@ -270,6 +300,7 @@ export async function settleAttemptFailure<T extends TaskRecord | TurnRecord>(
 	const status = options.cancelled ? "cancelled" : "failed";
 	const at = options.at ?? new Date().toISOString();
 	applyTaskStatus(record, status, { error: options.error, at });
+	if ("order" in record) clearTaskRuntime(record);
 	const report: PersistedReport = {
 		status: "failed",
 		summary: options.summary ?? `${options.name} ${options.cancelled ? "was cancelled" : "failed"}.`,
@@ -281,9 +312,23 @@ export async function settleAttemptFailure<T extends TaskRecord | TurnRecord>(
 	return { status, report };
 }
 
+export function clearTaskRuntime(record: TaskRecord): void {
+	delete record.runtimeState;
+	delete record.runtimeDiagnostic;
+	delete record.runtimeUpdatedAt;
+}
+
+export function applyTaskRuntime(record: TaskRecord, state: TaskRuntimeState, diagnostic?: string, at = new Date().toISOString()): void {
+	record.runtimeState = state;
+	record.runtimeUpdatedAt = at;
+	if (diagnostic) record.runtimeDiagnostic = diagnostic;
+	else delete record.runtimeDiagnostic;
+}
+
 export function applyReport(record: TaskRecord | TurnRecord, report: PersistedReport, completedAt = new Date().toISOString()): "blocked" | "completed" | "failed" {
 	const status = report.status === "needs-input" ? "blocked" : report.status;
 	applyTaskStatus(record, status, { at: completedAt, question: report.question, error: report.error });
+	if ("order" in record) clearTaskRuntime(record);
 	if ("order" in record) {
 		if (report.failureKind) record.failureKind = report.failureKind;
 		else delete record.failureKind;

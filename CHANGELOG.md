@@ -1,3 +1,7 @@
+## Unreleased
+
+- bundle Herdr Subagents runtime telemetry and concurrent historical-resume lifecycle fixes without conflating Herdr UI blocking with business `needs-input`
+
 ## 2026-10-10 - v0.10.21
 
 - bundle herdr-subagents v0.4.7: fix blocked-run scheduling and limit interactive blocking to serial runs

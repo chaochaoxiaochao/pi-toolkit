@@ -1,3 +1,9 @@
+## Unreleased
+
+- add durable Herdr runtime telemetry without treating UI `blocked` as business blocked; preserve late reports after delivery-unknown prompt timeouts and fail only explicit terminal paths without a valid report
+- allow different historical tasks in one run to resume concurrently in a shared tab while fencing task writers, aggregate state, and final cleanup
+- reserve `retrying` display support without fabricating retries from ambiguous Pi lifecycle events
+
 ## 2026-10-10 - v0.4.7
 
 - fix blocked-run scheduling and limit interactive blocking to serial runs

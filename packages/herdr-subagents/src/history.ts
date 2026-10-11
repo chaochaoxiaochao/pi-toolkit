@@ -1,18 +1,11 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { appendFile, mkdir, readFile, rm, rmdir } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
-import { CliHerdrAutomation, type HerdrAutomation } from "./herdr.ts";
-import { childEnvironment, liveAgentName, promptLiveAgent } from "./live-agent.ts";
-import { writeJsonAtomic, writeTextAtomic } from "./state.ts";
-import { cleanupRunTab } from "./tab-cleanup.ts";
+import type { HerdrAutomation } from "./herdr.ts";
 import type { OwnerIdentity } from "./ownership.ts";
-import { ownerRecord } from "./ownership.ts";
-import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
-import { applyReport, applyTaskStatus, isActiveStatus, normalizeNeedsInputReport, projectTaskActivity, readReport, readRunRecord, readTaskRecord, settleAttemptFailure, type PersistedDocument, type PersistedReport, type RunRecord, type RunStatus, type TaskActivity, type TaskRecord, type TaskStatus } from "./records.ts";
-import { attemptReportPath } from "./attempts.ts";
-import { continuationSystemPrompt } from "./protocol.ts";
-import { isAbortError } from "./errors.ts";
+import { isActiveStatus, readReport, readRunRecord, readTaskRecord, type PersistedDocument, type RunStatus, type TaskActivity, type TaskRecord, type TaskStatus } from "./records.ts";
 import { findRunDirectory } from "./run-locator.ts";
+import { resumeHistoricalTaskConcurrent } from "./historical-resume.ts";
 
 export interface HistoricalTask { order: number; id: string; name: string; agent: string; status: TaskStatus; summary?: string; question?: string; documents: PersistedDocument[]; recordDirectory: string; sessionFile: string; model?: string; thinking?: string; tools?: string[]; skills: string[]; access?: string; }
 export interface HistoricalRun { id: string; label: string; status: RunStatus; startedAt: string; completedAt?: string; effectiveConcurrency?: number; cleanupPendingTabIds?: string[]; tasks: HistoricalTask[]; recordDirectory: string; }
@@ -104,124 +97,5 @@ export interface ResumeHistoricalTaskOptions { herdr?: HerdrAutomation; signal?:
 export interface ResumeHistoricalTaskResult { runId: string; label: string; status: TaskStatus; summary: string; documents: PersistedDocument[]; tabId: string; paneId: string; sessionFile: string; activity: TaskActivity[]; }
 
 export async function resumeHistoricalTask(cwd: string, runId: string, taskNumber: number, prompt: string, options: ResumeHistoricalTaskOptions = {}): Promise<ResumeHistoricalTaskResult> {
-	const runDirectory = await findRunDirectory(join(cwd, ".pi", "herdr-subagents", "runs"), runId);
-	if (!runDirectory) throw new Error(`Unknown Subagent run '${runId}'.`);
-	const canonicalRunId = (await readRunRecord(join(runDirectory, "run.json"))).id;
-	const lockDirectory = join(runDirectory, ".resume.lock");
-	try { await mkdir(lockDirectory); }
-	catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error(`Subagent run '${runId}' already has a historical resume in progress (lock: ${lockDirectory}).`);
-		throw error;
-	}
-	try { return await resumeHistoricalTaskLocked(cwd, canonicalRunId, taskNumber, prompt, options); }
-	finally { await rmdir(lockDirectory); }
-}
-
-async function resumeHistoricalTaskLocked(cwd: string, runId: string, taskNumber: number, prompt: string, options: ResumeHistoricalTaskOptions): Promise<ResumeHistoricalTaskResult> {
-	const herdr = options.herdr ?? new CliHerdrAutomation();
-	const { signal, onCleanupError } = options;
-	const run = (await listSubagentHistory(cwd)).find((candidate) => candidate.id === runId);
-	const historical = run?.tasks.find((task) => task.order === taskNumber);
-	if (!run || !historical) throw new Error(`Unknown historical task ${runId}#${taskNumber}.`);
-	if (isActiveStatus(run.status)) throw new Error(`Subagent run '${runId}' is still active. Use action 'respond' for blocked work or wait for it to settle before resuming history.`);
-	if (run.cleanupPendingTabIds?.length) throw new Error(`Subagent run '${runId}' is still waiting to clean up Herdr tabs ${run.cleanupPendingTabIds.join(", ")}.`);
-	if (!existsSync(historical.sessionFile)) throw new Error(`Historical task ${runId}#${taskNumber} has no saved Pi session.`);
-	const taskFile = join(historical.recordDirectory, "task.json");
-	const task = await readTaskRecord(taskFile);
-	const attempt = Number(task.attempt ?? 1) + 1;
-	const turnsDirectory = join(historical.recordDirectory, "turns");
-	await mkdir(turnsDirectory, { recursive: true, mode: 0o700 });
-	const initialTurnFile = join(turnsDirectory, "01.json");
-	if (!existsSync(initialTurnFile)) {
-		const initialReportFile = join(historical.recordDirectory, "report.json");
-		let initialReport;
-		try { initialReport = await readReport(initialReportFile); }
-		catch (error) { initialReport = { status: "failed" as const, summary: `Previous structured report was unavailable: ${error instanceof Error ? error.message : String(error)}`, documents: [] }; }
-		await writeJsonAtomic(initialTurnFile, { attempt: 1, prompt: task.prompt, status: task.status, summary: initialReport.summary, question: initialReport.question, error: initialReport.error, documents: initialReport.documents ?? [], sessionFile: historical.sessionFile, startedAt: task.startedAt, completedAt: task.completedAt });
-	}
-	const turnFile = join(turnsDirectory, `${String(attempt).padStart(2, "0")}.json`);
-	const followupPrompt = join(historical.recordDirectory, "followup-system-prompt.md");
-	await writeTextAtomic(followupPrompt, `${continuationSystemPrompt(task.systemPrompt, "Continue the requested historical work.", "followup")}\n`);
-	let tab: { tabId: string; paneId: string } | undefined;
-	let failedAttempt: { status: "cancelled" | "failed"; report: PersistedReport; error: unknown } | undefined;
-	const agentName = liveAgentName(historical.id, attempt);
-	try {
-		let report: PersistedReport;
-		let status: "blocked" | "completed" | "failed";
-		try {
-			const env = childEnvironment(historical.recordDirectory);
-			tab = await herdr.createTab({ workspaceId: process.env.HERDR_WORKSPACE_ID ?? "", cwd, label: `SA · ${run.label}`, env, focus: false, signal: options.signal });
-			const paneLabel = `${String(historical.order).padStart(2, "0")} · ${historical.name}`;
-			await herdr.renamePane(tab.paneId, paneLabel, options.signal);
-			applyTaskStatus(task, "running");
-			Object.assign(task, { attempt, currentTurnFile: turnFile, tabId: tab.tabId, paneId: tab.paneId, paneLabel, agentName });
-			const activeRunFile = join(run.recordDirectory, "run.json");
-			const activeRunRecord = await readRunRecord(activeRunFile);
-			applyRunStatus(activeRunRecord, "running");
-			Object.assign(activeRunRecord, { ...ownerRecord(options.owner), tabId: tab.tabId, paneIds: [...new Set([...(activeRunRecord.paneIds ?? []), tab.paneId])] });
-			await Promise.all([
-				writeJsonAtomic(taskFile, task),
-				writeJsonAtomic(turnFile, { attempt, prompt, status: "running", sessionFile: historical.sessionFile, tabId: tab.tabId, paneId: tab.paneId, agentName, startedAt: new Date().toISOString() }),
-				writeJsonAtomic(activeRunFile, activeRunRecord),
-			]);
-			const runningActivity = await Promise.all(run.tasks.map(async (entry, index) => projectTaskActivity(await readTaskRecord(join(entry.recordDirectory, "task.json")), index)));
-			options.onUpdate?.({ runId, label: run.label, status: "running", summary: `${historical.name} is continuing.`, documents: [], tabId: tab.tabId, paneId: tab.paneId, sessionFile: historical.sessionFile, activity: runningActivity });
-			const prompted = await promptLiveAgent({ herdr, task: { ...task, id: historical.id, sessionFile: historical.sessionFile }, paneId: tab.paneId, prompt, systemPromptFile: followupPrompt, agentName, signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => options.onStalled?.(`${historical.name} appears stalled; it is still running.`) });
-			task.currentAttemptId = prompted.attemptId;
-			report = normalizeNeedsInputReport(prompted.report, Number.POSITIVE_INFINITY);
-			if (report !== prompted.report) await Promise.all([
-				writeJsonAtomic(join(historical.recordDirectory, "report.json"), report),
-				writeJsonAtomic(attemptReportPath(historical.recordDirectory, prompted.attemptId), report),
-			]);
-			status = applyReport(task, report);
-		} catch (error) {
-			const settled = await settleAttemptFailure(task, join(historical.recordDirectory, "report.json"), {
-				cancelled: isAbortError(error, signal),
-				error: error instanceof Error ? error.message : String(error),
-				name: `${historical.name} follow-up`,
-				replaceReport: true,
-			});
-			failedAttempt = { ...settled, error };
-			throw error;
-		}
-		await Promise.all([
-			writeJsonAtomic(taskFile, task),
-			writeJsonAtomic(turnFile, { attempt, prompt, status, summary: report.summary, documents: report.documents ?? [], sessionFile: historical.sessionFile, tabId: tab.tabId, paneId: tab.paneId, agentName, completedAt: new Date().toISOString(), ...(report.question ? { question: report.question } : {}), ...(report.error ? { error: report.error } : {}) }),
-		]);
-		const runRecord = await readRunRecord(join(run.recordDirectory, "run.json"));
-		const aggregateStatus = aggregateTaskStatus((await listSubagentHistory(cwd)).find((candidate) => candidate.id === runId)?.tasks.map((entry) => entry.status) ?? [status]);
-		applyRunStatus(runRecord, aggregateStatus, { question: report.question });
-		Object.assign(runRecord, { ...ownerRecord(options.owner), tabId: tab.tabId });
-		await writeJsonAtomic(join(run.recordDirectory, "run.json"), runRecord);
-		if (status !== "blocked") {
-			await cleanupRunTab({ herdr, tabId: tab.tabId, runFile: join(run.recordDirectory, "run.json"), runRecord, signal, onError: onCleanupError });
-		}
-		const activity = await Promise.all(run.tasks.map(async (entry, index) => projectTaskActivity(await readTaskRecord(join(entry.recordDirectory, "task.json")), index)));
-		return { runId, label: run.label, status, summary: report.summary, documents: report.documents ?? [], tabId: tab.tabId, paneId: tab.paneId, sessionFile: historical.sessionFile, activity };
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		const completedAt = new Date().toISOString();
-		const settled = failedAttempt ?? await settleAttemptFailure(task, join(historical.recordDirectory, "report.json"), {
-			cancelled: isAbortError(error, signal),
-			error: message,
-			name: `${historical.name} follow-up`,
-			at: completedAt,
-			replaceReport: true,
-		});
-		const { status, report } = settled;
-		task.attempt = attempt;
-		const runRecord = await readRunRecord(join(run.recordDirectory, "run.json"));
-		const aggregateStatus = status === "cancelled" ? "cancelled" : aggregateTaskStatus(run.tasks.map((entry) => entry.id === historical.id ? status : entry.status));
-		applyRunStatus(runRecord, aggregateStatus, { error: message });
-		Object.assign(runRecord, { ...ownerRecord(options.owner), ...(tab ? { tabId: tab.tabId } : {}) });
-		await Promise.all([
-			writeJsonAtomic(taskFile, task),
-			writeJsonAtomic(turnFile, { attempt, prompt, status, summary: report.summary, documents: report.documents, error: message, sessionFile: historical.sessionFile, ...(tab ? { tabId: tab.tabId, paneId: tab.paneId } : {}), completedAt }),
-			writeJsonAtomic(join(run.recordDirectory, "run.json"), runRecord),
-		]);
-		const activity = await Promise.all(run.tasks.map(async (entry, index) => projectTaskActivity(await readTaskRecord(join(entry.recordDirectory, "task.json")), index)));
-		options.onUpdate?.({ runId, label: run.label, status, summary: report.summary, documents: report.documents, tabId: tab?.tabId ?? "", paneId: tab?.paneId ?? "", sessionFile: historical.sessionFile, activity });
-		if (tab) await cleanupRunTab({ herdr, tabId: tab.tabId, runFile: join(run.recordDirectory, "run.json"), runRecord, signal, onError: onCleanupError });
-		throw error;
-	}
+	return resumeHistoricalTaskConcurrent(cwd, runId, taskNumber, prompt, options);
 }

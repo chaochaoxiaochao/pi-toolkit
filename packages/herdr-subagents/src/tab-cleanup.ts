@@ -1,6 +1,6 @@
 import type { HerdrAutomation } from "./herdr.ts";
-import { readRunRecord, type RunRecord } from "./records.ts";
-import { writeJsonAtomic } from "./state.ts";
+import { type RunRecord } from "./records.ts";
+import { withRunStateLock } from "./run-state.ts";
 
 function isMissingTabError(error: unknown): boolean {
 	const detail = error instanceof Error ? `${error.message}\n${(error as { stderr?: unknown }).stderr ?? ""}` : String(error);
@@ -18,14 +18,15 @@ export async function cleanupRunTab(options: {
 	errorPrefix?: string;
 }): Promise<{ deferred: boolean }> {
 	const mergeLatest = async (update: (run: RunRecord) => void | Promise<void>, requirePending = false, clearPending = true) => {
-		const latest = await readRunRecord(options.runFile);
-		if (requirePending && !latest.cleanupPendingTabIds?.includes(options.tabId)) return;
-		if (clearPending) {
-			latest.cleanupPendingTabIds = latest.cleanupPendingTabIds?.filter((tabId) => tabId !== options.tabId);
-			if (!latest.cleanupPendingTabIds?.length) delete latest.cleanupPendingTabIds;
-		}
-		await update(latest);
-		await writeJsonAtomic(options.runFile, latest);
+		const latest = await withRunStateLock(options.runFile, options.signal, async (run) => {
+			if (requirePending && !run.cleanupPendingTabIds?.includes(options.tabId)) return run;
+			if (clearPending) {
+				run.cleanupPendingTabIds = run.cleanupPendingTabIds?.filter((tabId) => tabId !== options.tabId);
+				if (!run.cleanupPendingTabIds?.length) delete run.cleanupPendingTabIds;
+			}
+			await update(run);
+			return run;
+		});
 		const mutableRecord = options.runRecord as unknown as Record<string, unknown>;
 		for (const key of Object.keys(mutableRecord)) if (!(key in latest)) delete mutableRecord[key];
 		Object.assign(options.runRecord, latest);
@@ -51,9 +52,10 @@ export async function cleanupRunTab(options: {
 			return { deferred: false };
 		}
 		if (await options.herdr.isTabFocused(options.tabId, options.signal)) {
-			const latest = await readRunRecord(options.runFile);
-			latest.cleanupPendingTabIds = [...new Set([...(latest.cleanupPendingTabIds ?? []), options.tabId])];
-			await writeJsonAtomic(options.runFile, latest);
+			const latest = await withRunStateLock(options.runFile, options.signal, (run) => {
+				run.cleanupPendingTabIds = [...new Set([...(run.cleanupPendingTabIds ?? []), options.tabId])];
+				return run;
+			});
 			Object.assign(options.runRecord, latest);
 			void options.herdr.waitForTabUnfocused(options.tabId, options.signal)
 				.then(() => options.herdr.closeTab(options.tabId, options.signal))

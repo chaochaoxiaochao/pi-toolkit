@@ -184,7 +184,10 @@ export async function runHerdrSubagents(prompt: string, options: HerdrSubagentsO
 		await writeJson(taskFile, taskRecord);
 		update("starting", "Starting child Pi in Herdr...");
 		update("running", "Child Pi is working...");
-		const prompted = await promptLiveAgent({ herdr, task: { ...taskRecord, id: taskId, sessionFile }, paneId, prompt, systemPromptFile, agentName: name, signal: options.signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => options.onStalled?.(`${label} appears stalled; it is still running.`) });
+		const prompted = await promptLiveAgent({ herdr, task: { ...taskRecord, id: taskId, sessionFile }, paneId, prompt, systemPromptFile, agentName: name, signal: options.signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => options.onStalled?.(`${label} appears stalled; it is still running.`), onRuntimeUpdate: (updated) => {
+			Object.assign(taskRecord, updated);
+			update("running", `${label} runtime: ${updated.runtimeState}.`);
+		} });
 		taskRecord.currentAttemptId = prompted.attemptId;
 		const report = prompted.report;
 		attempt = { status: applyReport(taskRecord, report), report };

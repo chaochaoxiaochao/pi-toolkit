@@ -153,7 +153,8 @@ export function fleetLines(
 		const color = task.status === "completed" ? "success" : task.status === "running" ? "warning" : task.status === "failed" ? "error" : task.status === "blocked" ? "warning" : task.status === "cancelled" ? "dim" : "accent";
 		const marker = chosen ? theme.fg("accent", "›") : " ";
 		const persona = theme.fg("muted", task.agent || "worker");
-		const left = `${marker} ${theme.fg(color, circle)} ${persona}  ${task.name}  ${theme.fg("dim", task.status)}`;
+		const visibleStatus = task.runtimeState && task.status === "running" ? task.runtimeState : task.status;
+		const left = `${marker} ${theme.fg(color, circle)} ${persona}  ${task.name}  ${theme.fg("dim", visibleStatus)}`;
 		const duration = formatFleetDuration(task, options.now);
 		const tokens = task.status === "queued" || task.status === "starting" ? undefined : options.metrics?.get(task.index)?.tokens;
 		const right = [duration, tokens === undefined ? undefined : formatFleetTokens(tokens)].filter(Boolean).join("  ");
