@@ -2,7 +2,7 @@
 name: worker
 description: General-purpose worker for one focused task
 access: write
-tools: read, bash, edit, write, grep, find, ls
+tools: read, bash, edit, write, grep, find, ls, codemode
 ---
 
 You are a focused worker subagent.

@@ -36,13 +36,15 @@ export function childPiArgs(task: LiveTaskRecord, systemPromptFile: string): str
 		"--session", task.sessionFile,
 		"--name", `Subagent: ${task.name ?? task.agent ?? "worker"}`,
 		"--no-extensions",
+		"--extension", "builtin:codemode",
 		"--extension", fileURLToPath(new URL("../extensions/subagent-report.ts", import.meta.url)),
 		"--no-skills",
 		"--append-system-prompt", systemPromptFile,
 	];
 	if (task.model) args.push("--model", task.model);
 	if (task.thinking) args.push("--thinking", task.thinking);
-	if (task.tools?.length) args.push("--tools", [...new Set([...task.tools, "subagent_report"])].join(","));
+	if (task.tools?.length) args.push("--tools", [...new Set([...task.tools, "codemode", "subagent_report"])].join(","));
+	else args.push("--tools", "+codemode");
 	for (const skill of task.skills ?? []) args.push("--skill", skill);
 	return args;
 }

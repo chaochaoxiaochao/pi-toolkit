@@ -24,6 +24,7 @@ import { RunPaneAllocator } from "../src/run-pane-allocator.ts";
 import { aggregateTaskStatus } from "../src/run-status.ts";
 import { isAbortError } from "../src/errors.ts";
 import { acquireDirectoryLock, withRunStateLock } from "../src/run-state.ts";
+import { childPiArgs } from "../src/live-agent.ts";
 import registerSubagentReport from "../extensions/subagent-report.ts";
 
 /** Drives one task through the batch runner and projects its single result like a task-scoped run. */
@@ -463,7 +464,7 @@ try {
 	check("named unfocused tab in parent workspace", createRequest.workspaceId === "w1" && createRequest.cwd === root && createRequest.label === "SA · auth-review" && createRequest.focus === false);
 	check("ordinary execution never steals pane focus", !herdr.calls.some(([name]) => name === "focusPane"));
 	check("child environment points at durable task and parent pane", createRequest.env.PI_HERDR_SUBAGENTS_CHILD === "1" && createRequest.env.PI_HERDR_SUBAGENTS_TASK_DIR.includes(join(".pi", "herdr-subagents", "runs")) && createRequest.env.PI_HERDR_SUBAGENTS_PARENT_PANE_ID === "w1:p-parent");
-	check("persistent isolated child Pi", startRequest.kind === "pi" && startRequest.paneId === "w1:p2" && startRequest.args.includes("--session") && startRequest.args.includes("--no-extensions") && startRequest.args.includes("--extension") && startRequest.args.includes("--no-skills") && startRequest.args.includes("--model") && startRequest.args.includes("fake/model") && startRequest.args.includes("--tools") && startRequest.args.includes("read,grep,subagent_report"));
+	check("persistent isolated child Pi", startRequest.kind === "pi" && startRequest.paneId === "w1:p2" && startRequest.args.includes("--session") && startRequest.args.includes("--no-extensions") && startRequest.args.includes("builtin:codemode") && startRequest.args.includes("--extension") && startRequest.args.includes("--no-skills") && startRequest.args.includes("--model") && startRequest.args.includes("fake/model") && startRequest.args.includes("--tools") && startRequest.args.includes("read,grep,codemode,subagent_report"));
 	const promptRequest = herdr.calls.find(([name]) => name === "promptAgent")[1];
 	check("prompt submitted through Herdr", promptRequest.prompt === "Review authentication" && promptRequest.target === startRequest.name);
 
@@ -570,6 +571,10 @@ try {
 
 	const definition = parseAgentMarkdown(`---\nname: reviewer\ndescription: Review code\nmodel: fake/model\ntools: read, grep\n---\nReview carefully.`, "reviewer.md");
 	check("persona frontmatter parsing", definition.name === "reviewer" && definition.model === "fake/model" && definition.tools?.join(",") === "read,grep" && definition.systemPrompt === "Review carefully.");
+	const inheritedToolArgs = childPiArgs({ id: "inherited", sessionFile: "/tmp/inherited.jsonl" }, "/tmp/system.md");
+	check("child Pi enables codemode when a persona inherits default tools", inheritedToolArgs.includes("builtin:codemode") && inheritedToolArgs[inheritedToolArgs.indexOf("--tools") + 1] === "+codemode");
+	const explicitToolArgs = childPiArgs({ id: "explicit", sessionFile: "/tmp/explicit.jsonl", tools: ["read"] }, "/tmp/system.md");
+	check("child Pi enables codemode with an explicit tool allowlist", explicitToolArgs.includes("builtin:codemode") && explicitToolArgs.includes("read,codemode,subagent_report"));
 	const agentsDir = join(root, "agents");
 	await import("node:fs/promises").then(({ mkdir }) => mkdir(agentsDir));
 	writeFileSync(join(agentsDir, "worker.md"), `---\nname: worker\ndescription: Worker\n---\nDo work.`);
@@ -578,7 +583,7 @@ try {
 	check("persona discovery and diagnostics", discovery.agents.length === 1 && discovery.agents[0].name === "worker" && discovery.diagnostics.length === 1);
 	const packageDiscovery = discoverPackageAgents(join(process.cwd(), "agents"));
 	const analystPersona = packageDiscovery.agents.find((persona) => persona.name === "analyst");
-	check("built-in analyst is neutral and read-only", packageDiscovery.diagnostics.length === 0 && analystPersona?.access === "read" && analystPersona.model === undefined && analystPersona.tools?.join(",") === "read,bash,grep,find,ls" && /independent analyst/.test(analystPersona.systemPrompt) && /direct evidence, inference, and unknowns/.test(analystPersona.systemPrompt) && !/auditor|replicator|adversary/.test(analystPersona.systemPrompt));
+	check("built-in analyst is neutral and read-only", packageDiscovery.diagnostics.length === 0 && analystPersona?.access === "read" && analystPersona.model === undefined && analystPersona.tools?.join(",") === "read,bash,grep,find,ls,codemode" && /independent analyst/.test(analystPersona.systemPrompt) && /direct evidence, inference, and unknowns/.test(analystPersona.systemPrompt) && !/auditor|replicator|adversary/.test(analystPersona.systemPrompt));
 
 	const configRoot = join(root, "configuration");
 	const packageAgents = join(configRoot, "package-agents");

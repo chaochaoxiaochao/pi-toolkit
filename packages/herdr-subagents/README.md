@@ -172,6 +172,8 @@ Each `personas.<name>` object supports exactly these overrides:
 
 JSON persona overrides cannot change `name`, `description`, `access`, `tools`, or the system prompt; define those in persona Markdown.
 
+Every child Pi explicitly loads and enables `codemode`. Built-in personas include it in their tool allowlists. Custom personas may omit `tools` and inherit Pi's defaults plus `codemode`, or list `codemode` explicitly alongside their allowed tools. A read-only persona remains read-only because codemode can call only the tools enabled for that child session.
+
 A global configuration can establish shared defaults:
 
 ```json

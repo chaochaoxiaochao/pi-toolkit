@@ -10,6 +10,7 @@ export const BUILTIN_TOOLS = new Set([
 	"find",
 	"ls",
 	"powershell",
+	"codemode",
 ]);
 
 export interface AgentDefinition {

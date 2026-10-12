@@ -1,3 +1,7 @@
+## Unreleased
+
+- Enable `codemode` for every child Pi while preserving each persona's existing tool allowlist and read/write boundary.
+
 ## 2026-10-12 - v0.4.11
 
 - add architecture documentation and clear-output guidance evaluation
