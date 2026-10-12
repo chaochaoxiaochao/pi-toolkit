@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-12 - v0.4.12
 
+- enable codemode for child agents while preserving persona tool boundaries
 - Enable `codemode` for every child Pi while preserving each persona's existing tool allowlist and read/write boundary.
 
 ## 2026-10-12 - v0.4.11

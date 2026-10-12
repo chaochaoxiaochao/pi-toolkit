@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-12 - v0.11.2
 
+- bundle herdr-subagents v0.4.12: enable codemode for child agents while preserving persona tool boundaries
 - Enable `codemode` for bundled Herdr Subagents children while preserving persona tool boundaries.
 
 ## 2026-10-12 - v0.11.1
