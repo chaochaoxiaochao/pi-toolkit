@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2026-10-12 - v0.4.0
 
+- Replace CLI start and prepare with the create-only command
 - replace the CLI `start` and `prepare` commands with one idempotent `create` command that never launches Pi
 
 ## 2026-10-09 - v0.3.2

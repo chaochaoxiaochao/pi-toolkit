@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-12 - v0.11.0
 
+- bundle worktree v0.4.0: Replace CLI start and prepare with the create-only command
 - Replace `pi-worktree start` and `pi-worktree prepare` with the create-only `pi-worktree create` CLI; `/worktree start` and `enter_worktree` continue to switch the current Pi session.
 
 ## 2026-10-12 - v0.10.24
