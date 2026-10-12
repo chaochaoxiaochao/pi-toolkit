@@ -159,6 +159,8 @@ assert.match(rootReleaseScript, /release checks changed unexpected file/);
 assert.match(releaseCheckScript, /npm test/);
 assert.match(releaseCheckScript, /npm run load-test/);
 assert.match(releaseCheckScript, /npm pack "\.\/packages\/\$SLUG" --dry-run/);
+assert.match(releaseCheckScript, /npm --prefix packages\/herdr-subagents run test:real-herdr/);
+assert.doesNotMatch(releaseCheckScript, /if[^\n]*herdr-subagents/);
 assert.match(releaseCheckScript, /npm pack --dry-run/);
 assert.match(publishIfNeededScript, /npm view "\$NAME@\$VERSION" version/);
 assert.match(publishIfNeededScript, /npm publish/);

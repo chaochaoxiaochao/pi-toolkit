@@ -134,7 +134,6 @@ export async function promptLiveAgent(options: {
 	});
 	const stalledTimer = options.stalledWarningMs ? setTimeout(() => options.onStalled?.(), options.stalledWarningMs) : undefined;
 	let terminalObservedAt: number | undefined;
-	let turnObserved = false;
 	try {
 		await persistRuntime("working");
 		while (!existsSync(attemptReportFile)) {
@@ -144,7 +143,6 @@ export async function promptLiveAgent(options: {
 			try { agentState = await options.herdr.getAgentState(agentName, options.signal); }
 			catch (error) { observationDiagnostic = `Could not observe Herdr agent state: ${error instanceof Error ? error.message : String(error)}`; }
 			const attemptState = await readAttemptState();
-			if (agentState === "working" || agentState === "blocked" || attemptState === "working") turnObserved = true;
 			const promptDetail = promptError instanceof Error ? promptError.message : promptError === undefined ? "" : String(promptError);
 			if (agentState === "blocked" || /agent_blocked/i.test(promptDetail)) {
 				await persistRuntime("waiting_interaction", observationDiagnostic ?? "Herdr is waiting for an approval or interaction; no business input request has been reported.");
@@ -160,7 +158,7 @@ export async function promptLiveAgent(options: {
 			} else if (promptError && promptSettled) {
 				terminalObservedAt ??= Date.now();
 				if (Date.now() - terminalObservedAt >= 50) throw promptError;
-			} else if ((promptSettled || turnObserved || attemptState === "settled") && (agentState === "idle" || agentState === "done" || attemptState === "settled")) {
+			} else if ((promptSettled || attemptState === "settled") && (agentState === "idle" || agentState === "done" || attemptState === "settled")) {
 				if (attemptState === "working") {
 					let live = false;
 					try { live = await options.herdr.isTaskRunning(options.paneId, options.signal); } catch { live = true; }

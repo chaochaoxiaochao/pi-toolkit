@@ -495,8 +495,18 @@ try {
 	check("missing report is visible failure", !silent.ok && silent.errorMessage?.includes("did not submit") && silentHerdr.calls.at(-1)[0] === "closeTab");
 	const initialIdleHerdr = fakeHerdr();
 	const initialIdlePrompt = initialIdleHerdr.promptAgent.bind(initialIdleHerdr);
+	const initialIdleStart = initialIdleHerdr.startAgent.bind(initialIdleHerdr);
+	let initialIdleDirectory;
+	initialIdleHerdr.startAgent = async (request) => {
+		const sessionIndex = request.args.indexOf("--session");
+		initialIdleDirectory = join(request.args[sessionIndex + 1], "..");
+		return initialIdleStart(request);
+	};
 	let initialIdleAccepted = false;
 	initialIdleHerdr.promptAgent = async (request) => {
+		const task = JSON.parse(readFileSync(join(initialIdleDirectory, "task.json"), "utf8"));
+		mkdirSync(join(initialIdleDirectory, "attempts"), { recursive: true });
+		writeFileSync(join(initialIdleDirectory, "attempts", `${task.currentAttemptId}.json`), JSON.stringify({ attemptId: task.currentAttemptId, state: "working" }));
 		await new Promise((resolve) => setTimeout(resolve, 150));
 		initialIdleAccepted = true;
 		return initialIdlePrompt(request);

@@ -22,5 +22,8 @@ if [[ -n "$SLUG" ]]; then
   npm pack "./packages/$SLUG" --dry-run
 fi
 
+echo "==> release check: real Herdr child Agent smoke"
+npm --prefix packages/herdr-subagents run test:real-herdr
+
 echo "==> release check: root package contents"
 npm pack --dry-run
