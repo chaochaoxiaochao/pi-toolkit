@@ -1,3 +1,7 @@
+## 2026-10-12 - v0.11.3
+
+- harden coordinated publishing and make local release checks authoritative
+
 ## Unreleased
 
 - Replace split child/root publishing with one idempotent root-tag workflow, make final-version local checks authoritative, keep CI publication-only, and remove timing-sensitive Herdr lifecycle assertions.
