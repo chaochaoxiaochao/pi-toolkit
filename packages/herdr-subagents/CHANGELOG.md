@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-12 - v0.4.8
 
+- make blocking behave identically in serial and parallel runs and let respond continue a named failed task from its saved session
 - add durable Herdr runtime telemetry without treating UI `blocked` as business blocked; preserve late reports after delivery-unknown prompt timeouts and fail only explicit terminal paths without a valid report
 - allow different historical tasks in one run to resume concurrently in a shared tab while fencing task writers, aggregate state, and final cleanup
 - reserve `retrying` display support without fabricating retries from ambiguous Pi lifecycle events
