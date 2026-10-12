@@ -1,3 +1,6 @@
+## 2026-10-12 - v0.10.23
+
+- bundle herdr-subagents v0.4.9: Stabilize concurrency checks on slower CI runners.
 ## 2026-10-12 - v0.10.22
 
 - bundle herdr-subagents v0.4.8: make blocking behave identically in serial and parallel runs and let respond continue a named failed task from its saved session
