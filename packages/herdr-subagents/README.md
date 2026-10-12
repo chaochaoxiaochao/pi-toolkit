@@ -32,6 +32,8 @@ Inside a Herdr workspace, the package registers `herdr_subagents`, `herdr_subage
 
 The design replaces hidden print-mode subprocesses with ordinary interactive Pi Agents managed through Herdr, so delegated work stays visible, inspectable, resumable, and durably recorded.
 
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the current execution architecture, the proposed decision-pause state machine, and configuration-normalization boundaries.
+
 ## Usage
 
 Discover the effective personas first:

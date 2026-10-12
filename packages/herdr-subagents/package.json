@@ -15,6 +15,7 @@
     "tests",
     "docs",
     "README.md",
+    "ARCHITECTURE.md",
     "TESTING.md",
     "CHANGELOG.md",
     "package.json"

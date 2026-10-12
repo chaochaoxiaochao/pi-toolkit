@@ -2,13 +2,18 @@
 
 Behavioral guidelines to reduce common LLM coding mistakes. Project-specific instructions override this file when they conflict.
 
-## 1. Think Before Coding
+## 1. Clear Output
+
+- Make outputs easy to understand and verify. Use ASD-STE100-inspired principles: short sentences, one idea per sentence, and consistent terms. Apply its formal language rules only to English.
+- When it improves understanding, use a diagram, HTML artifact, or video instead of long prose.
+
+## 2. Think Before Coding
 
 - Surface material assumptions, interpretations, and tradeoffs.
 - If unresolved ambiguity would materially change the result, ask. When no human is reachable, choose a defensible interpretation, state it, and proceed with verifiable criteria.
 - Prefer the simpler approach. Name conflicting requirements rather than silently compromising between them.
 
-## 2. Minimal Solution
+## 3. Minimal Solution
 
 Understand the problem and relevant code flow before choosing the first rung that works:
 
@@ -24,11 +29,11 @@ Understand the problem and relevant code flow before choosing the first rung tha
 - For states excluded by enforced invariants, fail visibly instead of inventing fallback behavior.
 - State the ceiling and upgrade trigger of any deliberate simplification that cuts a real corner.
 
-## 3. Skill Boundaries
+## 4. Skill Boundaries
 
 After loading a skill, treat its documented interface as sufficient for normal use. Do not inspect the skill's implementation, installed executable, or package source unless the user asks to review, debug, or modify it; its documented behavior conflicts with observed behavior; or required usage details are missing from the skill.
 
-## 4. Read, Then Change Surgically
+## 5. Read, Then Change Surgically
 
 Before editing, read the affected public API and its immediate callers. For a bug, find every statically discoverable caller and relevant implementation.
 
@@ -38,23 +43,23 @@ Every changed line traces to the user's request or to a defect that request reve
 - Remove imports, variables, and functions that your changes make unused. Leave pre-existing dead code in place and mention it.
 - Fix a faulty shared function once and name affected sibling callers; if only one caller is wrong, fix that caller instead of guarding a correct shared function.
 
-## 5. Goal-Driven Execution
+## 6. Goal-Driven Execution
 
 - Turn work into checkable outcomes: reproduce bugs before fixing them, preserve behavior during refactors, and optimize against a tested reference implementation.
 - For multi-step or materially ambiguous work, state a brief plan and give every step its own verification.
 - Leave the smallest relevant runnable check for new or changed non-trivial logic. Do not introduce a test framework solely for that check.
 
-## 6. Fail Visibly
+## 7. Fail Visibly
 
 - "Completed" is wrong if anything required was silently skipped.
 - "Tests pass" is wrong if any required test was skipped or not run.
 - If a required input, file, or tool is missing, or a step is impossible under the stated constraints, report what is missing and what you need. Never fabricate it to make a check pass.
 
-## 7. Frontend Verification
+## 8. Frontend Verification
 
 For frontend feature development, load the `web-browser` skill and verify the result in a real Chrome browser through CDP. Exercise the relevant user flow with real clicks, capture screenshots of the resulting UI, and test the actual behavior before reporting completion. Static inspection or non-browser tests do not replace this verification.
 
-## 8. Worktree Isolation
+## 9. Worktree Isolation
 
 For a Git-repository task that coordinates substantial changes across multiple files or modules, or implements a feature intended for release, ask before editing whether to isolate it in a worktree. Skip the question when already in a linked worktree.
 

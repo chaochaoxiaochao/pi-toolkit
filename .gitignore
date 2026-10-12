@@ -4,3 +4,4 @@ node_modules/
 .cache/
 .pi/
 .worktrees/
+evaluations/agents-md/results/

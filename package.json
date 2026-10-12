@@ -12,6 +12,7 @@
   ],
   "files": [
     "extensions",
+    "evaluations/agents-md",
     "packages/cache-export",
     "packages/codex-edit",
     "packages/herdr-subagents",
