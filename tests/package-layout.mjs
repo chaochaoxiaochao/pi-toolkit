@@ -158,6 +158,20 @@ try {
     readFileSync(titledChangelog, "utf8"),
     "# Changelog\n\n## 2026-10-09 - v1.1.0\n\n- child release\n- child change\n\n## 2026-01-01 - v1.0.0\n\n- old release\n",
   );
+  const releasedChangelog = join(releaseTestDirectory, "RELEASED_CHANGELOG.md");
+  writeFileSync(releasedChangelog, "## 2026-01-01 - v1.0.0\n\n- old release\n");
+  execFileSync(process.execPath, ["scripts/update-release-changelog.mjs", releasedChangelog, "1.0.1", "release note", "2026-10-10"]);
+  assert.equal(
+    readFileSync(releasedChangelog, "utf8"),
+    "## 2026-10-10 - v1.0.1\n\n- release note\n\n## 2026-01-01 - v1.0.0\n\n- old release\n",
+  );
+  const titledReleasedChangelog = join(releaseTestDirectory, "TITLED_RELEASED_CHANGELOG.md");
+  writeFileSync(titledReleasedChangelog, "# Changelog\n\n## 2026-01-01 - v1.0.0\n\n- old release\n");
+  execFileSync(process.execPath, ["scripts/update-release-changelog.mjs", titledReleasedChangelog, "1.1.0", "child release", "2026-10-11"]);
+  assert.equal(
+    readFileSync(titledReleasedChangelog, "utf8"),
+    "# Changelog\n\n## 2026-10-11 - v1.1.0\n\n- child release\n\n## 2026-01-01 - v1.0.0\n\n- old release\n",
+  );
 } finally {
   rmSync(releaseTestDirectory, { recursive: true, force: true });
 }
