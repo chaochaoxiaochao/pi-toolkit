@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- Fix Herdr Subagents startup failures caused by stale idle observations and require real child-Agent smoke tests before releasing that package.
+
 - Replace split child/root publishing with one idempotent root-tag workflow, make final-version local checks authoritative, keep CI publication-only, and remove timing-sensitive Herdr lifecycle assertions.
 
 ## 2026-10-12 - v0.11.2
