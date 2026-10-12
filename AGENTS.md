@@ -24,8 +24,7 @@ pi-toolkit/
 ├── scripts/release.sh           # 主包发布
 ├── scripts/release-package.sh   # 子包 + 主包同 commit 联动发布器
 └── .github/workflows/
-    ├── publish.yml              # vX.Y.Z → 主包
-    └── publish-package.yml      # <slug>-vX.Y.Z → 对应子包
+    └── publish.yml              # vX.Y.Z → 联动发布子包与主包
 ```
 
 ## 组织原则
@@ -103,10 +102,11 @@ pi install npm:@maxiaochao/pi-worktree
 ./scripts/release-package.sh <todo|cache-export|codex-edit|herdr-subagents|scheduler|worktree> <initial|patch|minor|major> "<note>" [主包 patch|minor|major]
 ```
 
-- 主包 tag 为 `vX.Y.Z`，由 `.github/workflows/publish.yml` 发布。
-- 子包 tag 为 `<slug>-vX.Y.Z`，统一由 `.github/workflows/publish-package.yml` 解析目录、校验版本、测试、打包并发布。
-- 子包联动发布会先完成全部测试与两个 tarball 检查，在同一个 commit 更新子包和主包的版本及 CHANGELOG，创建两个 tag，再通过 `git push --atomic` 一次推送；主包版本级别默认为 `patch`。
-- 发布只通过 tag 触发 CI；不要在本地执行 `npm publish`。
+- 主包 tag 为 `vX.Y.Z`，是唯一发布触发器；`.github/workflows/publish.yml` 从同一 commit 解析可选子包并依次发布子包和主包。子包 tag `<slug>-vX.Y.Z` 只记录版本，不单独触发 workflow。
+- 本地发布脚本在版本与 CHANGELOG 更新后调用 `scripts/release-check.sh`，对最终待发布内容完成全部测试、加载检查和 tarball 检查；通过后才创建 commit 和 tag。
+- 子包联动发布在同一个 commit 更新子包和主包的版本及 CHANGELOG，创建两个 tag，再通过 `git push --atomic` 一次推送；主包版本级别默认为 `patch`。
+- CI 只校验 tag、版本和联动目标后发布，不重复运行测试。npm 发布是幂等的：workflow 重跑时跳过已存在的精确版本，再继续未完成的目标。一次联动发布只允许修改一个子包版本。
+- 发布只通过根 tag 触发 CI；不要在本地执行 `npm publish`。
 - 不要只发布子包 tag：完整工具包内嵌子包源码，必须由上述联动脚本同时发布新的主包版本；`pi update npm:@maxiaochao/pi-toolkit` 只会获取已发布的新根包。
 - 所有包可共用 `NPM_TOKEN`，但版本和 tag 相互独立。
 

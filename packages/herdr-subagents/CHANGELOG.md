@@ -1,3 +1,7 @@
+## Unreleased
+
+- Make lifecycle tests accept both valid report-first and observation-first execution orderings.
+
 ## 2026-10-12 - v0.4.12
 
 - enable codemode for child agents while preserving persona tool boundaries

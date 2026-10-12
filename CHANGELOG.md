@@ -1,3 +1,7 @@
+## Unreleased
+
+- Replace split child/root publishing with one idempotent root-tag workflow, make final-version local checks authoritative, keep CI publication-only, and remove timing-sensitive Herdr lifecycle assertions.
+
 ## 2026-10-12 - v0.11.2
 
 - bundle herdr-subagents v0.4.12: enable codemode for child agents while preserving persona tool boundaries

@@ -1,10 +1,14 @@
-name: publish
+name: publish coordinated release
 
-# 推 tag (v*) 时自动测试并发布到 npm。
+# A root tag owns the whole release. Child tags are metadata only.
 on:
   push:
     tags:
       - "v*"
+
+concurrency:
+  group: publish-${{ github.sha }}
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -13,23 +17,36 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org/
           # 用仓库 Secrets 里的 NPM_TOKEN（granular access token + Bypass 2FA）
           scope: ""
-      - name: Install test runtime
-        run: npm install --no-save --ignore-scripts --no-package-lock @earendil-works/pi-ai@0.85.1 @earendil-works/pi-coding-agent@0.85.1 @earendil-works/pi-tui@0.85.1 typebox
-      - name: Verify tag matches package version
+      - name: Resolve and verify release targets
         run: |
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           test "$GITHUB_REF_NAME" = "v$PACKAGE_VERSION"
-      - name: Run extension tests
-        run: npm test
-      - name: Verify package contents
-        run: npm pack --dry-run
-      - name: Publish to npm
-        run: npm publish
+          mapfile -t CHILD_MANIFESTS < <(git diff-tree --no-commit-id --name-only -r HEAD | grep -E '^packages/[^/]+/package.json$' || true)
+          test "${#CHILD_MANIFESTS[@]}" -le 1
+          if [[ "${#CHILD_MANIFESTS[@]}" -eq 1 ]]; then
+            PACKAGE_DIR=${CHILD_MANIFESTS[0]%/package.json}
+            SLUG=${PACKAGE_DIR#packages/}
+            CHILD_VERSION=$(node -p "require('./$PACKAGE_DIR/package.json').version")
+            CHILD_TAG="$SLUG-v$CHILD_VERSION"
+            CHILD_SHA=$(git ls-remote --tags origin "refs/tags/$CHILD_TAG" | awk '{print $1}')
+            test "$CHILD_SHA" = "$GITHUB_SHA"
+            echo "PACKAGE_DIR=$PACKAGE_DIR" >> "$GITHUB_ENV"
+            echo "SLUG=$SLUG" >> "$GITHUB_ENV"
+          fi
+      - name: Publish child package if needed
+        if: env.PACKAGE_DIR != ''
+        run: ./scripts/publish-if-needed.sh "$PACKAGE_DIR"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish root package if needed
+        run: ./scripts/publish-if-needed.sh .
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

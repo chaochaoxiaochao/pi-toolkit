@@ -34,19 +34,15 @@ cd "$ROOT_DIR"
   exit 1
 }
 
-echo "==> 1/9 complete test suite"
-npm test
+ROLLBACK_RELEASE_METADATA=1
+rollback_release_metadata() {
+  if [[ "$ROLLBACK_RELEASE_METADATA" == 1 ]]; then
+    git restore -- package.json CHANGELOG.md "$PACKAGE_DIR/package.json" "$PACKAGE_DIR/CHANGELOG.md"
+  fi
+}
+trap rollback_release_metadata ERR
 
-echo "==> 2/9 extension load checks"
-npm run load-test
-
-echo "==> 3/9 child package contents: $SLUG"
-npm pack "./packages/$SLUG" --dry-run
-
-echo "==> 4/9 root package contents"
-npm pack --dry-run
-
-echo "==> 5/9 version bumps (child: $CHILD_LEVEL, root: $ROOT_LEVEL)"
+echo "==> 1/6 version bumps (child: $CHILD_LEVEL, root: $ROOT_LEVEL)"
 if [[ "$CHILD_LEVEL" != initial ]]; then
   npm --prefix "$PACKAGE_DIR" version "$CHILD_LEVEL" --no-git-tag-version
 fi
@@ -65,19 +61,30 @@ git rev-parse --verify --quiet "refs/tags/$ROOT_TAG" >/dev/null && {
   exit 1
 }
 
-echo "==> 6/9 child changelog"
+echo "==> 2/6 child changelog"
 node scripts/update-release-changelog.mjs "$PACKAGE_DIR/CHANGELOG.md" "$CHILD_VERSION" "$NOTE"
 
-echo "==> 7/9 root changelog"
+echo "==> 3/6 root changelog"
 node scripts/update-release-changelog.mjs CHANGELOG.md "$ROOT_VERSION" "bundle $SLUG v$CHILD_VERSION: $NOTE"
 
-echo "==> 8/9 one commit, two tags"
+echo "==> 4/6 release checks against final package versions"
+./scripts/release-check.sh "$SLUG"
+while IFS= read -r line; do
+  path=${line:3}
+  case "$path" in
+    package.json|CHANGELOG.md|"packages/$SLUG/package.json"|"packages/$SLUG/CHANGELOG.md") ;;
+    *) echo "release checks changed unexpected file: $path" >&2; false ;;
+  esac
+done < <(git status --porcelain)
+ROLLBACK_RELEASE_METADATA=0
+
+echo "==> 5/6 one commit, two tags"
 git add package.json CHANGELOG.md "$PACKAGE_DIR/package.json" "$PACKAGE_DIR/CHANGELOG.md"
 git commit -m "release $SLUG v${CHILD_VERSION} and toolkit v${ROOT_VERSION}"
 git tag "$CHILD_TAG"
 git tag "$ROOT_TAG"
 
-echo "==> 9/9 atomic push"
+echo "==> 6/6 atomic push"
 git push --atomic origin main "$CHILD_TAG" "$ROOT_TAG"
 echo "$CHILD_TAG and $ROOT_TAG point to the same commit"
-echo "publish-package.yml and publish.yml will publish both npm packages"
+echo "publish.yml will verify once and publish both npm packages idempotently"

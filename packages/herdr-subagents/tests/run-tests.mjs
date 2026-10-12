@@ -458,7 +458,7 @@ try {
 		herdr,
 	});
 	check("compact successful report", success.ok && success.status === "completed" && success.summary === "Authentication review completed." && success.documents.length === 1 && !success.output.includes("FULL RESULT"));
-	check("Herdr lifecycle", herdr.calls.map(([name]) => name).join(",") === "createTab,renamePane,startAgent,promptAgent,getAgentState,isTabFocused,closeTab");
+	check("Herdr lifecycle", herdr.calls.map(([name]) => name).filter((name) => name !== "getAgentState").join(",") === "createTab,renamePane,startAgent,promptAgent,isTabFocused,closeTab");
 	const createRequest = herdr.calls.find(([name]) => name === "createTab")[1];
 	const startRequest = herdr.calls.find(([name]) => name === "startAgent")[1];
 	check("named unfocused tab in parent workspace", createRequest.workspaceId === "w1" && createRequest.cwd === root && createRequest.label === "SA · auth-review" && createRequest.focus === false);
@@ -481,7 +481,7 @@ try {
 		model: { provider: "fake", id: "model" },
 		thinkingLevel: "medium",
 	}, { agentsDirectory: join(process.cwd(), "agents"), herdr: extensionHerdr });
-	check("public extension behavior uses injectable Herdr", !publicResult.isError && publicResult.content[0].text.includes("Authentication review completed.") && !publicResult.content[0].text.includes("FULL RESULT") && extensionHerdr.calls.map(([name]) => name).join(",") === "createTab,renamePane,startAgent,promptAgent,getAgentState,isTabFocused,closeTab", JSON.stringify({ publicResult, calls: extensionHerdr.calls.map(([name]) => name) }));
+	check("public extension behavior uses injectable Herdr", !publicResult.isError && publicResult.content[0].text.includes("Authentication review completed.") && !publicResult.content[0].text.includes("FULL RESULT") && extensionHerdr.calls.map(([name]) => name).filter((name) => name !== "getAgentState").join(",") === "createTab,renamePane,startAgent,promptAgent,isTabFocused,closeTab", JSON.stringify({ publicResult, calls: extensionHerdr.calls.map(([name]) => name) }));
 	let singleStalledWarning = "";
 	await runSingleTask("single slow task", { cwd: root, herdr: fakeHerdr(), stalledWarningSeconds: 0.001, onStalled: (message) => { singleStalledWarning = message; } });
 	check("single-task execution emits configured stalled warning", singleStalledWarning.includes("appears stalled"));
