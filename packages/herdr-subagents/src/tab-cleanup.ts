@@ -1,6 +1,6 @@
 import type { HerdrAutomation } from "./herdr.ts";
 import { type RunRecord } from "./records.ts";
-import { withRunStateLock } from "./run-state.ts";
+import { adoptRecord, withRunStateLock } from "./run-state.ts";
 
 function isMissingTabError(error: unknown): boolean {
 	const detail = error instanceof Error ? `${error.message}\n${(error as { stderr?: unknown }).stderr ?? ""}` : String(error);
@@ -27,9 +27,7 @@ export async function cleanupRunTab(options: {
 			await update(run);
 			return run;
 		});
-		const mutableRecord = options.runRecord as unknown as Record<string, unknown>;
-		for (const key of Object.keys(mutableRecord)) if (!(key in latest)) delete mutableRecord[key];
-		Object.assign(options.runRecord, latest);
+		adoptRecord(options.runRecord, latest);
 	};
 	const reportFailure = async (error: unknown, requirePending = false) => {
 		const detail = error instanceof Error ? error.message : String(error);

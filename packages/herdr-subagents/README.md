@@ -78,21 +78,29 @@ The snapshot reports the aggregate run state and every task's state, including a
 
 Run controls accept the complete run UUID, the saved run-directory name, or any unique UUID prefix. Results always return the canonical complete UUID.
 
-A child missing required information reports `needs-input` with an exact question. The run becomes blocked, keeps its Herdr tab, pane, partial report, and Pi session, and returns control to the parent. Answer through the control tool to continue the original session:
+Every child reports exactly one of three outcomes. `completed` and `failed` are terminal; `blocked` means the child is still alive in its pane but needs the parent agent to answer or decide something before it can go on. A blocked task keeps its Herdr tab, pane, partial report, and Pi session, and returns control to the parent with an exact question. Answer through the control tool to continue the original session:
 
 ```text
-herdr_subagents_control({ action: "respond", runId: "<run-id>", answer: "Use the main branch." })
+herdr_subagents_control({ action: "respond", runId: "<run-id>", task: 1, answer: "Use the main branch." })
 ```
 
 Blocked is a normal control state, not a failed tool call. Only terminal failure, cancellation, or a partial aggregate is returned as a tool error.
 
-Blocking is limited to effectively serial runs (`effectiveConcurrency: 1`), where task order can depend on the answer. In a concurrent read-only run, tasks must be independent: a task that requests input is recorded as `failed` with `failureKind: "missing_input"` and `requiredInput`, while its independent siblings continue. This prevents a blocked concurrent task from holding the parent tool call behind unrelated long-running siblings.
+Blocking works the same way at any concurrency: a blocked task never holds up its independent siblings, which keep running and settling normally. A blocked run does keep the dispatcher slot until you respond or cancel it, so another foreground run started meanwhile is refused with the blocking run ID and a background run stays queued. That is what keeps a second write-capable run from editing the repository behind an unanswered question.
 
-Only work owned by the current parent session's main dispatcher can remain blocked. Historical follow-ups that need more input settle as `missing_input` failures, and startup reconciliation cancels blocked work whose parent session disappeared; neither path creates an unowned blocked run.
+A failed task is not a dead end. Name it explicitly to continue its original Pi session with another message, even while the rest of its batch is still running:
+
+```text
+herdr_subagents_control({ action: "respond", runId: "<run-id>", task: 2, answer: "Use the staging credentials and retry." })
+```
+
+The task resumes in its own live pane when that pane still hosts its child, and otherwise restarts from the saved session in a new pane. `task` is always required so an answer never picks a task implicitly. A task whose child never produced a saved Pi session cannot be continued and says so; submit a new run instead. Continuing a failed task never starts its batch's queued siblings, which the running batch still owns. While a continued task is working, its run stays `running` and its Herdr tab stays open even if the batch that created it has already settled.
+
+Blocked work always belongs to a live parent session. A historical follow-up may block too, keeping its shared resume tab until you answer it. Startup reconciliation cancels blocked work whose parent session disappeared, so no blocked run is ever left without an owner.
 
 Cancel one active or queued run with `herdr_subagents_control({ action: "cancel", runId: "<run-id>" })`. Cancellation aborts its live child prompts, archives active or queued tasks as cancelled, closes its run tab, and leaves unrelated runs alone.
 
-While a batch is active, a compact Fleet monitor stays below the editor. Its divider/title row summarizes the run, and each task row shows a hollow or filled status circle, the real persona and task name, business status or current runtime telemetry, live active duration, and cumulative child Pi token usage in one compact shared metrics column after the longest row rather than at the terminal edge. Herdr `blocked` is shown neutrally as `waiting_interaction` while the task remains `running`; only a structured `needs-input` report makes the business task `blocked`. Prompt-delivery timeouts appear as `delivery_unknown` while a working live child is still allowed to publish its authoritative report. Running work uses Pi's warning/yellow semantic color and completed work uses success/green. Token totals use the child session's persisted assistant, tool-result, standalone usage, compaction, and branch-summary usage; they are never estimated. Queued tasks show neither fabricated time nor tokens. The monitor follows Pi theme semantics, truncates by visible terminal columns, and refreshes session usage from both file events and the running one-second timer.
+While a batch is active, a compact Fleet monitor stays below the editor. Its divider/title row summarizes the run, and each task row shows a hollow or filled status circle, the real persona and task name, business status or current runtime telemetry, live active duration, and cumulative child Pi token usage in one compact shared metrics column after the longest row rather than at the terminal edge. Herdr `blocked` is shown neutrally as `waiting_interaction` while the task remains `running`; only a child `subagent_report` with `status=blocked` makes the business task `blocked`. Prompt-delivery timeouts appear as `delivery_unknown` while a working live child is still allowed to publish its authoritative report. Running work uses Pi's warning/yellow semantic color and completed work uses success/green. Token totals use the child session's persisted assistant, tool-result, standalone usage, compaction, and branch-summary usage; they are never estimated. Queued tasks show neither fabricated time nor tokens. The monitor follows Pi theme semantics, truncates by visible terminal columns, and refreshes session usage from both file events and the running one-second timer.
 
 With an empty editor, press `↓` to enter the list, `↑`/`↓` to choose a task, `Enter` to focus its exact pane, and `Esc` to return. `/herdr-subagents focus <task-number>` remains available as a fallback. Inside every child Agent, press `Alt+P` or run `/parent` to return to the exact parent Agent pane; the shortcut is also shown in the child footer.
 
@@ -112,7 +120,7 @@ Foreground calls wait until all children report completion or a request for inpu
 
 The child must finish through the package's structured `subagent_report` tool. Every prompt gets a unique attempt ID; the child commits to an attempt-specific report, and the parent accepts only the matching report before updating the canonical task result. A late report from an older retry, response, or historical follow-up cannot settle a newer attempt. The parent receives only:
 
-- completion or failure status
+- `completed`, `blocked`, or `failed` status
 - a concise summary
 - paths to useful documents
 - the task-record location

@@ -1,11 +1,11 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { getEventListeners } from "node:events";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { discoverPackageAgents, parseAgentMarkdown } from "../src/personas.ts";
 import { loadSubagentConfiguration } from "../src/config.ts";
-import { runHerdrSubagents } from "../src/runner.ts";
+import { runHerdrSubagentsBatch } from "../src/batch-runner.ts";
 import { executeHerdrSubagents } from "../src/tool.ts";
 import { activityCounts, focusActiveTask } from "../src/monitor.ts";
 import { RunDispatcher } from "../src/dispatcher.ts";
@@ -23,8 +23,27 @@ import { applyTaskStatus, isSettledRunStatus, projectTaskActivity, readTaskRecor
 import { RunPaneAllocator } from "../src/run-pane-allocator.ts";
 import { aggregateTaskStatus } from "../src/run-status.ts";
 import { isAbortError } from "../src/errors.ts";
-import { acquireDirectoryLock } from "../src/run-state.ts";
+import { acquireDirectoryLock, withRunStateLock } from "../src/run-state.ts";
 import registerSubagentReport from "../extensions/subagent-report.ts";
+
+/** Drives one task through the batch runner and projects its single result like a task-scoped run. */
+async function runSingleTask(prompt, { label, agent, model, tools, systemPrompt, onStalled, ...options } = {}) {
+	const name = label ?? "task";
+	const batch = await runHerdrSubagentsBatch([{
+		name, prompt, agent: agent ?? "worker", access: "write", skills: [],
+		...(model ? { model } : {}),
+		...(tools ? { tools } : {}),
+		systemPrompt: systemPrompt ?? "You are a focused worker subagent.",
+	}], {
+		label: name, concurrency: 1, maxConcurrency: 1, ...options,
+		onUpdate: (partial) => {
+			if (onStalled && partial.summary.includes("appears stalled")) onStalled(partial.summary);
+			options.onUpdate?.(partial);
+		},
+	});
+	const task = batch.tasks[0];
+	return { ...batch, status: task.status, summary: task.summary, documents: task.documents, errorMessage: task.error ?? task.question, recordDirectory: task.recordDirectory, output: task.summary };
+}
 
 let passed = 0;
 let failed = 0;
@@ -151,7 +170,7 @@ function fakeHerdr(mode = "completed") {
 				const failed = request.prompt.includes("FAIL");
 				const question = runNumber === 3 || (mode === "two-blocked-then-complete" && runNumber === 2) ? "Which environment should I inspect?" : "Which branch should I inspect?";
 				writeFileSync(join(directory, "result.md"), `FULL ${request.prompt}`);
-				writeAttemptReport(directory, { status: needsInput ? "needs-input" : failed ? "failed" : "completed", summary: needsInput ? "Need more input." : failed ? `${request.prompt} failed.` : `${request.prompt} completed.`, ...(needsInput ? { question } : {}), ...(failed ? { error: "expected failure" } : {}), documents: [] });
+				writeAttemptReport(directory, { status: needsInput ? "blocked" : failed ? "failed" : "completed", summary: needsInput ? "Need more input." : failed ? `${request.prompt} failed.` : `${request.prompt} completed.`, ...(needsInput ? { question } : {}), ...(failed ? { error: "expected failure" } : {}), documents: [] });
 			}
 			active -= 1;
 			return { status: mode === "failed" ? "done" : "idle" };
@@ -201,6 +220,7 @@ try {
 		validateControlParams({ action: "status" }),
 		validateControlParams({ action: "history", runId: "not-allowed" }),
 		validateControlParams({ action: "respond", runId: "run" }),
+		validateControlParams({ action: "respond", runId: "run", answer: "named nothing" }),
 		validateControlParams({ action: "resume", runId: "run", task: 1 }),
 	].every((message) => typeof message === "string" && message.length > 0));
 	let cancelledRunId;
@@ -363,8 +383,10 @@ try {
 
 	setEnv({ HERDR_ENV: "0", PI_HERDR_SUBAGENTS_PI_BINARY: "/definitely/missing/pi" });
 	const unavailableHerdr = fakeHerdr();
-	const outside = await runHerdrSubagents("hello", { cwd: root, herdr: unavailableHerdr });
-	check("Herdr is required", !outside.ok && outside.errorMessage?.includes("inside Herdr") && unavailableHerdr.calls.length === 0);
+	let outsideError;
+	try { await runSingleTask("hello", { cwd: root, herdr: unavailableHerdr }); }
+	catch (error) { outsideError = error; }
+	check("Herdr is required", outsideError?.message.includes("inside Herdr") && unavailableHerdr.calls.length === 0);
 
 	setEnv({ HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w1", HERDR_PANE_ID: "w1:p-parent", PI_HERDR_SUBAGENTS_PI_BINARY: "/definitely/missing/pi" });
 	const childCommands = new Map();
@@ -405,7 +427,7 @@ try {
 	check("full results are isolated by attempt identity", nextScopedReport.documents[0].path !== firstAttemptResult && readFileSync(firstAttemptResult, "utf8") === "Full attempt result." && readFileSync(nextScopedReport.documents[0].path, "utf8") === "New full result.");
 	delete process.env.PI_HERDR_SUBAGENTS_TASK_DIR;
 	const herdr = fakeHerdr();
-	const success = await runHerdrSubagents("Review authentication", {
+	const success = await runSingleTask("Review authentication", {
 		cwd: root,
 		label: "auth-review",
 		agent: "worker",
@@ -433,22 +455,22 @@ try {
 	check("full result and session stay on disk", readFileSync(join(taskDirectory, "result.md"), "utf8").startsWith("FULL RESULT") && existsSync(join(taskDirectory, "session.jsonl")));
 
 	const extensionHerdr = fakeHerdr();
-	const publicResult = await executeHerdrSubagents({ agent: "worker", prompt: "Review through the public tool" }, undefined, undefined, {
+	const publicResult = await executeHerdrSubagents({ tasks: [{ name: "public", prompt: "Review through the public tool", agent: "worker" }] }, undefined, undefined, {
 		cwd: root,
 		model: { provider: "fake", id: "model" },
 		thinkingLevel: "medium",
 	}, { agentsDirectory: join(process.cwd(), "agents"), herdr: extensionHerdr });
 	check("public extension behavior uses injectable Herdr", !publicResult.isError && publicResult.content[0].text.includes("Authentication review completed.") && !publicResult.content[0].text.includes("FULL RESULT") && extensionHerdr.calls.map(([name]) => name).join(",") === "createTab,renamePane,startAgent,promptAgent,getAgentState,isTabFocused,closeTab", JSON.stringify({ publicResult, calls: extensionHerdr.calls.map(([name]) => name) }));
 	let singleStalledWarning = "";
-	await runHerdrSubagents("single slow task", { cwd: root, herdr: fakeHerdr(), stalledWarningSeconds: 0.001, onStalled: (message) => { singleStalledWarning = message; } });
+	await runSingleTask("single slow task", { cwd: root, herdr: fakeHerdr(), stalledWarningSeconds: 0.001, onStalled: (message) => { singleStalledWarning = message; } });
 	check("single-task execution emits configured stalled warning", singleStalledWarning.includes("appears stalled"));
 
 	const failedHerdr = fakeHerdr("failed");
-	const failedRun = await runHerdrSubagents("Fail cleanly", { cwd: root, herdr: failedHerdr });
+	const failedRun = await runSingleTask("Fail cleanly", { cwd: root, herdr: failedHerdr });
 	check("structured child failure", !failedRun.ok && failedRun.status === "failed" && failedRun.summary === "Authentication review failed." && failedRun.errorMessage === "provider unavailable" && failedHerdr.calls.at(-1)[0] === "closeTab");
 
 	const silentHerdr = fakeHerdr("silent");
-	const silent = await runHerdrSubagents("Forget report", { cwd: root, herdr: silentHerdr });
+	const silent = await runSingleTask("Forget report", { cwd: root, herdr: silentHerdr });
 	check("missing report is visible failure", !silent.ok && silent.errorMessage?.includes("did not submit") && silentHerdr.calls.at(-1)[0] === "closeTab");
 	const initialIdleHerdr = fakeHerdr();
 	const initialIdlePrompt = initialIdleHerdr.promptAgent.bind(initialIdleHerdr);
@@ -459,27 +481,29 @@ try {
 		return initialIdlePrompt(request);
 	};
 	initialIdleHerdr.getAgentState = async () => initialIdleAccepted ? "working" : "idle";
-	const initialIdle = await runHerdrSubagents("Wait for prompt acceptance", { cwd: root, herdr: initialIdleHerdr });
+	const initialIdle = await runSingleTask("Wait for prompt acceptance", { cwd: root, herdr: initialIdleHerdr });
 	check("pre-prompt idle is not mistaken for a settled turn", initialIdle.ok && initialIdle.summary.includes("completed"));
-	const delayedReport = await runHerdrSubagents("Retry after a transient provider error", { cwd: root, herdr: fakeHerdr("delayed-report") });
+	const delayedReport = await runSingleTask("Retry after a transient provider error", { cwd: root, herdr: fakeHerdr("delayed-report") });
 	check("authoritative lifecycle waits for a report after a false screen-settled state", delayedReport.ok && delayedReport.status === "completed" && delayedReport.summary === "Retry eventually completed.");
-	const crashedAttempt = await runHerdrSubagents("Crash after reporting working", { cwd: root, herdr: fakeHerdr("working-state-crash") });
+	const crashedAttempt = await runSingleTask("Crash after reporting working", { cwd: root, herdr: fakeHerdr("working-state-crash") });
 	check("a dead child cannot leave an authoritative working attempt waiting forever", !crashedAttempt.ok && crashedAttempt.errorMessage?.includes("child process exited"));
-	const deadWorkingReturn = await runHerdrSubagents("Return idle then exit", { cwd: root, herdr: fakeHerdr("working-state-dead-return") });
+	const deadWorkingReturn = await runSingleTask("Return idle then exit", { cwd: root, herdr: fakeHerdr("working-state-dead-return") });
 	check("a normal wait return cannot leave a dead working attempt waiting forever", !deadWorkingReturn.ok && deadWorkingReturn.errorMessage?.includes("Child Pi stopped while"));
 	const uiBlockedSnapshots = [];
-	const uiBlocked = await runHerdrSubagents("Wait for an approval", { cwd: root, herdr: fakeHerdr("ui-blocked"), onUpdate: (update) => {
-		if (update.recordDirectory && existsSync(join(update.recordDirectory, "task.json"))) uiBlockedSnapshots.push(JSON.parse(readFileSync(join(update.recordDirectory, "task.json"), "utf8")));
+	const uiBlocked = await runSingleTask("Wait for an approval", { cwd: root, herdr: fakeHerdr("ui-blocked"), onUpdate: (update) => {
+		const taskDirectory = update.activity?.[0]?.sessionFile && dirname(update.activity[0].sessionFile);
+		if (taskDirectory && existsSync(join(taskDirectory, "task.json"))) uiBlockedSnapshots.push(JSON.parse(readFileSync(join(taskDirectory, "task.json"), "utf8")));
 	} });
 	check("Herdr blocked is neutral runtime telemetry and never business blocked", uiBlocked.ok && uiBlockedSnapshots.some((task) => task.status === "running" && task.runtimeState === "waiting_interaction") && !uiBlockedSnapshots.some((task) => task.status === "blocked"));
 	const deliverySnapshots = [];
-	const deliveryUnknown = await runHerdrSubagents("Wait for a late report", { cwd: root, herdr: fakeHerdr("delivery-unknown-late"), onUpdate: (update) => {
-		if (update.recordDirectory && existsSync(join(update.recordDirectory, "task.json"))) deliverySnapshots.push(JSON.parse(readFileSync(join(update.recordDirectory, "task.json"), "utf8")));
+	const deliveryUnknown = await runSingleTask("Wait for a late report", { cwd: root, herdr: fakeHerdr("delivery-unknown-late"), onUpdate: (update) => {
+		const taskDirectory = update.activity?.[0]?.sessionFile && dirname(update.activity[0].sessionFile);
+		if (taskDirectory && existsSync(join(taskDirectory, "task.json"))) deliverySnapshots.push(JSON.parse(readFileSync(join(taskDirectory, "task.json"), "utf8")));
 	} });
 	check("delivery_unknown keeps running and accepts a late authoritative report", deliveryUnknown.ok && deliveryUnknown.summary === "Late authoritative report completed." && deliverySnapshots.some((task) => task.status === "running" && task.runtimeState === "delivery_unknown"));
 	const observationHerdr = fakeHerdr("delayed-report");
 	observationHerdr.getAgentState = async () => { throw new Error("temporary agent get failure"); };
-	const observationResult = await runHerdrSubagents("Survive observation errors", { cwd: root, herdr: observationHerdr });
+	const observationResult = await runSingleTask("Survive observation errors", { cwd: root, herdr: observationHerdr });
 	check("agent get failures remain diagnostic until an authoritative report arrives", observationResult.ok && observationResult.summary === "Retry eventually completed.");
 	const reportFirstHerdr = fakeHerdr();
 	let reportFirstDirectory;
@@ -498,17 +522,17 @@ try {
 		promptWaitReaped = true;
 		return { status: "idle" };
 	};
-	const reportFirst = await runHerdrSubagents("Report before prompt wait", { cwd: root, herdr: reportFirstHerdr });
+	const reportFirst = await runSingleTask("Report before prompt wait", { cwd: root, herdr: reportFirstHerdr });
 	const reportFirstTask = JSON.parse(readFileSync(join(reportFirst.recordDirectory, "task.json"), "utf8"));
 	check("authoritative report aborts and awaits prompt wait without reverting terminal state", reportFirst.ok && promptWaitReaped && reportFirstTask.status === "completed" && reportFirstTask.summary === undefined);
-	const terminalError = await runHerdrSubagents("No report after API failure", { cwd: root, herdr: fakeHerdr("post-fail") });
+	const terminalError = await runSingleTask("No report after API failure", { cwd: root, herdr: fakeHerdr("post-fail") });
 	const terminalErrorTask = JSON.parse(readFileSync(join(terminalError.recordDirectory, "task.json"), "utf8"));
 	check("terminal prompt API error without a report fails the business task", !terminalError.ok && terminalErrorTask.status === "failed" && terminalError.errorMessage.includes("connection lost"));
 	const retryProjection = projectTaskActivity({ id: "retry", runId: "run", order: 1, name: "retrying", agent: "worker", status: "running", runtimeState: "retrying" });
 	check("retrying support remains running and is visible in Fleet", retryProjection.status === "running" && retryProjection.runtimeState === "retrying" && fleetLines({ label: "retry", activity: [retryProjection] }, new FleetSelection())[1].includes("retrying"));
 
 	const malformedExecutionHerdr = fakeHerdr("malformed");
-	const malformedExecution = await runHerdrSubagents("Write malformed report", { cwd: root, herdr: malformedExecutionHerdr });
+	const malformedExecution = await runSingleTask("Write malformed report", { cwd: root, herdr: malformedExecutionHerdr });
 	const malformedExecutionTaskDirectory = malformedExecution.recordDirectory;
 	const repairedExecutionReport = JSON.parse(readFileSync(join(malformedExecutionTaskDirectory, "report.json"), "utf8"));
 	check("malformed child report becomes a durable usable failure", !malformedExecution.ok && repairedExecutionReport.status === "failed" && readdirSync(malformedExecutionTaskDirectory).some((entry) => entry.startsWith("report.json.invalid-")) && (await listSubagentHistory(root)).some((run) => run.id === malformedExecution.runId));
@@ -517,7 +541,7 @@ try {
 	check("historical attempts use distinct full-result documents", firstResultPath.endsWith("/result.md") && secondResultPath.endsWith("/turns/02-result.md") && firstResultPath !== secondResultPath);
 
 	const cleanupHerdr = fakeHerdr("close-failed");
-	const cleanupFailure = await runHerdrSubagents("Complete then fail cleanup", { cwd: root, herdr: cleanupHerdr });
+	const cleanupFailure = await runSingleTask("Complete then fail cleanup", { cwd: root, herdr: cleanupHerdr });
 	const cleanupRunDirectory = latestRunDirectory();
 	const cleanupRunRecord = JSON.parse(readFileSync(join(cleanupRunDirectory, "run.json"), "utf8"));
 	const cleanupTaskDirectory = join(cleanupRunDirectory, "tasks", readdirSync(join(cleanupRunDirectory, "tasks"))[0]);
@@ -570,7 +594,7 @@ try {
 	check("invalid project default thinking is diagnosed and global default remains effective", invalidExplorer?.thinking === "medium" && invalidExplorer.thinkingSource === "global" && invalidConfiguration.diagnostics.some((message) => message === "project defaultThinking must be a non-empty string"));
 	writeFileSync(projectConfig, JSON.stringify({ maxConcurrency: 3, defaultThinking: "high", personas: { worker: { model: "project/worker", thinking: "high", skills: ["project-skill"] } } }));
 	const configuredHerdr = fakeHerdr();
-	const configuredRun = await executeHerdrSubagents({ agent: "worker", model: "task/model", prompt: "Use configured values" }, undefined, undefined, { cwd: configRoot, model: { provider: "parent", id: "model" }, thinkingLevel: "medium" }, { agentsDirectory: packageAgents, configurationPaths, herdr: configuredHerdr });
+	const configuredRun = await executeHerdrSubagents({ tasks: [{ name: "configured", prompt: "Use configured values", agent: "worker", model: "task/model" }] }, undefined, undefined, { cwd: configRoot, model: { provider: "parent", id: "model" }, thinkingLevel: "medium" }, { agentsDirectory: packageAgents, configurationPaths, herdr: configuredHerdr });
 	const configuredStart = configuredHerdr.calls.find(([name]) => name === "startAgent")[1];
 	check("configured persona uses displayed effective values", !configuredRun.isError && configuredStart.args.includes("task/model") && configuredStart.args.includes("high") && configuredStart.args.includes("--skill") && configuredStart.args.includes("project-skill"));
 
@@ -608,7 +632,21 @@ try {
 	const parallelQuestionTask = JSON.parse(readFileSync(join(parallelQuestion.details.tasks[0].recordDirectory, "task.json"), "utf8"));
 	const parallelQuestionReport = JSON.parse(readFileSync(join(parallelQuestion.details.tasks[0].recordDirectory, "report.json"), "utf8"));
 	const parallelQuestionAttemptReport = JSON.parse(readFileSync(join(parallelQuestion.details.tasks[0].recordDirectory, "reports", `${parallelQuestionTask.currentAttemptId}.json`), "utf8"));
-	check("parallel needs-input becomes a structured failure while independent siblings finish", parallelQuestion.isError && parallelQuestion.details.status === "partial" && parallelQuestion.details.tasks[0].status === "failed" && parallelQuestion.details.tasks[0].failureKind === "missing_input" && parallelQuestion.details.tasks[0].requiredInput === "Which branch should I inspect?" && parallelQuestion.details.tasks[1].status === "completed" && parallelQuestionTask.status === "failed" && parallelQuestionReport.status === "failed" && parallelQuestionReport.failureKind === "missing_input" && parallelQuestionAttemptReport.status === "failed" && parallelQuestionAttemptReport.failureKind === "missing_input" && parallelQuestionHerdr.calls.some(([name]) => name === "closeTab"));
+	check("a parallel blocked attempt report stays blocked with its question", parallelQuestionAttemptReport.status === "blocked" && parallelQuestionAttemptReport.question === "Which branch should I inspect?" && parallelQuestionReport.question === parallelQuestionAttemptReport.question);
+	check("a parallel task blocks like a serial one while its independent sibling finishes", !parallelQuestion.isError && parallelQuestion.details.status === "blocked" && parallelQuestion.details.question === "Which branch should I inspect?" && parallelQuestion.details.allowedActions?.join(",") === "respond,cancel" && parallelQuestion.details.tasks[0].status === "blocked" && parallelQuestion.details.tasks[1].status === "completed" && parallelQuestionTask.status === "blocked" && parallelQuestionReport.status === "blocked" && !parallelQuestionHerdr.calls.some(([name]) => name === "closeTab"));
+	const parallelAnswered = await executeHerdrSubagents({ action: "respond", runId: parallelQuestion.details.runId, task: 1, answer: "Inspect main." }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: parallelQuestionHerdr });
+	check("answering a blocked task in a parallel run settles and closes that run", !parallelAnswered.isError && parallelAnswered.details.status === "completed" && JSON.parse(readFileSync(join(parallelQuestion.details.tasks[0].recordDirectory, "task.json"), "utf8")).status === "completed" && parallelQuestionHerdr.calls.some(([name]) => name === "closeTab"));
+
+	const bothBlockedHerdr = fakeHerdr("two-blocked-then-complete");
+	const bothBlocked = await executeHerdrSubagents({ concurrency: 2, tasks: [
+		{ name: "first-question", prompt: "ask", agent: "explorer" },
+		{ name: "second-question", prompt: "ask too", agent: "reviewer" },
+	] }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: bothBlockedHerdr });
+	check("both lanes of a parallel batch may block at once", !bothBlocked.isError && bothBlocked.details.status === "blocked" && bothBlocked.details.tasks[0].status === "blocked" && bothBlocked.details.tasks[1].status === "blocked" && bothBlocked.details.question === "Which branch should I inspect?" && !bothBlockedHerdr.calls.some(([name]) => name === "closeTab"));
+	const firstOfBoth = await executeHerdrSubagents({ action: "respond", runId: bothBlocked.details.runId, task: 1, answer: "main" }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: bothBlockedHerdr });
+	check("answering one blocked lane exposes the other lane's question and keeps the tab", !firstOfBoth.isError && firstOfBoth.details.status === "blocked" && firstOfBoth.details.question === "Which environment should I inspect?" && firstOfBoth.details.tasks[0].status === "completed" && firstOfBoth.details.tasks[1].status === "blocked" && !bothBlockedHerdr.calls.some(([name]) => name === "closeTab"));
+	const secondOfBoth = await executeHerdrSubagents({ action: "respond", runId: bothBlocked.details.runId, task: 2, answer: "staging" }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: bothBlockedHerdr });
+	check("the parallel run closes only after its last blocked lane is answered", !secondOfBoth.isError && secondOfBoth.details.status === "completed" && secondOfBoth.details.tasks.every((entry) => entry.status === "completed") && bothBlockedHerdr.calls.filter(([name]) => name === "closeTab").length === 1);
 	const mixedCancelHerdr = fakeHerdr();
 	const mixedCancelPrompt = mixedCancelHerdr.promptAgent.bind(mixedCancelHerdr);
 	mixedCancelHerdr.promptAgent = async (request) => request.prompt.includes("WAIT") ? await new Promise((_resolve, reject) => request.signal?.addEventListener("abort", () => reject(request.signal.reason), { once: true })) : mixedCancelPrompt(request);
@@ -623,6 +661,21 @@ try {
 	const batchCleanup = await executeHerdrSubagents({ tasks: [{ name: "cleanup", prompt: "cleanup", agent: "explorer" }] }, undefined, (update) => batchCleanupUpdates.push(update), { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: batchCleanupHerdr });
 	const batchCleanupRecord = JSON.parse(readFileSync(join(batchCleanup.details.recordDirectory, "run.json"), "utf8"));
 	check("batch cleanup failure is persisted without changing the business result", !batchCleanup.isError && batchCleanupRecord.status === "completed" && batchCleanupRecord.cleanupError.includes("tab still busy") && batchCleanupUpdates.filter((update) => update.content[0]?.text.includes("cleanup failed")).length === 1);
+	const concurrentWriterHerdr = fakeHerdr();
+	let concurrentWriterRunFile;
+	const concurrentWriterStart = concurrentWriterHerdr.startAgent.bind(concurrentWriterHerdr);
+	concurrentWriterHerdr.startAgent = async (request) => {
+		concurrentWriterRunFile = join(request.args[request.args.indexOf("--session") + 1], "..", "..", "..", "run.json");
+		return concurrentWriterStart(request);
+	};
+	const concurrentWriterPrompt = concurrentWriterHerdr.promptAgent.bind(concurrentWriterHerdr);
+	concurrentWriterHerdr.promptAgent = async (request) => {
+		await withRunStateLock(concurrentWriterRunFile, undefined, (run) => Object.assign(run, { resume: { generation: 1, phase: "active", tabId: "w1:t9", paneIds: [], active: {} } }));
+		return concurrentWriterPrompt(request);
+	};
+	await executeHerdrSubagents({ tasks: [{ name: "concurrent-writer", prompt: "inspect", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: concurrentWriterHerdr });
+	const concurrentWriterRecord = JSON.parse(readFileSync(concurrentWriterRunFile, "utf8"));
+	check("settling a batch preserves run state written concurrently", concurrentWriterRecord.status === "completed" && concurrentWriterRecord.resume?.tabId === "w1:t9");
 	const cleanupProbeHerdr = fakeHerdr();
 	cleanupProbeHerdr.isTabFocused = async () => { throw new Error("tab lookup failed"); };
 	const cleanupProbe = await executeHerdrSubagents({ tasks: [{ name: "cleanup-probe", prompt: "cleanup probe", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: cleanupProbeHerdr });
@@ -690,10 +743,10 @@ try {
 	deferredSingleHerdr.isTabFocused = async () => true;
 	deferredSingleHerdr.closeTab = async () => { throw new Error("single deferred close failed"); };
 	const deferredSingleUpdates = [];
-	const deferredSingle = await executeHerdrSubagents({ prompt: "single deferred cleanup", agent: "explorer" }, undefined, (update) => deferredSingleUpdates.push(update), { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: deferredSingleHerdr });
+	const deferredSingle = await executeHerdrSubagents({ tasks: [{ name: "deferred-single", prompt: "single deferred cleanup", agent: "explorer" }] }, undefined, (update) => deferredSingleUpdates.push(update), { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: deferredSingleHerdr });
 	await new Promise((resolve) => setTimeout(resolve, 10));
-	const deferredSingleRun = JSON.parse(readFileSync(join(deferredSingle.details.recordDirectory, "..", "..", "run.json"), "utf8"));
-	check("deferred single-task cleanup failure is persisted and surfaced without changing completion", deferredSingleRun.status === "completed" && deferredSingleRun.cleanupError === "single deferred close failed" && deferredSingleUpdates.some((update) => update.content[0].text.includes("cleanup failed") && update.details.status === "warning"));
+	const deferredSingleRun = JSON.parse(readFileSync(join(deferredSingle.details.recordDirectory, "run.json"), "utf8"));
+	check("deferred cleanup failure is persisted and surfaced without changing completion", deferredSingleRun.status === "completed" && deferredSingleRun.cleanupError === "single deferred close failed" && deferredSingleUpdates.some((update) => update.content[0].text.includes("cleanup failed") && update.details.cleanupError));
 	const cancelledHerdr = fakeHerdr();
 	cancelledHerdr.isTabFocused = async (tabId) => { cancelledHerdr.calls.push(["isTabFocused", { tabId }]); return true; };
 	cancelledHerdr.waitForTabUnfocused = async () => { throw new Error("shutdown cleanup must not wait for focus"); };
@@ -720,7 +773,7 @@ try {
 		});
 	};
 	const singleCancellation = new AbortController();
-	const cancelledSinglePromise = runHerdrSubagents("wait", { cwd: root, herdr: cancelledSingleHerdr, signal: singleCancellation.signal });
+	const cancelledSinglePromise = runSingleTask("wait", { cwd: root, herdr: cancelledSingleHerdr, signal: singleCancellation.signal });
 	await new Promise((resolve) => setTimeout(resolve, 5));
 	singleCancellation.abort(new Error("Parent Pi session closed."));
 	const cancelledSingle = await cancelledSinglePromise;
@@ -819,13 +872,13 @@ try {
 	mkdirSync(staleStatusTaskDirectory, { recursive: true });
 	writeFileSync(join(staleStatusTaskDirectory, "..", "..", "run.json"), JSON.stringify({ id: "stale-status", label: "stale-status", status: "running", startedAt: "2026-10-08T00:00:00.000Z" }));
 	writeFileSync(join(staleStatusTaskDirectory, "task.json"), JSON.stringify({ id: "stale-task", runId: "stale-status", order: 1, name: "stale-task", agent: "reviewer", status: "running" }));
-	writeFileSync(join(staleStatusTaskDirectory, "report.json"), JSON.stringify({ status: "needs-input", summary: "Old blocked report.", question: "Old question?", documents: [] }));
+	writeFileSync(join(staleStatusTaskDirectory, "report.json"), JSON.stringify({ status: "blocked", summary: "Old blocked report.", question: "Old question?", documents: [] }));
 	const runningStatus = await executeHerdrSubagents({ action: "status", runId: "stale-status" }, undefined, undefined, { cwd: staleStatusRoot }, { agentsDirectory: join(process.cwd(), "agents") });
 	check("running status does not expose a stale report from an earlier blocked turn", runningStatus.details.tasks[0].status === "running" && !runningStatus.details.tasks[0].question && !runningStatus.details.tasks[0].summary && !runningStatus.content[0].text.includes("Old question"));
 
 	const blockedHerdr = fakeHerdr("blocked");
 	const blocked = await executeHerdrSubagents({ concurrency: 1, tasks: [{ name: "question", prompt: "inspect branch", agent: "explorer" }, { name: "after-answer", prompt: "continue queued", agent: "reviewer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: blockedHerdr });
-	check("needs-input returns foreground control with its full run ID and allowed actions", !blocked.isError && blocked.details.status === "blocked" && blocked.details.question === "Which branch should I inspect?" && blocked.details.tasks[0].question === blocked.details.question && blocked.details.allowedActions?.join(",") === "respond,cancel" && blocked.content[0].text.includes(blocked.details.runId) && !blockedHerdr.calls.some(([name]) => name === "closeTab"));
+	check("a blocked report returns foreground control with its full run ID and allowed actions", !blocked.isError && blocked.details.status === "blocked" && blocked.details.question === "Which branch should I inspect?" && blocked.details.tasks[0].question === blocked.details.question && blocked.details.allowedActions?.join(",") === "respond,cancel" && blocked.content[0].text.includes(blocked.details.runId) && !blockedHerdr.calls.some(([name]) => name === "closeTab"));
 	const blockedStatus = await executeHerdrSubagents({ action: "status", runId: basename(blocked.details.recordDirectory) }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents") });
 	check("status exposes blocked task questions for respond", blockedStatus.details.status === "blocked" && blockedStatus.details.settled === false && blockedStatus.details.tasks[0].question === "Which branch should I inspect?" && blockedStatus.content[0].text.includes("Which branch should I inspect?"));
 	const activeCleanup = await executeHerdrSubagents({ action: "cleanup", runId: blocked.details.runId }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: blockedHerdr });
@@ -833,7 +886,7 @@ try {
 	const blockedTaskLock = join(blocked.details.tasks[0].recordDirectory, ".resume.lock");
 	mkdirSync(blockedTaskLock);
 	writeFileSync(join(blockedTaskLock, "owner.json"), JSON.stringify({ token: "live-owner", processId: process.pid, createdAt: new Date().toISOString() }));
-	const concurrentResponse = await executeHerdrSubagents({ action: "respond", runId: blocked.details.runId, answer: "duplicate" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: blockedHerdr });
+	const concurrentResponse = await executeHerdrSubagents({ action: "respond", runId: blocked.details.runId, task: 1, answer: "duplicate" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: blockedHerdr });
 	rmSync(blockedTaskLock, { recursive: true });
 	check("concurrent blocked responses are rejected by the task-scoped lock before a second prompt", concurrentResponse.isError && concurrentResponse.content[0].text.includes("response or resume in progress"));
 	const staleLockHerdr = fakeHerdr("blocked");
@@ -841,10 +894,10 @@ try {
 	const staleResponseTaskLock = join(staleLockBlocked.details.tasks[0].recordDirectory, ".resume.lock");
 	mkdirSync(staleResponseTaskLock);
 	writeFileSync(join(staleResponseTaskLock, "owner.json"), JSON.stringify({ token: "dead-owner", processId: 99999999, createdAt: "2000-01-01T00:00:00.000Z" }));
-	const diagnosedStaleResponse = await executeHerdrSubagents({ action: "respond", runId: staleLockBlocked.details.runId, answer: "Inspect main." }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: staleLockHerdr });
+	const diagnosedStaleResponse = await executeHerdrSubagents({ action: "respond", runId: staleLockBlocked.details.runId, task: 1, answer: "Inspect main." }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: staleLockHerdr });
 	check("blocked response automatically reclaims a task lock owned by a dead process", !diagnosedStaleResponse.isError && !existsSync(staleResponseTaskLock));
 	const resumeUpdates = [];
-	const resumed = await executeHerdrSubagents({ action: "respond", runId: blocked.details.runId.slice(0, 8), answer: "Inspect main." }, undefined, (update) => resumeUpdates.push(update.details), { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: blockedHerdr });
+	const resumed = await executeHerdrSubagents({ action: "respond", runId: blocked.details.runId.slice(0, 8), task: 1, answer: "Inspect main." }, undefined, (update) => resumeUpdates.push(update.details), { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: blockedHerdr });
 	const blockedStarts = blockedHerdr.calls.filter(([name]) => name === "startAgent").map(([, request]) => request);
 	const blockedPrompts = blockedHerdr.calls.filter(([name]) => name === "promptAgent").map(([, request]) => request);
 	check("answer resumes original live Agent and queued sibling gets a new pane", !resumed.isError && resumed.details.status === "completed" && blockedPrompts.length === 3 && blockedPrompts[1].target === blockedPrompts[0].target && blockedStarts.length === 2 && new Set(blockedStarts.map((request) => request.paneId)).size === 2);
@@ -855,22 +908,241 @@ try {
 	check("blocked continuation preserves newly allocated pane IDs", resumedTasks.every((task) => resumedRunRecord.paneIds.includes(task.paneId)));
 	const resumedTurn = JSON.parse(readFileSync(resumedTasks[0].currentTurnFile, "utf8"));
 	check("authoritative response clears stale blocked fields", !("question" in resumedTasks[0]) && !("error" in resumedTasks[0]) && !("question" in resumedTurn) && !("error" in resumedTurn));
+	const runsIn = (base) => {
+		const directory = join(base, ".pi", "herdr-subagents", "runs");
+		const entries = readdirSync(directory).sort();
+		return join(directory, entries[entries.length - 1]);
+	};
+	const tasksIn = (runDirectory) => readdirSync(join(runDirectory, "tasks")).sort().map((entry) => join(runDirectory, "tasks", entry));
+	const readTaskJson = (directory) => JSON.parse(readFileSync(join(directory, "task.json"), "utf8"));
+	const settleWait = async (predicate) => {
+		for (let elapsed = 0; elapsed < 3000; elapsed += 5) {
+			if (predicate()) return true;
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		}
+		return false;
+	};
+
+	const midBatchRoot = join(root, "mid-batch-followup");
+	const midBatchHerdr = fakeHerdr();
+	const midBatchPrompt = midBatchHerdr.promptAgent.bind(midBatchHerdr);
+	let releaseMidBatch;
+	const midBatchGate = new Promise((resolve) => { releaseMidBatch = resolve; });
+	let reportMidBatchGated;
+	const midBatchGated = new Promise((resolve) => { reportMidBatchGated = resolve; });
+	midBatchHerdr.promptAgent = async (request) => {
+		if (request.prompt.includes("WAIT")) { reportMidBatchGated(); await midBatchGate; }
+		return midBatchPrompt(request);
+	};
+	const midBatchPromise = executeHerdrSubagents({ label: "mid-batch", concurrency: 1, tasks: [
+		{ name: "fails", prompt: "FAIL immediately", agent: "explorer" },
+		{ name: "holds", prompt: "WAIT for the gate", agent: "explorer" },
+		{ name: "last", prompt: "third task", agent: "explorer" },
+	] }, undefined, undefined, { cwd: midBatchRoot, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: midBatchHerdr });
+	await midBatchGated;
+	const midBatchRun = runsIn(midBatchRoot);
+	const midBatchTasks = tasksIn(midBatchRun);
+	check("a later task stays queued while an earlier task of the same batch fails", readTaskJson(midBatchTasks[0]).status === "failed" && readTaskJson(midBatchTasks[2]).status === "queued");
+	const midBatchStartsBefore = midBatchHerdr.calls.filter(([name]) => name === "startAgent").length;
+	const midBatchFollowUp = await executeHerdrSubagents({ action: "respond", runId: basename(midBatchRun), task: 1, answer: "retry against the other branch" }, undefined, undefined, { cwd: midBatchRoot, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: midBatchHerdr });
+	check("a failed task continues in its own live pane while its batch is still running", !midBatchFollowUp.isError && readTaskJson(midBatchTasks[0]).status === "completed" && midBatchHerdr.calls.filter(([name]) => name === "createTab").length === 1);
+	check("continuing a failed task leaves queued siblings to the running batch", readTaskJson(midBatchTasks[2]).status === "queued" && midBatchHerdr.calls.filter(([name]) => name === "startAgent").length === midBatchStartsBefore);
+	releaseMidBatch();
+	const midBatch = await midBatchPromise;
+	const midBatchPrompts = midBatchHerdr.calls.filter(([name]) => name === "promptAgent").map(([, request]) => request.prompt);
+	check("the batch still runs its own queued work exactly once after a follow-up", midBatchPrompts.filter((prompt) => prompt === "third task").length === 1 && tasksIn(midBatchRun).every((directory) => readTaskJson(directory).status === "completed"));
+	check("a settling batch records the task records instead of its own stale view", JSON.parse(readFileSync(join(midBatchRun, "run.json"), "utf8")).status === "completed" && midBatch.details.tasks[0].status === "failed");
+
+	const queueOwnerRoot = join(root, "parallel-queue-ownership");
+	const queueOwnerHerdr = fakeHerdr("blocked");
+	const queueOwnerPrompt = queueOwnerHerdr.promptAgent.bind(queueOwnerHerdr);
+	let releaseQueueOwner;
+	const queueOwnerGate = new Promise((resolve) => { releaseQueueOwner = resolve; });
+	let reportQueueOwnerGated;
+	const queueOwnerGated = new Promise((resolve) => { reportQueueOwnerGated = resolve; });
+	queueOwnerHerdr.promptAgent = async (request) => {
+		const result = await queueOwnerPrompt(request);
+		if (request.prompt.includes("WAIT")) { reportQueueOwnerGated(); await queueOwnerGate; }
+		return result;
+	};
+	const queueOwnerPromise = executeHerdrSubagents({ label: "queue-owner", concurrency: 2, tasks: [
+		{ name: "blocks", prompt: "needs an answer", agent: "explorer" },
+		{ name: "holds", prompt: "WAIT for the gate", agent: "explorer" },
+		{ name: "last", prompt: "queued work", agent: "explorer" },
+	] }, undefined, undefined, { cwd: queueOwnerRoot, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: queueOwnerHerdr });
+	await queueOwnerGated;
+	const queueOwnerRun = runsIn(queueOwnerRoot);
+	const queueOwnerTasks = tasksIn(queueOwnerRun);
+	check("a parallel lane blocks without stopping its sibling or starting queued work", await settleWait(() => readTaskJson(queueOwnerTasks[0]).status === "blocked") && readTaskJson(queueOwnerTasks[1]).status === "running" && readTaskJson(queueOwnerTasks[2]).status === "queued");
+	const queueOwnerStarts = queueOwnerHerdr.calls.filter(([name]) => name === "startAgent").length;
+	const queueOwnerAnswer = await executeHerdrSubagents({ action: "respond", runId: basename(queueOwnerRun), task: 1, answer: "use the main branch" }, undefined, undefined, { cwd: queueOwnerRoot, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: queueOwnerHerdr });
+	check("answering a blocked lane leaves queued work to the batch that owns it", !queueOwnerAnswer.isError && queueOwnerAnswer.details.status === "running" && readTaskJson(queueOwnerTasks[0]).status === "completed" && readTaskJson(queueOwnerTasks[2]).status === "queued" && queueOwnerHerdr.calls.filter(([name]) => name === "startAgent").length === queueOwnerStarts);
+	releaseQueueOwner();
+	const queueOwner = await queueOwnerPromise;
+	check("the batch runs its own queued work exactly once after a blocked lane is answered", queueOwnerHerdr.calls.filter(([name, request]) => name === "promptAgent" && request.prompt === "queued work").length === 1);
+	check("an adopted lane drops the lifecycle fields its blocked record carried", queueOwner.details.activity[0].status === "completed" && Boolean(queueOwner.details.activity[0].completedAt) && !("updatedAt" in queueOwner.details.activity[0]));
+	check("a settled batch adopts a lane that was answered while its siblings ran", !queueOwner.isError && queueOwner.details.status === "completed" && queueOwner.details.tasks[0].status === "completed" && !queueOwner.details.question && JSON.parse(readFileSync(join(queueOwnerRun, "run.json"), "utf8")).status === "completed" && queueOwnerHerdr.calls.some(([name]) => name === "closeTab"));
+
+	const revivedRoot = join(root, "revived-during-settle");
+	const revivedHerdr = fakeHerdr();
+	const revivedPrompt = revivedHerdr.promptAgent.bind(revivedHerdr);
+	let revivedFlipped = false;
+	revivedHerdr.promptAgent = async (request) => {
+		if (request.prompt.includes("WAIT")) {
+			const failedFirst = await settleWait(() => {
+				const directories = tasksIn(runsIn(revivedRoot));
+				return directories.length > 0 && existsSync(join(directories[0], "task.json")) && readTaskJson(directories[0]).status === "failed";
+			});
+			if (failedFirst) {
+				const first = tasksIn(runsIn(revivedRoot))[0];
+				const record = readTaskJson(first);
+				delete record.completedAt;
+				delete record.error;
+				writeFileSync(join(first, "task.json"), JSON.stringify({ ...record, status: "running", updatedAt: new Date().toISOString() }));
+				revivedFlipped = true;
+			}
+		}
+		return revivedPrompt(request);
+	};
+	const revived = await executeHerdrSubagents({ label: "revived", concurrency: 2, tasks: [
+		{ name: "fails", prompt: "FAIL immediately", agent: "explorer" },
+		{ name: "holds", prompt: "WAIT then settle", agent: "explorer" },
+	] }, undefined, undefined, { cwd: revivedRoot, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: revivedHerdr });
+	const revivedRunRecord = JSON.parse(readFileSync(join(runsIn(revivedRoot), "run.json"), "utf8"));
+	check("a settling batch never closes its tab or finishes the run while a continued task works", revivedFlipped && revivedRunRecord.status === "running" && !revivedHerdr.calls.some(([name]) => name === "closeTab") && revived.details.status === "partial");
+
+	const continueRoot = join(root, "continue-failed-task");
+	const continueHerdr = fakeHerdr();
+	const failedOnly = await executeHerdrSubagents({ label: "solo", tasks: [{ name: "solo", prompt: "FAIL alone", agent: "explorer" }] }, undefined, undefined, { cwd: continueRoot, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: continueHerdr });
+	const continueRun = runsIn(continueRoot);
+	const continueTask = tasksIn(continueRun)[0];
+	check("a settled failed task keeps its saved Pi session on disk", failedOnly.isError && readTaskJson(continueTask).status === "failed" && existsSync(join(continueTask, "session.jsonl")));
+	const unqualifiedResponse = await executeHerdrSubagents({ action: "respond", runId: basename(continueRun), answer: "guess" }, undefined, undefined, { cwd: continueRoot }, { agentsDirectory: join(process.cwd(), "agents"), herdr: continueHerdr });
+	check("respond requires its task number instead of selecting a task implicitly", unqualifiedResponse.isError && unqualifiedResponse.content[0].text.includes("task are required") && continueHerdr.calls.every(([name]) => name !== "promptAgent" || !name.includes("guess")));
+	renameSync(join(continueTask, "session.jsonl"), join(continueTask, "session.jsonl.moved"));
+	const withoutSession = await executeHerdrSubagents({ action: "respond", runId: basename(continueRun), task: 1, answer: "continue" }, undefined, undefined, { cwd: continueRoot }, { agentsDirectory: join(process.cwd(), "agents"), herdr: continueHerdr });
+	check("a failed task without a saved session reports that it cannot continue", withoutSession.isError && withoutSession.content[0].text.includes("saved Pi session"));
+	renameSync(join(continueTask, "session.jsonl.moved"), join(continueTask, "session.jsonl"));
+	const continued = await executeHerdrSubagents({ action: "respond", runId: basename(continueRun), task: 1, answer: "try a different approach" }, undefined, undefined, { cwd: continueRoot, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: continueHerdr });
+	check("an explicitly selected failed task continues from its saved session", !continued.isError && readTaskJson(continueTask).status === "completed" && JSON.parse(readFileSync(join(continueRun, "run.json"), "utf8")).status === "completed");
+
+	const sharedTabRoot = join(root, "shared-tab-continuations");
+	const sharedHerdr = fakeHerdr();
+	await executeHerdrSubagents({ label: "both-fail", concurrency: 2, tasks: [
+		{ name: "first", prompt: "FAIL first", agent: "explorer" },
+		{ name: "second", prompt: "FAIL second", agent: "explorer" },
+	] }, undefined, undefined, { cwd: sharedTabRoot, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: sharedHerdr });
+	const sharedRun = runsIn(sharedTabRoot);
+	const sharedTasks = tasksIn(sharedRun);
+	const sharedClosesAfterBatch = sharedHerdr.calls.filter(([name]) => name === "closeTab").length;
+	const sharedSecondPane = readTaskJson(sharedTasks[1]).paneId;
+	sharedHerdr.paneExists = async (paneId) => { sharedHerdr.calls.push(["paneExists", { paneId }]); return paneId !== sharedSecondPane; };
+	let releaseSharedSecond;
+	const sharedSecondGate = new Promise((resolve) => { releaseSharedSecond = resolve; });
+	let reportSharedSecondGated;
+	const sharedSecondGated = new Promise((resolve) => { reportSharedSecondGated = resolve; });
+	const sharedRename = sharedHerdr.renamePane.bind(sharedHerdr);
+	sharedHerdr.renamePane = async (paneId, label) => {
+		if (label.startsWith("02 ")) { reportSharedSecondGated(); await sharedSecondGate; }
+		return sharedRename(paneId, label);
+	};
+	const sharedSecondContinuation = executeHerdrSubagents({ action: "respond", runId: basename(sharedRun), task: 2, answer: "continue the second" }, undefined, undefined, { cwd: sharedTabRoot, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: sharedHerdr });
+	await sharedSecondGated;
+	const sharedFirstContinuation = await executeHerdrSubagents({ action: "respond", runId: basename(sharedRun), task: 1, answer: "continue the first" }, undefined, undefined, { cwd: sharedTabRoot, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: sharedHerdr });
+	check("a finished continuation never closes a tab a sibling continuation is still claiming", !sharedFirstContinuation.isError && sharedFirstContinuation.details.status === "running" && sharedHerdr.calls.filter(([name]) => name === "closeTab").length === sharedClosesAfterBatch);
+	releaseSharedSecond();
+	const sharedSecondResult = await sharedSecondContinuation;
+	check("the last continuation to settle closes the shared tab exactly once", !sharedSecondResult.isError && sharedSecondResult.details.status === "completed" && sharedHerdr.calls.filter(([name]) => name === "closeTab").length === sharedClosesAfterBatch + 1);
+
+	const queuedSiblingRoot = join(root, "queued-sibling-projection");
+	const queuedSiblingHerdr = fakeHerdr();
+	let releaseQueuedSibling;
+	const queuedSiblingGate = new Promise((resolve) => { releaseQueuedSibling = resolve; });
+	let reportQueuedSiblingGated;
+	const queuedSiblingGated = new Promise((resolve) => { reportQueuedSiblingGated = resolve; });
+	const queuedSiblingRename = queuedSiblingHerdr.renamePane.bind(queuedSiblingHerdr);
+	queuedSiblingHerdr.renamePane = async (paneId, label) => {
+		if (label.startsWith("02 ")) { reportQueuedSiblingGated(); await queuedSiblingGate; }
+		return queuedSiblingRename(paneId, label);
+	};
+	const queuedSiblingBatch = executeHerdrSubagents({ label: "queued-sibling", concurrency: 1, tasks: [
+		{ name: "fails", prompt: "FAIL immediately", agent: "explorer" },
+		{ name: "next", prompt: "second task", agent: "explorer" },
+	] }, undefined, undefined, { cwd: queuedSiblingRoot, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: queuedSiblingHerdr });
+	await queuedSiblingGated;
+	const queuedSiblingRun = runsIn(queuedSiblingRoot);
+	const queuedSiblingTasks = tasksIn(queuedSiblingRun);
+	check("a batch task is still queued while its pane is being prepared", readTaskJson(queuedSiblingTasks[0]).status === "failed" && readTaskJson(queuedSiblingTasks[1]).status === "queued");
+	const duringQueuedSibling = await executeHerdrSubagents({ action: "respond", runId: basename(queuedSiblingRun), task: 1, answer: "retry now" }, undefined, undefined, { cwd: queuedSiblingRoot, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: queuedSiblingHerdr });
+	check("a queued sibling is reported as running work, never as a fabricated input request", !duringQueuedSibling.isError && duringQueuedSibling.details.status === "running" && !duringQueuedSibling.details.question && !duringQueuedSibling.content[0].text.includes("needs input"));
+	releaseQueuedSibling();
+	await queuedSiblingBatch;
+
+	const revivePaneRoot = join(root, "continue-dead-pane");
+	const revivePaneContinueHerdr = fakeHerdr();
+	await executeHerdrSubagents({ label: "dead-pane", tasks: [{ name: "gone", prompt: "FAIL alone", agent: "explorer" }] }, undefined, undefined, { cwd: revivePaneRoot, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: revivePaneContinueHerdr });
+	const revivePaneRun = runsIn(revivePaneRoot);
+	const revivePaneTask = tasksIn(revivePaneRun)[0];
+	const revivePaneAttempt = Number(readTaskJson(revivePaneTask).attempt ?? 1);
+	const revivePaneTabs = revivePaneContinueHerdr.calls.filter(([name]) => name === "createTab").length;
+	revivePaneContinueHerdr.paneExists = async (paneId) => { revivePaneContinueHerdr.calls.push(["paneExists", { paneId }]); return false; };
+	const revivePaneContinued = await executeHerdrSubagents({ action: "respond", runId: basename(revivePaneRun), task: 1, answer: "restart from the saved session" }, undefined, undefined, { cwd: revivePaneRoot, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: revivePaneContinueHerdr });
+	check("a failed task whose pane is gone restarts from its saved session in a new pane", !revivePaneContinued.isError && readTaskJson(revivePaneTask).status === "completed" && Number(readTaskJson(revivePaneTask).attempt) === revivePaneAttempt + 1 && revivePaneContinueHerdr.calls.filter(([name]) => name === "createTab").length === revivePaneTabs + 1);
+
+	const reblockRoot = join(root, "continue-then-block");
+	const reblockHerdr = fakeHerdr();
+	await executeHerdrSubagents({ label: "reblock", tasks: [{ name: "reblock", prompt: "FAIL alone", agent: "explorer" }] }, undefined, undefined, { cwd: reblockRoot, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: reblockHerdr });
+	const reblockRun = runsIn(reblockRoot);
+	const reblockTask = tasksIn(reblockRun)[0];
+	const reblockPromptAgent = reblockHerdr.promptAgent.bind(reblockHerdr);
+	reblockHerdr.promptAgent = async (request) => {
+		if (!request.prompt.includes("ASK AGAIN")) return reblockPromptAgent(request);
+		reblockHerdr.calls.push(["promptAgent", request]);
+		const attemptId = readTaskJson(reblockTask).currentAttemptId;
+		mkdirSync(join(reblockTask, "reports"), { recursive: true });
+		writeFileSync(join(reblockTask, "reports", `${attemptId}.json`), JSON.stringify({ attemptId, status: "blocked", summary: "Still missing a detail.", question: "Which account?", documents: [] }));
+		return { status: "idle" };
+	};
+	const reblocked = await executeHerdrSubagents({ action: "respond", runId: basename(reblockRun), task: 1, answer: "ASK AGAIN please" }, undefined, undefined, { cwd: reblockRoot, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: reblockHerdr });
+	check("a continued failed task may request input and becomes a normal blocked task", !reblocked.isError && reblocked.details.status === "blocked" && reblocked.details.question === "Which account?" && readTaskJson(reblockTask).status === "blocked");
+	const reblockAnswer = await executeHerdrSubagents({ action: "respond", runId: basename(reblockRun), task: 1, answer: "the main account" }, undefined, undefined, { cwd: reblockRoot, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: reblockHerdr });
+	check("a task that blocked during its continuation is answerable like any blocked task", !reblockAnswer.isError && readTaskJson(reblockTask).status === "completed");
+
+	const rejectRoot = join(root, "continue-reject-matrix");
+	const rejectRunDirectory = join(rejectRoot, ".pi", "herdr-subagents", "runs", "reject");
+	mkdirSync(join(rejectRunDirectory, "tasks"), { recursive: true });
+	writeFileSync(join(rejectRunDirectory, "run.json"), JSON.stringify({ id: "reject", label: "reject", status: "running", startedAt: new Date().toISOString() }));
+	const rejectedStatuses = ["completed", "cancelled", "queued", "running"];
+	rejectedStatuses.forEach((status, index) => {
+		const directory = join(rejectRunDirectory, "tasks", `0${index + 1}-task`);
+		mkdirSync(directory, { recursive: true });
+		const sessionFile = join(directory, "session.jsonl");
+		writeFileSync(sessionFile, "{}\n");
+		writeFileSync(join(directory, "task.json"), JSON.stringify({ id: `reject-${index + 1}`, runId: "reject", order: index + 1, name: status, agent: "explorer", status, paneId: "w1:p9", sessionFile }));
+	});
+	const rejectHerdr = fakeHerdr();
+	const rejections = [];
+	for (const order of [1, 2, 3, 4, 9]) {
+		rejections.push(await executeHerdrSubagents({ action: "respond", runId: "reject", task: order, answer: "continue" }, undefined, undefined, { cwd: rejectRoot }, { agentsDirectory: join(process.cwd(), "agents"), herdr: rejectHerdr }));
+	}
+	check("respond refuses every task state other than blocked or failed, without side effects", rejections.every((result) => result.isError && result.content[0].text.includes("neither blocked nor a failed task")) && rejectHerdr.calls.length === 0 && JSON.parse(readFileSync(join(rejectRunDirectory, "run.json"), "utf8")).status === "running");
+
 	const twiceBlockedHerdr = fakeHerdr("blocked-twice");
 	const twiceBlocked = await executeHerdrSubagents({ concurrency: 1, tasks: [{ name: "first-question", prompt: "first", agent: "explorer" }, { name: "second-question", prompt: "second", agent: "reviewer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: twiceBlockedHerdr });
-	const secondQuestion = await executeHerdrSubagents({ action: "respond", runId: twiceBlocked.details.runId, answer: "main" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: twiceBlockedHerdr });
+	const secondQuestion = await executeHerdrSubagents({ action: "respond", runId: twiceBlocked.details.runId, task: 1, answer: "main" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: twiceBlockedHerdr });
 	check("queued sibling blocking returns its current question, actions, and Fleet pane", secondQuestion.details.status === "blocked" && secondQuestion.details.question === "Which environment should I inspect?" && secondQuestion.details.allowedActions?.join(",") === "respond,cancel" && secondQuestion.content[0].text.includes(secondQuestion.details.runId) && secondQuestion.details.activity[1].status === "blocked" && Boolean(secondQuestion.details.activity[1].paneId));
 	const failedAfterBlockHerdr = fakeHerdr("blocked");
 	const failedAfterBlock = await executeHerdrSubagents({ concurrency: 1, tasks: [{ name: "question-first", prompt: "question", agent: "explorer" }, { name: "fails-later", prompt: "FAIL sibling", agent: "reviewer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: failedAfterBlockHerdr });
-	const failedAnswer = await executeHerdrSubagents({ action: "respond", runId: failedAfterBlock.details.runId, answer: "main" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: failedAfterBlockHerdr });
+	const failedAnswer = await executeHerdrSubagents({ action: "respond", runId: failedAfterBlock.details.runId, task: 1, answer: "main" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: failedAfterBlockHerdr });
 	check("failed sibling after answer appears in compact result", failedAnswer.isError && failedAnswer.details.status === "partial" && failedAnswer.content[0].text.includes("fails-later") && failedAnswer.content[0].text.includes("failed"));
 	const responseFailureHerdr = fakeHerdr("blocked-then-post-fail");
 	const responseFailureRun = await executeHerdrSubagents({ tasks: [{ name: "response-fails", prompt: "question", agent: "explorer" }] }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: responseFailureHerdr });
-	const responseFailure = await executeHerdrSubagents({ action: "respond", runId: responseFailureRun.details.runId, answer: "main" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: responseFailureHerdr });
+	const responseFailure = await executeHerdrSubagents({ action: "respond", runId: responseFailureRun.details.runId, task: 1, answer: "main" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: responseFailureHerdr });
 	const responseFailureTask = JSON.parse(readFileSync(join(responseFailureRun.details.recordDirectory, "tasks", readdirSync(join(responseFailureRun.details.recordDirectory, "tasks"))[0], "task.json"), "utf8"));
 	check("failed blocked response settles durable task instead of leaving running", responseFailure.isError && responseFailure.details.status === "failed" && responseFailureTask.status === "failed" && responseFailureHerdr.calls.at(-1)[0] === "closeTab");
 	const siblingFailureHerdr = fakeHerdr("blocked-then-post-fail");
 	const siblingFailureRun = await executeHerdrSubagents({ concurrency: 1, tasks: [{ name: "response-fails", prompt: "question", agent: "explorer" }, { name: "queued-sibling", prompt: "later", agent: "reviewer" }] }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: siblingFailureHerdr });
-	await executeHerdrSubagents({ action: "respond", runId: siblingFailureRun.details.runId, answer: "main" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: siblingFailureHerdr });
+	await executeHerdrSubagents({ action: "respond", runId: siblingFailureRun.details.runId, task: 1, answer: "main" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: siblingFailureHerdr });
 	const siblingFailureTasks = readdirSync(join(siblingFailureRun.details.recordDirectory, "tasks")).map((entry) => JSON.parse(readFileSync(join(siblingFailureRun.details.recordDirectory, "tasks", entry, "task.json"), "utf8")));
 	check("failed blocked response releases its slot and continues queued siblings", siblingFailureTasks.every((task) => ["failed", "completed"].includes(task.status)) && siblingFailureTasks.every((task) => task.status !== "cancelled") && siblingFailureHerdr.calls.filter(([name]) => name === "promptAgent").length === 3);
 	const abortedContinuationHerdr = fakeHerdr("blocked");
@@ -889,7 +1161,7 @@ try {
 	const deadPaneHerdr = fakeHerdr("blocked");
 	const deadPaneRun = await executeHerdrSubagents({ tasks: [{ name: "dead-pane", prompt: "question", agent: "explorer" }] }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: deadPaneHerdr });
 	deadPaneHerdr.paneExists = async () => false;
-	const deadPaneResume = await executeHerdrSubagents({ action: "respond", runId: deadPaneRun.details.runId, answer: "main" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: deadPaneHerdr });
+	const deadPaneResume = await executeHerdrSubagents({ action: "respond", runId: deadPaneRun.details.runId, task: 1, answer: "main" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: deadPaneHerdr });
 	const deadPaneTaskDirectory = join(deadPaneRun.details.recordDirectory, "tasks", readdirSync(join(deadPaneRun.details.recordDirectory, "tasks"))[0]);
 	const deadPaneTask = JSON.parse(readFileSync(join(deadPaneTaskDirectory, "task.json"), "utf8"));
 	check("dead blocked pane recovers a coherent attempt with its persona prompt", !deadPaneResume.isError && deadPaneHerdr.calls.filter(([name]) => name === "createTab").length === 2 && deadPaneTask.tabId === "w1:t2" && deadPaneTask.attempt === 2 && deadPaneTask.currentTurnFile.endsWith("02.json") && existsSync(deadPaneTask.currentTurnFile) && readFileSync(join(deadPaneTaskDirectory, "resume-system-prompt.md"), "utf8").includes("Investigate the assigned question without modifying files"));
@@ -899,7 +1171,7 @@ try {
 	staleTabHerdr.createTab = async (request) => { staleTabHerdr.calls.push(["createTab", request]); return { tabId: "w1:t-new", paneId: "w1:p-new" }; };
 	staleTabHerdr.closeTab = async (tabId) => { staleTabHerdr.calls.push(["closeTab", { tabId }]); if (tabId === "w1:t2") throw new Error("stale tab still busy"); };
 	const staleTabUpdates = [];
-	const staleTabResume = await executeHerdrSubagents({ action: "respond", runId: staleTabRun.details.runId, answer: "main" }, undefined, (update) => staleTabUpdates.push(update), { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: staleTabHerdr });
+	const staleTabResume = await executeHerdrSubagents({ action: "respond", runId: staleTabRun.details.runId, task: 1, answer: "main" }, undefined, (update) => staleTabUpdates.push(update), { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: staleTabHerdr });
 	const staleTabRecord = JSON.parse(readFileSync(join(staleTabRun.details.recordDirectory, "run.json"), "utf8"));
 	check("dead-pane migration persists and surfaces stale tab cleanup failure", !staleTabResume.isError && staleTabRecord.cleanupError === "stale tab still busy" && staleTabRecord.staleTabIds?.includes("w1:t2") && staleTabUpdates.some((update) => update.content[0].text.includes("Could not close stale Herdr tab")));
 	const invalidTurnHerdr = fakeHerdr("blocked");
@@ -913,12 +1185,12 @@ try {
 	invalidTurnTask.currentTurnFile = invalidTurnFile;
 	writeFileSync(invalidTurnTaskFile, JSON.stringify(invalidTurnTask));
 	const invalidTurnUpdates = [];
-	await executeHerdrSubagents({ action: "respond", runId: invalidTurnRun.details.runId, answer: "main" }, undefined, (update) => invalidTurnUpdates.push(update), { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: invalidTurnHerdr });
+	await executeHerdrSubagents({ action: "respond", runId: invalidTurnRun.details.runId, task: 1, answer: "main" }, undefined, (update) => invalidTurnUpdates.push(update), { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: invalidTurnHerdr });
 	check("invalid durable turn is archived and surfaced before recovery", readdirSync(join(invalidTurnTaskDirectory, "turns")).some((name) => name.startsWith("01.json.invalid-")) && invalidTurnUpdates.some((update) => update.content[0].text.includes("Archived invalid durable turn")));
 	const corruptLookupRoot = join(root, "corrupt-run-lookup");
 	mkdirSync(join(corruptLookupRoot, ".pi", "herdr-subagents", "runs", "bad"), { recursive: true });
 	writeFileSync(join(corruptLookupRoot, ".pi", "herdr-subagents", "runs", "bad", "run.json"), "{truncated");
-	const corruptLookup = await executeHerdrSubagents({ action: "respond", runId: "missing", answer: "main" }, undefined, undefined, { cwd: corruptLookupRoot }, { agentsDirectory: join(process.cwd(), "agents"), herdr: fakeHerdr() });
+	const corruptLookup = await executeHerdrSubagents({ action: "respond", runId: "missing", task: 1, answer: "main" }, undefined, undefined, { cwd: corruptLookupRoot }, { agentsDirectory: join(process.cwd(), "agents"), herdr: fakeHerdr() });
 	check("blocked response surfaces unreadable run records instead of reporting unknown", corruptLookup.isError && corruptLookup.content[0].text.includes("Could not inspect Subagent runs"));
 	const survivingPaneRunFile = join(root, "surviving-pane-run.json");
 	const survivingPaneRun = { id: "surviving-pane", label: "surviving-pane", status: "blocked", cwd: root, tabId: "w1:t-surviving", paneIds: ["w1:p-live", "w1:p-dead"] };
@@ -1026,7 +1298,7 @@ try {
 	check("member cancellation cannot cancel a sibling owner or close its shared tab", !ownerMembersAfter.resume.active.a && ownerMembersAfter.resume.active.b && JSON.parse(readFileSync(join(ownerMembersRun, "tasks", "02-b", "task.json"), "utf8")).status === "running" && !ownerMembersHerdr.calls.some(([name]) => name === "closeTab"));
 
 	const resumeRaceRoot = join(root, "resume-race");
-	const resumeRaceSeed = await runHerdrSubagents("original", { cwd: resumeRaceRoot, herdr: fakeHerdr() });
+	const resumeRaceSeed = await runSingleTask("original", { cwd: resumeRaceRoot, herdr: fakeHerdr() });
 	const resumeRaceHerdr = fakeHerdr();
 	const createRaceTab = resumeRaceHerdr.createTab.bind(resumeRaceHerdr);
 	let beginFirstCreate;
@@ -1310,7 +1582,7 @@ try {
 	const currentAttemptId = "22222222-2222-4222-8222-222222222222";
 	writeFileSync(join(isolatedAttemptRun, "run.json"), JSON.stringify({ id: "isolated-attempt", label: "isolated-attempt", status: "running", startedAt: new Date().toISOString() }));
 	writeFileSync(join(isolatedAttemptTask, "task.json"), JSON.stringify({ id: "isolated-attempt-task", runId: "isolated-attempt", order: 1, status: "running", paneId: "w1:p-live", currentAttemptId, sessionFile: join(isolatedAttemptTask, "session.jsonl") }));
-	writeFileSync(join(isolatedAttemptTask, "report.json"), JSON.stringify({ attemptId: "11111111-1111-4111-8111-111111111111", status: "needs-input", summary: "Prior attempt blocked.", question: "Old question?", documents: [] }));
+	writeFileSync(join(isolatedAttemptTask, "report.json"), JSON.stringify({ attemptId: "11111111-1111-4111-8111-111111111111", status: "blocked", summary: "Prior attempt blocked.", question: "Old question?", documents: [] }));
 	const isolatedReconciliation = await reconcileSubagentRuns(isolatedAttemptRoot, fakeHerdr());
 	const isolatedTaskRecord = JSON.parse(readFileSync(join(isolatedAttemptTask, "task.json"), "utf8"));
 	check("reconciliation ignores a prior canonical report while the current attempt is live", isolatedReconciliation.liveTasks === 1 && isolatedTaskRecord.status === "running" && isolatedTaskRecord.currentAttemptId === currentAttemptId && JSON.parse(readFileSync(join(isolatedAttemptTask, "report.json"), "utf8")).summary === "Prior attempt blocked.");
@@ -1331,7 +1603,7 @@ try {
 	mkdirSync(join(blockedOwnerLossTask, "reports"), { recursive: true });
 	writeFileSync(join(blockedOwnerLossRun, "run.json"), JSON.stringify({ id: "blocked-owner-loss", label: "blocked-owner-loss", status: "running", effectiveConcurrency: 1, ownerSessionId: "dead-owner", ownerProcessId: 99999999, tabId: "w1:t-blocked-owner-loss", startedAt: new Date().toISOString() }));
 	writeFileSync(join(blockedOwnerLossTask, "task.json"), JSON.stringify({ id: "blocked-owner-loss-task", runId: "blocked-owner-loss", order: 1, status: "running", paneId: "w1:p-blocked-owner-loss", currentAttemptId: blockedOwnerLossAttempt, sessionFile: join(blockedOwnerLossTask, "session.jsonl") }));
-	writeFileSync(join(blockedOwnerLossTask, "reports", `${blockedOwnerLossAttempt}.json`), JSON.stringify({ attemptId: blockedOwnerLossAttempt, status: "needs-input", summary: "Need input before owner loss.", question: "Which branch?", documents: [] }));
+	writeFileSync(join(blockedOwnerLossTask, "reports", `${blockedOwnerLossAttempt}.json`), JSON.stringify({ attemptId: blockedOwnerLossAttempt, status: "blocked", summary: "Need input before owner loss.", question: "Which branch?", documents: [] }));
 	const blockedOwnerLossHerdr = fakeHerdr();
 	await reconcileSubagentRuns(blockedOwnerLossRoot, blockedOwnerLossHerdr, { sessionId: "new-owner", processId: process.pid });
 	const cancelledBlockedOwnerTask = JSON.parse(readFileSync(join(blockedOwnerLossTask, "task.json"), "utf8"));
@@ -1345,12 +1617,12 @@ try {
 	mkdirSync(join(parallelInputRecoveryTask, "reports"), { recursive: true });
 	writeFileSync(join(parallelInputRecoveryRun, "run.json"), JSON.stringify({ id: "parallel-input-recovery", label: "parallel-input-recovery", status: "running", effectiveConcurrency: 2, ownerSessionId: "dead-owner", ownerProcessId: 99999999, tabId: "w1:t-parallel-input", startedAt: new Date().toISOString() }));
 	writeFileSync(join(parallelInputRecoveryTask, "task.json"), JSON.stringify({ id: "parallel-input-task", runId: "parallel-input-recovery", order: 1, status: "running", paneId: "w1:p-parallel-input", currentAttemptId: parallelInputRecoveryAttempt, sessionFile: join(parallelInputRecoveryTask, "session.jsonl") }));
-	writeFileSync(join(parallelInputRecoveryTask, "reports", `${parallelInputRecoveryAttempt}.json`), JSON.stringify({ attemptId: parallelInputRecoveryAttempt, status: "needs-input", summary: "Need a branch.", question: "Which branch?", documents: [] }));
+	writeFileSync(join(parallelInputRecoveryTask, "reports", `${parallelInputRecoveryAttempt}.json`), JSON.stringify({ attemptId: parallelInputRecoveryAttempt, status: "blocked", summary: "Need a branch.", question: "Which branch?", documents: [] }));
 	await reconcileSubagentRuns(parallelInputRecoveryRoot, fakeHerdr(), { sessionId: "new-owner", processId: process.pid });
 	const recoveredParallelInputTask = JSON.parse(readFileSync(join(parallelInputRecoveryTask, "task.json"), "utf8"));
 	const recoveredParallelInputReport = JSON.parse(readFileSync(join(parallelInputRecoveryTask, "report.json"), "utf8"));
 	const recoveredParallelInputAttempt = JSON.parse(readFileSync(join(parallelInputRecoveryTask, "reports", `${parallelInputRecoveryAttempt}.json`), "utf8"));
-	check("reconciliation keeps concurrent input requests out of blocked state", recoveredParallelInputTask.status === "failed" && recoveredParallelInputTask.failureKind === "missing_input" && recoveredParallelInputReport.status === "failed" && recoveredParallelInputReport.requiredInput === "Which branch?" && recoveredParallelInputAttempt.status === "failed" && recoveredParallelInputAttempt.failureKind === "missing_input" && JSON.parse(readFileSync(join(parallelInputRecoveryRun, "run.json"), "utf8")).status === "failed");
+	check("reconciliation treats a blocked report identically at any concurrency", recoveredParallelInputTask.status === "cancelled" && recoveredParallelInputReport.status === "failed" && !recoveredParallelInputReport.question && recoveredParallelInputAttempt.status === "failed" && !recoveredParallelInputAttempt.question && JSON.parse(readFileSync(join(parallelInputRecoveryRun, "run.json"), "utf8")).status === "cancelled");
 	const malformedRoot = join(root, "malformed-recovery");
 	const malformedRun = join(malformedRoot, ".pi", "herdr-subagents", "runs", "run");
 	const malformedTask = join(malformedRun, "tasks", "01-task");

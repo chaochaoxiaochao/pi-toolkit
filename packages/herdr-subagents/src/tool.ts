@@ -1,6 +1,5 @@
 import { CliHerdrAutomation, type HerdrAutomation } from "./herdr.ts";
 import { loadSubagentConfiguration, type ConfigurationPaths, type SubagentConfiguration } from "./config.ts";
-import { runHerdrSubagents, type HerdrSubagentsResult } from "./runner.ts";
 import { runHerdrSubagentsBatch, type BatchResult, type BatchTask } from "./batch-runner.ts";
 import { respondToBlockedTask } from "./blocking.ts";
 import { cleanSubagentRun, historyText, listSubagentHistory, resumeHistoricalTask } from "./history.ts";
@@ -31,9 +30,7 @@ export interface HerdrSubagentsControlToolParams {
 export interface HerdrSubagentsToolParams {
 	action?: "list" | "status" | "respond" | "history" | "resume" | "cancel" | "cleanup";
 	prompt?: string;
-	agent?: string;
 	label?: string;
-	model?: string;
 	tasks?: HerdrSubagentsTaskParams[];
 	concurrency?: number;
 	background?: boolean;
@@ -56,13 +53,6 @@ export interface HerdrSubagentsToolDependencies {
 	runId?: string;
 	cancelRun?: (runId: string) => Promise<{ cancelled: boolean; queued?: boolean; cleanupErrors?: string[] }>;
 }
-
-export type HerdrSubagentsDetails = HerdrSubagentsResult & {
-	agent: string;
-	description: string;
-	prompt: string;
-	personaPath: string;
-};
 
 export type HerdrSubagentsBatchDetails = BatchResult & { prompts: string[] };
 
@@ -88,14 +78,6 @@ export function listText(discovery: SubagentConfiguration): string {
 	if (discovery.diagnostics.length > 0) {
 		lines.push("", "Persona diagnostics:", ...discovery.diagnostics.map((diagnostic) => `- ${diagnostic}`));
 	}
-	return lines.join("\n");
-}
-
-function summaryText(result: HerdrSubagentsResult): string {
-	if (result.ok) return result.output;
-	const lines = [result.summary];
-	if (result.errorMessage) lines.push(`Error: ${result.errorMessage}`);
-	if (result.recordDirectory) lines.push(`Task record: ${result.recordDirectory}`);
 	return lines.join("\n");
 }
 
@@ -179,7 +161,7 @@ const actionHandlers = {
 	async respond({ params, signal, onUpdate, ctx, dependencies }: ToolExecutionContext) {
 		try {
 			const result = await respondToBlockedTask(ctx.cwd, (params.runId as string).trim(), (params.answer as string).trim(), {
-				herdr: dependencies.herdr, taskNumber: params.task, signal, owner: dependencies.owner,
+				herdr: dependencies.herdr, taskNumber: params.task as number, signal, owner: dependencies.owner,
 				onUpdate: (partial) => onUpdate?.({ content: [{ type: "text", text: partial.summary }], details: partial }),
 				onStalled: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "respond", runId: params.runId, stalled: true } }),
 				onWarning: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "respond", runId: params.runId, warning: text } }),
@@ -230,37 +212,6 @@ async function executeBatch({ params, signal, onUpdate, ctx, dependencies, disco
 	}
 }
 
-async function executeSingle({ params, signal, onUpdate, ctx, dependencies, discovery }: ToolExecutionContext): Promise<ToolResponse> {
-	const prompt = params.prompt as string;
-	const selectedName = params.agent?.trim() || "worker";
-	const persona = discovery.personas.find((agent) => agent.name === selectedName);
-	if (!persona) return errorResponse(`Unknown persona '${selectedName}'.\n\n${listText(discovery)}`);
-	const explicitModel = params.model?.trim();
-	const selectedModel = explicitModel || persona.model || modelId(ctx);
-	const selectedThinking = persona.thinking ?? (!explicitModel && persona.modelSource === "parent session" ? ctx.thinkingLevel : undefined);
-	const details = (result: HerdrSubagentsResult): HerdrSubagentsDetails => ({ ...result, agent: persona.name, description: persona.description, prompt, personaPath: persona.filePath });
-	const result = await runHerdrSubagents(prompt, {
-		agent: persona.name,
-		label: params.label,
-		...(selectedModel ? { model: selectedModel } : {}),
-		...(selectedThinking ? { thinking: selectedThinking } : {}),
-		...(persona.tools ? { tools: persona.tools } : {}),
-		skills: persona.skills,
-		access: persona.access,
-		owner: dependencies.owner,
-		systemPrompt: persona.systemPrompt,
-		cwd: ctx.cwd,
-		signal,
-		herdr: dependencies.herdr,
-		stalledWarningSeconds: discovery.settings.stalledWarningSeconds,
-		onStalled: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { status: "running", stalled: true } }),
-		onCleanupError: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { status: "warning", cleanupError: text } }),
-		onUpdate: (partial) => onUpdate?.({ content: [{ type: "text", text: partial.summary }], details: details(partial) }),
-	});
-	const isError = result.status === "failed" || result.status === "cancelled";
-	return { content: [{ type: "text", text: summaryText(result) }], details: details(result), ...(isError ? { isError: true } : {}) };
-}
-
 export async function executeHerdrSubagents(
 	params: HerdrSubagentsRunParams | HerdrSubagentsToolParams,
 	signal: AbortSignal | undefined,
@@ -269,10 +220,6 @@ export async function executeHerdrSubagents(
 	dependencies: HerdrSubagentsToolDependencies,
 ): Promise<ToolResponse> {
 	if (params.action) return executeHerdrSubagentsControl(params as HerdrSubagentsControlToolParams, signal, onUpdate, ctx, dependencies);
-	if (params.prompt && !params.tasks) {
-		const discovery = loadSubagentConfiguration(ctx.cwd, dependencies.agentsDirectory, modelId(ctx), dependencies.configurationPaths);
-		return executeSingle({ params, signal, onUpdate, ctx, dependencies, discovery });
-	}
 	const runParams = params as HerdrSubagentsRunParams;
 	const validationError = validateRunParams(runParams);
 	if (validationError) return { content: [{ type: "text", text: validationError }], details: { errorMessage: validationError }, isError: true };

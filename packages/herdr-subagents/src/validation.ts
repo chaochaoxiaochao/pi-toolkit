@@ -21,7 +21,7 @@ export function validateControlParams(params: HerdrSubagentsControlToolParams): 
 	const extra = Object.keys(params).find((key) => !allowed.includes(key as keyof HerdrSubagentsControlToolParams));
 	if (extra) return `Field '${extra}' is not valid with action '${params.action}'.`;
 	if ((params.action === "status" || params.action === "cancel" || params.action === "cleanup") && !params.runId?.trim()) return `runId is required for action '${params.action}'.`;
-	if (params.action === "respond" && (!params.runId?.trim() || !params.answer?.trim())) return "runId and answer are required for action 'respond'.";
+	if (params.action === "respond" && (!params.runId?.trim() || !params.answer?.trim() || !params.task)) return "runId, answer, and task are required for action 'respond'.";
 	if (params.action === "resume" && (!params.runId?.trim() || !params.task || !params.prompt?.trim())) return "runId, task, and prompt are required for action 'resume'.";
 	return undefined;
 }

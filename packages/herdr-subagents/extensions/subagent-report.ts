@@ -23,7 +23,7 @@ async function returnToParent(pi: ExtensionAPI, ctx: { ui: { notify(message: str
 }
 
 const ReportParams = Type.Object({
-	status: StringEnum(["completed", "needs-input", "failed"] as const, { description: "Current outcome for this task." }),
+	status: StringEnum(["completed", "blocked", "failed"] as const, { description: "Outcome of this turn. completed: the task is finished. blocked: you have a specific question or decision the parent agent must answer before you can continue, and the run should stay open waiting for it. failed: this task cannot be completed, so the run should not wait for an answer." }),
 	summary: Type.String({ minLength: 1, description: "One concise paragraph for the parent agent." }),
 	result: Type.String({ description: "Complete final result. Stored on disk and excluded from the parent context." }),
 	documents: Type.Optional(Type.Array(Type.Object({
@@ -31,7 +31,7 @@ const ReportParams = Type.Object({
 		description: Type.String({ minLength: 1, description: "Short description of the document." }),
 	}))),
 	error: Type.Optional(Type.String({ minLength: 1, description: "Failure detail when status is failed." })),
-	question: Type.Optional(Type.String({ minLength: 1, description: "Exact question when status is needs-input." })),
+	question: Type.Optional(Type.String({ minLength: 1, description: "Exact question for the parent agent when status is blocked." })),
 });
 
 function writeAtomic(path: string, content: string): void {

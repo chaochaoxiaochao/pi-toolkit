@@ -6,9 +6,9 @@ import { writeJsonAtomic } from "./state.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
 import { RunPaneAllocator } from "./run-pane-allocator.ts";
 import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
-import { applyReport, applyTaskStatus, normalizeNeedsInputReport, readRunRecord, readTaskRecord, settleAttemptFailure } from "./records.ts";
+import { applyReport, applyTaskStatus, readRunRecord, readTaskRecord, settleAttemptFailure } from "./records.ts";
+import { acquireDirectoryLock, adoptRecord, queueLockPath, withRunStateLock, type DirectoryLock } from "./run-state.ts";
 import { isAbortError } from "./errors.ts";
-import { attemptReportPath } from "./attempts.ts";
 
 export interface ContinueQueuedRunOptions {
 	cleanup?: boolean;
@@ -20,6 +20,20 @@ export interface ContinueQueuedRunOptions {
 
 export async function continueQueuedRun(runDirectory: string, herdr: HerdrAutomation, options: ContinueQueuedRunOptions = {}): Promise<void> {
 	const runFile = join(runDirectory, "run.json");
+	// A live batch keeps starting its own queued tasks even after one of its lanes blocks, so take the
+	// queue over only when nothing else owns it. Otherwise a task could be started twice.
+	const ownedElsewhere = `Run queue at ${runDirectory} is owned by its batch.`;
+	let queueLock: DirectoryLock;
+	try { queueLock = await acquireDirectoryLock(queueLockPath(runDirectory), { wait: false, signal: options.signal, contentionMessage: ownedElsewhere }); }
+	catch (error) {
+		if (error instanceof Error && error.message === ownedElsewhere) return;
+		throw error;
+	}
+	try { await continueQueuedTasks(runDirectory, runFile, herdr, options); }
+	finally { await queueLock.release(); }
+}
+
+async function continueQueuedTasks(runDirectory: string, runFile: string, herdr: HerdrAutomation, options: ContinueQueuedRunOptions): Promise<void> {
 	const run = await readRunRecord(runFile);
 	const taskDirectories = readdirSync(join(runDirectory, "tasks")).sort().map((entry) => join(runDirectory, "tasks", entry));
 	const queuedDirectories: string[] = [];
@@ -51,9 +65,7 @@ export async function continueQueuedRun(runDirectory: string, herdr: HerdrAutoma
 			await options.onUpdate?.();
 			const prompted = await promptLiveAgent({ herdr, task: { ...task, id: task.id, sessionFile: task.sessionFile }, paneId, prompt: task.prompt, systemPromptFile: join(directory, "system-prompt.md"), agentName, signal: options.signal, stalledWarningMs: run.stalledWarningSeconds ? Number(run.stalledWarningSeconds) * 1000 : undefined, onStalled: () => options.onStalled?.(`${task.name ?? task.agent} appears stalled; it is still running.`) });
 			task.currentAttemptId = prompted.attemptId;
-			const report = normalizeNeedsInputReport(prompted.report, Number(run.effectiveConcurrency) || 1);
-			if (report !== prompted.report) await Promise.all([writeJsonAtomic(reportFile, report), writeJsonAtomic(attemptReportPath(directory, prompted.attemptId), report)]);
-			applyReport(task, report);
+			applyReport(task, prompted.report);
 		} catch (error) {
 			await settleAttemptFailure(task, reportFile, {
 				cancelled: isAbortError(error, options.signal),
@@ -83,8 +95,11 @@ export async function continueQueuedRun(runDirectory: string, herdr: HerdrAutoma
 		}
 	}
 	const statuses = await Promise.all(taskDirectories.map(async (directory) => (await readTaskRecord(join(directory, "task.json"))).status));
-	applyRunStatus(run, aggregateTaskStatus(statuses));
-	await writeJsonAtomic(runFile, run);
+	// Settling the run must not be cancellable, so the terminal status is never written under the signal.
+	await withRunStateLock(runFile, undefined, (latest) => {
+		applyRunStatus(latest, aggregateTaskStatus(statuses));
+		adoptRecord(run, latest);
+	});
 	if (options.cleanup !== false && run.status !== "blocked" && run.tabId) {
 		await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, signal: options.signal, onError: options.onCleanupError });
 	}

@@ -18,7 +18,7 @@ export const HerdrSubagentsParams = Type.Object({
 export const HerdrSubagentsControlParams = Type.Object({
 	action: StringEnum(["list", "status", "respond", "history", "resume", "cancel", "cleanup"] as const, { description: "Control operation to perform." }),
 	runId: Type.Optional(Type.String({ minLength: 1, description: "Durable run ID used by status, respond, resume, cancel, or cleanup." })),
-	answer: Type.Optional(Type.String({ minLength: 1, description: "Answer sent to a blocked task when action is respond." })),
-	task: Type.Optional(Type.Integer({ minimum: 1, description: "One-based task number selected for respond or resume." })),
+	answer: Type.Optional(Type.String({ minLength: 1, description: "Message sent to the selected blocked or failed task when action is respond." })),
+	task: Type.Optional(Type.Integer({ minimum: 1, description: "One-based task number. Always required for respond, and selects the task for resume." })),
 	prompt: Type.Optional(Type.String({ minLength: 1, description: "Follow-up prompt used by resume." })),
 }, { additionalProperties: false });

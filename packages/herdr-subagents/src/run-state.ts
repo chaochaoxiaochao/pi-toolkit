@@ -97,6 +97,16 @@ export async function acquireDirectoryLock(directory: string, options: { wait: b
 	}
 }
 
+/** Only the holder of this lock may start a run's queued tasks. */
+export function queueLockPath(runDirectory: string): string { return join(runDirectory, ".queue.lock"); }
+
+/** Replaces a long-lived in-memory copy with the record observed under the lock, including removals. */
+export function adoptRecord<T extends object>(target: T, latest: T): T {
+	const mutable = target as unknown as Record<string, unknown>;
+	for (const key of Object.keys(mutable)) if (!(key in latest)) delete mutable[key];
+	return Object.assign(target, latest);
+}
+
 export async function withRunStateLock<T>(runFile: string, signal: AbortSignal | undefined, mutate: (run: RunRecord) => T | Promise<T>): Promise<T> {
 	const lock = await acquireDirectoryLock(join(dirname(runFile), ".state.lock"), { wait: true, signal });
 	try {

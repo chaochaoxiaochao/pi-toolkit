@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { HerdrAutomation } from "./herdr.ts";
 import { isProcessAlive, type OwnerIdentity } from "./ownership.ts";
 import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
-import { applyReport, applyTaskStatus, isActiveStatus, normalizeNeedsInputReport, persistFailureReport, readReport, readRunRecord, readTaskRecord, settleAttemptFailure, type RunRecord } from "./records.ts";
+import { applyReport, applyTaskStatus, isActiveStatus, persistFailureReport, readReport, readRunRecord, readTaskRecord, settleAttemptFailure, type RunRecord } from "./records.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
 import { attemptReportPath } from "./attempts.ts";
 import { writeJsonAtomic } from "./state.ts";
@@ -127,7 +127,7 @@ export async function reconcileSubagentRuns(cwd: string, herdr: HerdrAutomation,
 						try {
 							const submitted = await readReport(scopedResumeReport);
 							if (submitted.attemptId !== member.attemptId) throw new Error(`Report attempt '${submitted.attemptId ?? "unknown"}' does not match resume member '${member.attemptId}'.`);
-							const report = normalizeNeedsInputReport(submitted, 1);
+							const report = submitted;
 							entry.task.currentAttemptId = member.attemptId;
 							const status = applyReport(entry.task, report, report.reportedAt);
 							await Promise.all([
@@ -164,7 +164,7 @@ export async function reconcileSubagentRuns(cwd: string, herdr: HerdrAutomation,
 					if (reportFile && existsSync(reportFile) && (task.status === "running" || task.status === "starting")) {
 						try {
 							const submitted = await readReport(reportFile);
-							const report = normalizeNeedsInputReport(submitted, Number(run.effectiveConcurrency) || 1);
+							const report = submitted;
 							if (task.currentAttemptId && report.attemptId !== task.currentAttemptId) throw new Error(`Report attempt '${report.attemptId ?? "unknown"}' does not match current attempt '${task.currentAttemptId}'.`);
 							applyReport(task, report, report.reportedAt);
 							if (report !== submitted) await writeJsonAtomic(reportFile, report);

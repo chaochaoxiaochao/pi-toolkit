@@ -311,7 +311,7 @@ async function verifyForegroundFailureHandoff() {
 		}
 		const queuedBehindBlocked = await blockedOwner.tool?.execute("blocked-background", { background: true, tasks: [{ name: "background", prompt: "later" }] }, undefined, undefined, { cwd: blockedOwnerRoot, ui: blockedOwner.ui });
 		if (queuedBehindBlocked.details?.status !== "queued" || blockedOwnerCalls !== 1) throw new Error("background run did not remain queued behind the blocked dispatcher owner");
-		await blockedOwner.controlTool?.execute("respond-prefix", { action: "respond", runId: ownerResult.details.runId.slice(0, 8), answer: "continue" }, undefined, undefined, { cwd: blockedOwnerRoot, ui: blockedOwner.ui });
+		await blockedOwner.controlTool?.execute("respond-prefix", { action: "respond", runId: ownerResult.details.runId.slice(0, 8), task: 1, answer: "continue" }, undefined, undefined, { cwd: blockedOwnerRoot, ui: blockedOwner.ui });
 		await waitUntil(() => blockedSuccessorStarted, "responding through a run ID prefix did not release the blocked dispatcher owner");
 		await blockedOwner.handlers.get("session_shutdown")?.({}, { cwd: blockedOwnerRoot, ui: blockedOwner.ui });
 
@@ -347,10 +347,10 @@ async function verifyPublicUiWiring() {
 		const responding = harness(async () => ({ content: [{ type: "text", text: "needs input" }], details: blockedDetails }));
 		await startHarness(responding, cwd);
 		if (!responding.tool) throw new Error("herdr_subagents was not registered for UI wiring test");
-		const renderedBlocked = responding.tool.renderResult({ content: [{ type: "text", text: "needs input" }], details: { agent: "explorer", status: "blocked", ok: false, summary: "Need input.", documents: [] } }, { isPartial: false }, { fg: (_color: string, text: string) => text, bold: (text: string) => text }).render(100).join("\n");
-		if (!renderedBlocked.includes("blocked") || renderedBlocked.includes("failed")) throw new Error("single-task blocked result did not render its authoritative status");
+		const renderedBlocked = responding.tool.renderResult({ content: [{ type: "text", text: "needs input" }], details: { label: "reviews", status: "blocked", effectiveConcurrency: 1, tasks: [{ index: 1, name: "second", status: "blocked", summary: "Need input." }] } }, { isPartial: false }, { fg: (_color: string, text: string) => text, bold: (text: string) => text }).render(100).join("\n");
+		if (!renderedBlocked.includes("blocked") || renderedBlocked.includes("failed")) throw new Error("blocked result did not render its authoritative status");
 		if (!responding.controlTool) throw new Error("herdr_subagents_control was not registered for UI wiring test");
-		await responding.controlTool.execute("call", { action: "respond", runId: "blocked-run", answer: "main" }, undefined, undefined, { cwd, ui: responding.ui });
+		await responding.controlTool.execute("call", { action: "respond", runId: "blocked-run", task: 2, answer: "main" }, undefined, undefined, { cwd, ui: responding.ui });
 		if (!responding.renderedLines.some((line) => line.includes("second") && line.includes("blocked"))) throw new Error("blocked response did not refresh Fleet rows");
 		if (!responding.terminalInput?.("\u001b[B")?.consume || !responding.terminalInput?.("\u001b[B")?.consume || !responding.terminalInput?.("\r")?.consume) throw new Error("Fleet terminal input was not consumed while selecting");
 		await new Promise((resolve) => setTimeout(resolve, 0));

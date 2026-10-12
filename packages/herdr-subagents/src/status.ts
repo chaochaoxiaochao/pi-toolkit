@@ -12,8 +12,6 @@ export interface RunStatusTask {
 	summary?: string;
 	question?: string;
 	error?: string;
-	failureKind?: "missing_input";
-	requiredInput?: string;
 }
 
 export interface RunStatusSnapshot {
@@ -46,8 +44,6 @@ async function loadDurableStatus(cwd: string, runId: string): Promise<RunStatusS
 		const report = reportIsCurrent && existsSync(reportFile) ? await readReport(reportFile) : undefined;
 		const question = report?.question ?? task.question;
 		const error = report?.error ?? task.error;
-		const failureKind = report?.failureKind ?? task.failureKind;
-		const requiredInput = report?.requiredInput ?? task.requiredInput;
 		tasks.push({
 			order: task.order,
 			name: task.name ?? task.agent ?? `Task ${task.order}`,
@@ -56,8 +52,6 @@ async function loadDurableStatus(cwd: string, runId: string): Promise<RunStatusS
 			...(report?.summary ? { summary: report.summary } : {}),
 			...(question ? { question } : {}),
 			...(error ? { error } : {}),
-			...(failureKind ? { failureKind } : {}),
-			...(requiredInput ? { requiredInput } : {}),
 		});
 	}
 	return {

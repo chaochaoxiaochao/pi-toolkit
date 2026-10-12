@@ -3,8 +3,7 @@ import { mkdir, readFile, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HerdrAgentState, HerdrAutomation } from "./herdr.ts";
-import type { HerdrSubagentsReport } from "./runner.ts";
-import { applyTaskRuntime, parseReport, readTaskRecord, type TaskRecord, type TaskRuntimeState } from "./records.ts";
+import { applyTaskRuntime, parseReport, readTaskRecord, type PersistedReport, type TaskRecord, type TaskRuntimeState } from "./records.ts";
 import { attemptReportPath, attemptStatePath, createAttemptId, type AttemptState } from "./attempts.ts";
 import { writeJsonAtomic } from "./state.ts";
 
@@ -66,7 +65,7 @@ export async function promptLiveAgent(options: {
 	onStalled?: () => void;
 	onRuntimeUpdate?: (task: TaskRecord) => void | Promise<void>;
 	attemptId?: string;
-}): Promise<{ report: HerdrSubagentsReport; agentName: string; attemptId: string }> {
+}): Promise<{ report: PersistedReport; agentName: string; attemptId: string }> {
 	const taskDirectory = dirname(options.task.sessionFile);
 	const reportFile = join(taskDirectory, "report.json");
 	const taskFile = join(taskDirectory, "task.json");
@@ -192,7 +191,7 @@ export async function promptLiveAgent(options: {
 		throw new Error("Child Pi submitted an invalid subagent_report.");
 	}
 	try {
-		const report = parseReport(value, "child subagent_report") as HerdrSubagentsReport;
+		const report = parseReport(value, "child subagent_report");
 		if (report.attemptId !== attemptId) throw new Error(`Report belongs to attempt '${report.attemptId ?? "unknown"}', expected '${attemptId}'.`);
 		await writeJsonAtomic(reportFile, report);
 		return { report, agentName, attemptId };

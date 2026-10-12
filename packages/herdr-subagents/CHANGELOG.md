@@ -3,6 +3,18 @@
 - add durable Herdr runtime telemetry without treating UI `blocked` as business blocked; preserve late reports after delivery-unknown prompt timeouts and fail only explicit terminal paths without a valid report
 - allow different historical tasks in one run to resume concurrently in a shared tab while fencing task writers, aggregate state, and final cleanup
 - reserve `retrying` display support without fabricating retries from ambiguous Pi lifecycle events
+- remove the unreachable single-task execution path so every task settles through the batch runner; legacy top-level prompts are still normalized into one-item task arrays
+- settle a batch through the run lock so a concurrent writer's `run.json` changes are no longer overwritten from a stale in-memory copy
+- let `respond` continue an explicitly named failed task from its saved Pi session, reusing its live pane when one survives, while its batch is still running
+- keep a settling batch from finishing the run or closing its tab while a continued task is still working, and from restarting queued siblings it still owns
+- claim a continued task before any pane work so a sibling that settles first cannot close the tab the continuation is about to use
+- report a still-queued sibling as running work instead of inventing an input request with no question
+- require the task number on every `respond` so an answer never selects a task implicitly
+- rename the child report status `needs-input` to `blocked` and reduce the child contract to `completed`, `blocked`, and `failed`
+- let a task block at any concurrency instead of downgrading concurrent input requests to `missing_input` failures, and drop `failureKind`/`requiredInput`
+- give a batch sole ownership of its queued tasks so answering one blocked lane can no longer start a queued sibling the batch is about to run
+- settle a batch against the task records for any lane that was answered while its siblings were still running, instead of reporting a stale question and keeping its tab open
+- settle a continued run's status through the run lock instead of overwriting it from a stale copy
 
 ## 2026-10-10 - v0.4.7
 

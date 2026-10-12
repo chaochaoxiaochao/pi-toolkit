@@ -17,14 +17,12 @@ export interface PersistedDocument {
 }
 
 export interface PersistedReport {
-	status: "completed" | "needs-input" | "failed";
+	status: "completed" | "blocked" | "failed";
 	summary: string;
 	documents: PersistedDocument[];
 	attemptId?: string;
 	error?: string;
 	question?: string;
-	failureKind?: "missing_input";
-	requiredInput?: string;
 	reportedAt?: string;
 }
 
@@ -67,8 +65,6 @@ export interface RunRecord {
 	staleTabIds?: string[];
 	question?: string;
 	error?: string;
-	failureKind?: "missing_input";
-	requiredInput?: string;
 	cleanupError?: string;
 	cleanupPendingTabIds?: string[];
 	resume?: ResumeState;
@@ -202,38 +198,22 @@ export async function readTurnRecord(path: string): Promise<TurnRecord> {
 export function parseReport(value: unknown, source = "structured report"): PersistedReport {
 	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`Expected a JSON object in ${source}.`);
 	const report = value as Record<string, unknown>;
-	if (report.status !== "completed" && report.status !== "needs-input" && report.status !== "failed") throw new Error(`Invalid report status in ${source}.`);
+	if (report.status !== "completed" && report.status !== "blocked" && report.status !== "failed") throw new Error(`Invalid report status in ${source}.`);
 	if (typeof report.summary !== "string" || !report.summary.trim()) throw new Error(`Missing report summary in ${source}.`);
 	if (!Array.isArray(report.documents) || !report.documents.every((document) => {
 		if (!document || typeof document !== "object" || Array.isArray(document)) return false;
 		const entry = document as Record<string, unknown>;
 		return typeof entry.path === "string" && typeof entry.description === "string";
 	})) throw new Error(`Invalid report documents in ${source}.`);
-	if (report.status === "needs-input" && (typeof report.question !== "string" || !report.question.trim())) throw new Error(`Missing report question in ${source}.`);
+	if (report.status === "blocked" && (typeof report.question !== "string" || !report.question.trim())) throw new Error(`Missing report question in ${source}.`);
 	if (report.error !== undefined && typeof report.error !== "string") throw new Error(`Invalid report error in ${source}.`);
 	if (report.question !== undefined && typeof report.question !== "string") throw new Error(`Invalid report question in ${source}.`);
-	if (report.failureKind !== undefined && report.failureKind !== "missing_input") throw new Error(`Invalid report failureKind in ${source}.`);
-	if (report.requiredInput !== undefined && (typeof report.requiredInput !== "string" || !report.requiredInput.trim())) throw new Error(`Invalid report requiredInput in ${source}.`);
-	if (report.failureKind === "missing_input" && report.status !== "failed") throw new Error(`missing_input must be a failed report in ${source}.`);
-	if (report.failureKind === "missing_input" && (typeof report.requiredInput !== "string" || !report.requiredInput.trim())) throw new Error(`Missing report requiredInput in ${source}.`);
 	if (report.attemptId !== undefined && (typeof report.attemptId !== "string" || !report.attemptId.trim())) throw new Error(`Invalid report attemptId in ${source}.`);
 	return report as unknown as PersistedReport;
 }
 
 export async function readReport(path: string): Promise<PersistedReport> {
 	return parseReport(await readObject(path), path);
-}
-
-export function normalizeNeedsInputReport(report: PersistedReport, effectiveConcurrency: number): PersistedReport {
-	if (report.status !== "needs-input" || effectiveConcurrency <= 1) return report;
-	return parseReport({
-		...report,
-		status: "failed",
-		error: `Missing required input: ${report.question}`,
-		failureKind: "missing_input",
-		requiredInput: report.question,
-		question: undefined,
-	}, "normalized concurrent input request");
 }
 
 export async function persistFailureReport(path: string, report: PersistedReport, replaceExisting = false): Promise<string | undefined> {
@@ -326,14 +306,7 @@ export function applyTaskRuntime(record: TaskRecord, state: TaskRuntimeState, di
 }
 
 export function applyReport(record: TaskRecord | TurnRecord, report: PersistedReport, completedAt = new Date().toISOString()): "blocked" | "completed" | "failed" {
-	const status = report.status === "needs-input" ? "blocked" : report.status;
-	applyTaskStatus(record, status, { at: completedAt, question: report.question, error: report.error });
+	applyTaskStatus(record, report.status, { at: completedAt, question: report.question, error: report.error });
 	if ("order" in record) clearTaskRuntime(record);
-	if ("order" in record) {
-		if (report.failureKind) record.failureKind = report.failureKind;
-		else delete record.failureKind;
-		if (report.requiredInput) record.requiredInput = report.requiredInput;
-		else delete record.requiredInput;
-	}
-	return status;
+	return report.status;
 }

@@ -18,7 +18,9 @@
 - Shut down the parent while a handed-off sibling is active and verify it is cancelled and joined, durable queue state is removed, and no stale follow-up is sent.
 - Verify all-success foreground batches still wait for every task and explicit `background: true` submissions still return immediately.
 - Verify a blocked dispatcher owner immediately rejects both newly submitted and already-queued foreground runs with its full run ID, keeps explicit background runs queued, and removes queued foreground runs when their caller cancels.
-- Verify only effectively serial runs can block; concurrent input requests settle as structured `missing_input` failures, including owner-loss reconciliation, while independent siblings continue.
+- Verify a parallel task blocks exactly like a serial one, keeping its question, attempt-scoped report, and tab while an independent sibling completes, that answering it settles and closes the run, and that reconciliation treats a blocked report identically at any concurrency.
+- Verify two lanes of one parallel batch can block at once, that each question is exposed in turn as they are answered, and that the run closes only after the last answer.
+- Answer a blocked lane while a sibling of the same parallel batch is still running and verify the batch keeps sole ownership of its queued tasks, runs them exactly once, and then settles and closes its tab against the task records rather than its own stale blocked snapshot, carrying no lifecycle field the blocked record left behind.
 - Verify historical follow-ups cannot create unowned blocked work and owner-loss reconciliation cancels serial blocked work instead of reconstructing hidden dispatcher ownership.
 - Verify all paths use interactive Agent start/prompt without print mode, shell injection, markers, or pane reuse.
 - Force write-capable batches to serial execution while allowing bounded read-only parallelism, including three concurrent `analyst` tasks with independent task-level models.
@@ -33,7 +35,14 @@
 - Verify Herdr `blocked` projects only `waiting_interaction`, prompt-delivery timeout projects `delivery_unknown` and accepts a late report, terminal API/process errors without reports fail, and `retrying` remains a display-only running runtime state until a reliable lifecycle source exists.
 - Simulate a false screen-settled return while the authoritative Pi lifecycle remains working, then write the report later and verify the task completes without a transient failed state.
 - Verify reports are bound to unique attempt IDs, blocked results are not tool errors, duplicate blocked responses are serialized, mixed failed/cancelled aggregates remain partial, and cleanup failures never overwrite business outcomes.
+- Verify settling a batch merges run state written concurrently under the run lock instead of overwriting `run.json` from a stale in-memory copy.
+- Verify an explicitly named failed task continues from its saved Pi session: it reuses its own live pane while its batch still runs, restarts in a new pane when that pane is gone, refuses to continue without a saved session, is never selected by an unqualified response, and does not start queued siblings that the running batch still owns.
+- Verify a settling batch adopts the task records on disk, so a continued task keeps its run `running` and its Herdr tab open instead of being overwritten by the batch's own stale view.
+- Verify a continuation claims its task before touching any pane, so a sibling continuation that finishes first leaves the shared tab open, and only the last one to settle closes it.
+- Verify a sibling that is still queued is reported as running work rather than as an invented input request with no question.
+- Verify a continued task may ask for input, becomes an ordinary blocked task, and is then answerable without naming its number.
+- Verify `respond` refuses completed, cancelled, queued, running, and nonexistent tasks without touching Herdr or the run record.
 
 ## Latest baseline
 
-All 217 deterministic scheduler, recovery, process-boundary, schema-validation, navigation, metrics, responsive-formatting, lifecycle, attempt-isolation, and persona cases plus the extension-contract lifecycle simulations must pass. Release validation also requires extension loading and a real Herdr read-only batch smoke with distinct task panes and final tab cleanup. The latest smoke completed a read-only package inspection with matching durable attempt/report IDs and automatic tab cleanup.
+All 246 deterministic scheduler, recovery, process-boundary, schema-validation, navigation, metrics, responsive-formatting, lifecycle, attempt-isolation, and persona cases plus the extension-contract lifecycle simulations must pass. Release validation also requires extension loading and a real Herdr read-only batch smoke with distinct task panes and final tab cleanup. The latest smoke completed a read-only package inspection with matching durable attempt/report IDs and automatic tab cleanup.

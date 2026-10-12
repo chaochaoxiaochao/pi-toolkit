@@ -1,6 +1,8 @@
 ## Unreleased
 
-- bundle Herdr Subagents runtime telemetry and concurrent historical-resume lifecycle fixes without conflating Herdr UI blocking with business `needs-input`
+- bundle Herdr Subagents runtime telemetry and concurrent historical-resume lifecycle fixes without conflating Herdr UI blocking with business blocking
+- bundle Herdr Subagents failed-task continuation: answer a named failed task from its saved Pi session while its batch still runs, without closing shared tabs or restarting queued siblings
+- bundle the Herdr Subagents three-outcome child contract (`completed`, `blocked`, `failed`): blocking now works identically in serial and parallel runs, keeps queued work with the batch that owns it, and always needs an explicit task number to answer
 
 ## 2026-10-10 - v0.10.21
 

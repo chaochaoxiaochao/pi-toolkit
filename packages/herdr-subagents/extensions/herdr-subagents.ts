@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import type { AgentToolResult, ExtensionAPI, ExtensionCommandContext, Theme, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
-import { Container, Editor, Spacer, Text } from "@earendil-works/pi-tui";
+import { Container, Editor, Text } from "@earendil-works/pi-tui";
 import { loadSubagentConfiguration } from "../src/config.ts";
 import { CliHerdrAutomation, type HerdrAutomation } from "../src/herdr.ts";
 import { activeRunText } from "../src/monitor.ts";
@@ -9,7 +9,7 @@ import { RunDispatcher } from "../src/dispatcher.ts";
 import { historyText, listSubagentHistory } from "../src/history.ts";
 import { cancelQueuedRuns, loadQueuedRuns, persistQueuedRun, removeQueuedRun } from "../src/queued-runs.ts";
 import { cancelActiveSubagentRuns, reconcileSubagentRuns } from "../src/reconcile.ts";
-import { executeHerdrSubagents, executeHerdrSubagentsControl, type HerdrSubagentsBatchDetails, type HerdrSubagentsControlToolParams, type HerdrSubagentsDetails, type HerdrSubagentsRunParams } from "../src/tool.ts";
+import { executeHerdrSubagents, executeHerdrSubagentsControl, type HerdrSubagentsBatchDetails, type HerdrSubagentsControlToolParams, type HerdrSubagentsRunParams } from "../src/tool.ts";
 import { HerdrSubagentsControlParams, HerdrSubagentsParams } from "../src/parameters.ts";
 import { HERDR_ACTIONS } from "../src/validation.ts";
 import { FleetController, type FleetWidgetRuntime } from "../src/fleet-controller.ts";
@@ -60,19 +60,6 @@ function renderToolResult(result: AgentToolResult<unknown>, _options: ToolRender
 		const visual = statusVisual(batch.status);
 		container.addChild(new Text(`${theme.fg("toolTitle", theme.bold(batch.label))} ${theme.fg(visual.color, batch.status)} · ${batch.tasks.length} settled · concurrency ${batch.effectiveConcurrency}`, 0, 0));
 		for (const task of batch.tasks) container.addChild(new Text(`${statusVisual(task.status).glyph} ${task.name}: ${task.summary}`, 0, 0));
-		return container;
-	}
-	const details = result.details as HerdrSubagentsDetails | undefined;
-	if (details?.agent) {
-		const container = new Container();
-		container.addChild(new Text(`${theme.fg("toolTitle", theme.bold(details.agent))} ${theme.fg(statusVisual(details.status).color, details.status)}`, 0, 0));
-		container.addChild(new Text(details.summary, 0, 0));
-		if (details.documents.length > 0) {
-			container.addChild(new Spacer(1));
-			for (const document of details.documents) container.addChild(new Text(theme.fg("muted", `${document.description}: ${document.path}`), 0, 0));
-		}
-		if (details.recordDirectory) container.addChild(new Text(theme.fg("dim", `Record: ${details.recordDirectory}`), 0, 0));
-		if (details.errorMessage) container.addChild(new Text(theme.fg("error", `Error: ${details.errorMessage}`), 0, 0));
 		return container;
 	}
 	const content = result.content[0];
@@ -195,7 +182,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 	pi.registerTool({
 		name: "herdr_subagents",
 		label: "Herdr Subagents",
-		description: "Run one or more ordered tasks in visible interactive Herdr Pi Agents. Use one tasks item for a single task. Independent read-only tasks may run concurrently; write-capable runs are serialized. Only effectively serial runs can pause for input; concurrent input requests become missing_input failures while independent siblings continue. Foreground calls wait for the batch unless a task fails, when the run continues in the background and returns its run ID immediately. Explicit background calls always return a run ID immediately. Complete results and Pi sessions stay in project-local records.",
+		description: "Run one or more ordered tasks in visible interactive Herdr Pi Agents. Use one tasks item for a single task. Independent read-only tasks may run concurrently; write-capable runs are serialized. A task that needs the parent agent to answer or decide something reports blocked at any concurrency, keeps its live pane, and lets its independent siblings continue; answer it with herdr_subagents_control respond, which a blocked run waits for before another foreground run can start. Foreground calls wait for the batch unless a task fails, when the run continues in the background and returns its run ID immediately. Explicit background calls always return a run ID immediately. Complete results and Pi sessions stay in project-local records.",
 		promptSnippet: "Run focused work in visible Herdr subagents",
 		parameters: HerdrSubagentsParams,
 		prepareArguments: normalizeHerdrSubagentsArguments,
@@ -328,7 +315,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 	pi.registerTool({
 		name: "herdr_subagents_control",
 		label: "Herdr Subagents Control",
-		description: "Inspect Herdr personas, query one run by ID, list run history, cancel active or queued work, answer a blocked task, resume a saved task, or remove a selected archived run. Use status for one run and history only for the full archive. Use herdr_subagents to start new work.",
+		description: "Inspect Herdr personas, query one run by ID, list run history, cancel active or queued work, answer a blocked task or continue a failed one with respond, resume a saved task, or remove a selected archived run. Continuing a failed task requires its task number and works while the rest of its batch still runs. Use status for one run and history only for the full archive. Use herdr_subagents to start new work.",
 		parameters: HerdrSubagentsControlParams,
 
 		async execute(_toolCallId, params: HerdrSubagentsControlToolParams, signal, onUpdate, ctx) {
