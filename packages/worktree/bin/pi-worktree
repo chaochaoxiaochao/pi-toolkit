@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# pi-worktree: create/reuse a git worktree, then launch pi inside it.
+# pi-worktree: create, inspect, and clean up git worktrees.
 #
 # Usage:
-#   pi-worktree start <name> [pi args...]  # enter worktree <name> and start pi
-#   pi-worktree start --base <ref> <name> [pi args...]  # branch from <ref> instead of current branch
-#   pi-worktree prepare [--base <ref>] [--json] <name>  # create/reuse without launching pi
+#   pi-worktree create [--base <ref>] [--json] <name>  # create/reuse without launching pi
 #   pi-worktree -l | --list                # list worktrees (main checkout marked "main checkout")
 #   pi-worktree -i <name>                  # show base commit, ahead/behind, unique commits
 #   pi-worktree -o | --out                 # cd back to the main checkout
@@ -229,13 +227,13 @@ cmd_remove() {
       if [[ "$ans" =~ ^[Yy]$ ]]; then
         git branch -D "$branch" && ok "deleted branch: $branch"
       else
-        warn "branch '$branch' kept; 'pi-worktree start $branch' will reuse it as-is"
+        warn "branch '$branch' kept; 'pi-worktree create $branch' will reuse it as-is"
       fi
     fi
   fi
 }
 
-prepare_wt() {
+create_wt() {
   local name="$1"
   require_repo
   validate_name "$name"
@@ -247,11 +245,11 @@ prepare_wt() {
     current_branch=$(git branch --show-current)
     [[ "$current_branch" == "$name" ]] \
       || die "already inside linked worktree '$current_branch'; return to the main checkout first"
-    PREPARE_STATUS="already-active"
-    PREPARE_DIR=$(pwd -P)
-    PREPARE_BRANCH="$current_branch"
-    PREPARE_DIRTY=false
-    if [[ -n "$(git status --porcelain)" ]]; then PREPARE_DIRTY=true; fi
+    CREATE_STATUS="already-active"
+    CREATE_DIR=$(pwd -P)
+    CREATE_BRANCH="$current_branch"
+    CREATE_DIRTY=false
+    if [[ -n "$(git status --porcelain)" ]]; then CREATE_DIRTY=true; fi
     return 0
   fi
 
@@ -275,7 +273,7 @@ prepare_wt() {
       || die "$dir is not checked out on expected branch '$name'"
     ensure_gitignore
     ok "reusing existing worktree $dir"
-    PREPARE_STATUS="reused"
+    CREATE_STATUS="reused"
   else
     local target_abs registered_path
     target_abs="$dir"
@@ -292,7 +290,7 @@ prepare_wt() {
         git worktree add "$dir" "$name"
       fi
       ok "checked out existing branch '$name'"
-      PREPARE_STATUS="attached"
+      CREATE_STATUS="attached"
       # record a best-effort base for -i display
       local mb; mb=$(git merge-base main "$name" 2>/dev/null || true)
       [[ -n "$mb" ]] && git config "branch.$name.base" "$(git rev-parse --short "$mb")" \
@@ -307,69 +305,44 @@ prepare_wt() {
       git config "branch.$name.base" "$(git rev-parse --short "$base")"
       git config "branch.$name.baseRef" "$base"
       ok "created branch '$name' from $base @ $(git rev-parse --short "$base")"
-      PREPARE_STATUS="created"
+      CREATE_STATUS="created"
     fi
   fi
 
-  PREPARE_DIR=$(cd "$dir" && pwd -P)
-  PREPARE_BRANCH=$(git -C "$dir" branch --show-current)
-  PREPARE_DIRTY=false
-  if [[ -n "$(git -C "$dir" status --porcelain)" ]]; then PREPARE_DIRTY=true; fi
+  CREATE_DIR=$(cd "$dir" && pwd -P)
+  CREATE_BRANCH=$(git -C "$dir" branch --show-current)
+  CREATE_DIRTY=false
+  if [[ -n "$(git -C "$dir" status --porcelain)" ]]; then CREATE_DIRTY=true; fi
 }
 
-print_prepare_json() {
-  PI_WORKTREE_STATUS="$PREPARE_STATUS" \
-  PI_WORKTREE_PATH="$PREPARE_DIR" \
-  PI_WORKTREE_BRANCH="$PREPARE_BRANCH" \
-  PI_WORKTREE_DIRTY="$PREPARE_DIRTY" \
+print_create_json() {
+  PI_WORKTREE_STATUS="$CREATE_STATUS" \
+  PI_WORKTREE_PATH="$CREATE_DIR" \
+  PI_WORKTREE_BRANCH="$CREATE_BRANCH" \
+  PI_WORKTREE_DIRTY="$CREATE_DIRTY" \
     node -e 'process.stdout.write(JSON.stringify({status:process.env.PI_WORKTREE_STATUS,path:process.env.PI_WORKTREE_PATH,branch:process.env.PI_WORKTREE_BRANCH,dirty:process.env.PI_WORKTREE_DIRTY==="true"})+"\n")'
 }
 
-cmd_prepare() {
+cmd_create() {
   BASE_OVERRIDE=""
   local json=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --base)
-        shift; [[ $# -ge 1 ]] || die "usage: pi-worktree prepare [--base <ref>] [--json] <name>"
+        shift; [[ $# -ge 1 ]] || die "usage: pi-worktree create [--base <ref>] [--json] <name>"
         BASE_OVERRIDE="$1"; shift ;;
       --json) json=1; QUIET=1; shift ;;
-      --*) die "unknown prepare option: $1" ;;
+      --*) die "unknown create option: $1" ;;
       *) break ;;
     esac
   done
-  [[ $# -eq 1 ]] || die "usage: pi-worktree prepare [--base <ref>] [--json] <name>"
-  prepare_wt "$1"
+  [[ $# -eq 1 ]] || die "usage: pi-worktree create [--base <ref>] [--json] <name>"
+  create_wt "$1"
   if [[ "$json" == 1 ]]; then
-    print_prepare_json
+    print_create_json
   else
-    ok "$PREPARE_STATUS worktree: $PREPARE_DIR ($PREPARE_BRANCH)"
+    ok "$CREATE_STATUS worktree: $CREATE_DIR ($CREATE_BRANCH)"
   fi
-}
-
-cd_wt() {
-  local name="$1"; shift
-  require_repo
-
-  # Already isolated? Preserve the original start behavior and launch Pi here.
-  if in_linked_worktree; then
-    ok "already in an isolated worktree ($(pwd)), launching pi here"
-    exec pi "$@"
-  fi
-
-  # Dirty workspace: uncommitted changes do NOT follow into the new worktree.
-  local dir; dir="$(main_checkout)/.worktrees/$name"
-  if [[ ! -d "$dir" ]] && { ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; }; then
-    warn "Uncommitted changes stay in THIS directory; they will NOT appear in the worktree:"
-    git status --short | head -20
-    read -rp "Continue? [y/N] " ans
-    [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
-  fi
-
-  prepare_wt "$name"
-
-  cd "$PREPARE_DIR"
-  exec pi "$@"
 }
 
 case "${1:-}" in
@@ -379,15 +352,7 @@ case "${1:-}" in
   -r|--remove|rm|remove) shift; cmd_remove "$@" ;;
   -p|--prune|prune) shift; subcmd_prune ;;
   -h|--help|help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' ;;
-  prepare) shift; cmd_prepare "$@" ;;
-  start) shift
-    BASE_OVERRIDE=""
-    if [[ "${1:-}" == "--base" ]]; then
-      shift; [[ $# -ge 2 ]] || die "usage: pi-worktree start --base <ref> <name> [pi args...]"
-      BASE_OVERRIDE="$1"; shift
-    fi
-    [[ $# -ge 1 ]] || die "usage: pi-worktree start <name> [pi args...]"
-    name="$1"; shift; cd_wt "$name" "$@" ;;
-  "")  die "usage: pi-worktree start <name> [pi args...]  (or list / info / out / remove / prune)" ;;
-  *)   die "unknown command: $1  (usage: pi-worktree start <name> [pi args...])" ;;
+  create) shift; cmd_create "$@" ;;
+  "")  die "usage: pi-worktree create <name>  (or list / info / out / remove / prune)" ;;
+  *)   die "unknown command: $1  (usage: pi-worktree create <name>)" ;;
 esac

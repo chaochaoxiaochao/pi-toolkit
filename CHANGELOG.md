@@ -1,3 +1,7 @@
+## Unreleased
+
+- Replace `pi-worktree start` and `pi-worktree prepare` with the create-only `pi-worktree create` CLI; `/worktree start` and `enter_worktree` continue to switch the current Pi session.
+
 ## 2026-10-12 - v0.10.22
 
 - bundle herdr-subagents v0.4.8: make blocking behave identically in serial and parallel runs and let respond continue a named failed task from its saved session

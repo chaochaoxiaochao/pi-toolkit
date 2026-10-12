@@ -140,7 +140,7 @@ test("public /worktree forwards --base to the CLI and switches", async () => {
   try {
     await f.handlers["command:worktree"]("start feature --base main", f.ctx);
     assert.match(f.execCalls[0].command, /packages\/worktree\/bin\/pi-worktree$/);
-    assert.deepEqual(f.execCalls[0].args, ["prepare", "--json", "--base", "main", "feature"]);
+    assert.deepEqual(f.execCalls[0].args, ["create", "--json", "--base", "main", "feature"]);
     assert.equal(f.execCalls[0].options.cwd, f.cwd);
     assert.ok(f.switchedTo());
   } finally {
@@ -159,7 +159,7 @@ test("aborted agent settlement discards the scheduled switch", async () => {
   }
 });
 
-test("a user command cannot race an Agent tool that is still preparing", async () => {
+test("a user command cannot race an Agent tool that is still creating", async () => {
   const f = await fixture({ deferExec: true });
   try {
     const toolResult = f.handlers.tool.execute(

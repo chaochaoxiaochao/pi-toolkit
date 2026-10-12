@@ -7,14 +7,14 @@ import { Type } from "typebox";
 const CLI_PATH = fileURLToPath(new URL("../bin/pi-worktree", import.meta.url));
 const PENDING_SWITCH_ARGUMENT = "__enter_worktree_pending__";
 
-export interface WorktreePrepareResult {
+export interface WorktreeCreateResult {
   status: "created" | "attached" | "reused" | "already-active";
   path: string;
   branch: string;
   dirty: boolean;
 }
 
-export interface EnterWorktreeResult extends WorktreePrepareResult {
+export interface EnterWorktreeResult extends WorktreeCreateResult {
   switch: "scheduled" | "already-active";
 }
 
@@ -49,41 +49,41 @@ function parseCommandArgs(input: string): { name: string; base?: string } {
   return { name, base };
 }
 
-function parsePrepareOutput(stdout: string): WorktreePrepareResult {
+function parseCreateOutput(stdout: string): WorktreeCreateResult {
   const line = stdout.trim().split("\n").filter(Boolean).at(-1);
-  if (!line) throw new Error("pi-worktree prepare 没有返回结果");
-  const result = JSON.parse(line) as Partial<WorktreePrepareResult>;
+  if (!line) throw new Error("pi-worktree create 没有返回结果");
+  const result = JSON.parse(line) as Partial<WorktreeCreateResult>;
   if (
     !["created", "attached", "reused", "already-active"].includes(String(result.status))
     || typeof result.path !== "string"
     || typeof result.branch !== "string"
     || typeof result.dirty !== "boolean"
   ) {
-    throw new Error("pi-worktree prepare 返回了无效结果");
+    throw new Error("pi-worktree create 返回了无效结果");
   }
-  return result as WorktreePrepareResult;
+  return result as WorktreeCreateResult;
 }
 
-async function prepareWorktree(
+async function createWorktree(
   pi: ExtensionAPI,
   cwd: string,
   name: string,
   base?: string,
   signal?: AbortSignal,
-): Promise<WorktreePrepareResult> {
-  const args = ["prepare", "--json"];
+): Promise<WorktreeCreateResult> {
+  const args = ["create", "--json"];
   if (base) args.push("--base", base);
   args.push(name);
   const result = await pi.exec(CLI_PATH, args, { cwd, signal });
   if (result.code !== 0) {
-    throw new Error(result.stderr.trim() || result.stdout.trim() || `pi-worktree prepare 失败（退出码 ${result.code}）`);
+    throw new Error(result.stderr.trim() || result.stdout.trim() || `pi-worktree create 失败（退出码 ${result.code}）`);
   }
   if (signal?.aborted) throw new Error("worktree 创建已取消");
-  return parsePrepareOutput(result.stdout);
+  return parseCreateOutput(result.stdout);
 }
 
 export default function worktreeExtension(pi: ExtensionAPI) {
-  let pendingSwitch: WorktreePrepareResult | undefined;
+  let pendingSwitch: WorktreeCreateResult | undefined;
   let pendingDispatchScheduled = false;
   let transitionReserved = false;
 
@@ -108,7 +108,7 @@ export default function worktreeExtension(pi: ExtensionAPI) {
     description: "创建或复用 worktree，并在当前界面切换过去",
     handler: async (input, ctx) => {
       const isPendingSwitch = input.trim() === PENDING_SWITCH_ARGUMENT;
-      let prepared: WorktreePrepareResult;
+      let created: WorktreeCreateResult;
       let targetSessionFile: string;
       try {
         if (!isPendingSwitch && transitionReserved) {
@@ -127,25 +127,25 @@ export default function worktreeExtension(pi: ExtensionAPI) {
 
         await ctx.waitForIdle();
         if (requestedSwitch) {
-          prepared = requestedSwitch;
+          created = requestedSwitch;
         } else {
           const { name, base } = parseCommandArgs(input);
-          prepared = await prepareWorktree(pi, ctx.cwd, name, base);
+          created = await createWorktree(pi, ctx.cwd, name, base);
         }
-        if (resolve(ctx.cwd) === resolve(prepared.path)) {
+        if (resolve(ctx.cwd) === resolve(created.path)) {
           if (isPendingSwitch) {
             pendingSwitch = undefined;
             pendingDispatchScheduled = false;
           }
           transitionReserved = false;
-          ctx.ui.notify(`已经位于 worktree：${prepared.path}`, "info");
+          ctx.ui.notify(`已经位于 worktree：${created.path}`, "info");
           return;
         }
 
         const sessionDir = ctx.sessionManager.usesDefaultSessionDir()
           ? undefined
           : ctx.sessionManager.getSessionDir();
-        const target = SessionManager.forkFrom(sourceSessionFile, prepared.path, sessionDir);
+        const target = SessionManager.forkFrom(sourceSessionFile, created.path, sessionDir);
         targetSessionFile = target.getSessionFile() ?? "";
         if (!targetSessionFile) throw new Error("无法为 worktree 创建持久会话");
       } catch (error) {
@@ -162,12 +162,12 @@ export default function worktreeExtension(pi: ExtensionAPI) {
       try {
         switched = await ctx.switchSession(targetSessionFile, {
           withSession: async (next) => {
-            const dirtyNote = prepared.dirty ? "（已有未提交改动）" : "";
+            const dirtyNote = created.dirty ? "（已有未提交改动）" : "";
             await next.sendMessage({
               customType: "worktree-switch",
-              content: `✓ 已进入 worktree：${prepared.path}\nBranch: ${prepared.branch}${dirtyNote}\n\n在worktree继续任务`,
+              content: `✓ 已进入 worktree：${created.path}\nBranch: ${created.branch}${dirtyNote}\n\n在worktree继续任务`,
               display: true,
-              details: prepared,
+              details: created,
             }, { triggerTurn: true, deliverAs: "followUp" });
           },
         });
@@ -214,28 +214,28 @@ export default function worktreeExtension(pi: ExtensionAPI) {
       }
       transitionReserved = true;
 
-      let prepared: WorktreePrepareResult;
+      let created: WorktreeCreateResult;
       try {
-        prepared = await prepareWorktree(pi, ctx.cwd, params.name, params.base, signal);
+        created = await createWorktree(pi, ctx.cwd, params.name, params.base, signal);
         if (signal.aborted) throw new Error("worktree 创建已取消");
       } catch (error) {
         transitionReserved = false;
         throw error;
       }
-      const alreadyActive = resolve(ctx.cwd) === resolve(prepared.path);
+      const alreadyActive = resolve(ctx.cwd) === resolve(created.path);
       const result: EnterWorktreeResult = {
         switch: alreadyActive ? "already-active" : "scheduled",
-        ...prepared,
+        ...created,
       };
       if (alreadyActive) transitionReserved = false;
-      else pendingSwitch = prepared;
-      const dirtyNote = prepared.dirty ? " 目标 worktree 已有未提交改动。" : "";
+      else pendingSwitch = created;
+      const dirtyNote = created.dirty ? " 目标 worktree 已有未提交改动。" : "";
       return {
         content: [{
           type: "text",
           text: alreadyActive
-            ? `已经位于 worktree：${prepared.path}.${dirtyNote}`
-            : `Worktree ${prepared.status}: ${prepared.path}.${dirtyNote} 当前 Agent run 结束后会自动切换到该目录；不要继续调用仓库工具。`,
+            ? `已经位于 worktree：${created.path}.${dirtyNote}`
+            : `Worktree ${created.status}: ${created.path}.${dirtyNote} 当前 Agent run 结束后会自动切换到该目录；不要继续调用仓库工具。`,
         }],
         details: result,
         structuredContent: result,

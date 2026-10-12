@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- replace the CLI `start` and `prepare` commands with one idempotent `create` command that never launches Pi
+
 ## 2026-10-09 - v0.3.2
 
 - continue Agent tasks automatically after switching into a worktree

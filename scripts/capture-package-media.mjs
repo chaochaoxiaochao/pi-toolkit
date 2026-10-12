@@ -206,16 +206,12 @@ execFileSync(process.execPath, [join(root, "scripts/capture-herdr-subagents-medi
   const temp = mkdtempSync(join(tmpdir(), "worktree-media-"));
   try {
     const repo = join(temp, "demo");
-    const bin = join(temp, "bin");
-    mkdirSync(repo); mkdirSync(bin);
-    writeFileSync(join(bin, "pi"), "#!/bin/sh\nprintf 'Pi launched in: %s\\n' \"$PWD\"\nprintf 'Pi args: %s\\n' \"$*\"\n", { mode: 0o700 });
-    chmodSync(join(bin, "pi"), 0o700);
+    mkdirSync(repo);
     const run = (command, args = []) => execFileSync(command, args, {
       cwd: repo,
       encoding: "utf8",
       env: {
         ...process.env,
-        PATH: `${bin}:${process.env.PATH}`,
         GIT_AUTHOR_DATE: "2026-01-01T00:00:00Z",
         GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z",
       },
@@ -225,8 +221,8 @@ execFileSync(process.execPath, [join(root, "scripts/capture-herdr-subagents-medi
     writeFileSync(join(repo, ".gitignore"), ".worktrees/\n"); writeFileSync(join(repo, "app.txt"), "base\n");
     run("git", ["add", "."]); run("git", ["commit", "-qm", "initial"]);
     const cli = join(root, "packages/worktree/bin/pi-worktree");
-    const start = run("bash", [cli, "start", "cache-report", "--model", "fixture/model"]);
-    const one = [`$ pi-worktree start cache-report --model fixture/model`, start.replaceAll(temp, "/tmp/pi-worktree-demo")].join("\n");
+    const create = run("bash", [cli, "create", "cache-report"]);
+    const one = [`$ pi-worktree create cache-report`, create.replaceAll(temp, "/tmp/pi-worktree-demo")].join("\n");
     const list = run("bash", [cli, "list"]);
     const two = [one, ``, `$ pi-worktree list`, list.replaceAll(temp, "/tmp/pi-worktree-demo")].join("\n");
     const info = run("bash", [cli, "info", "cache-report"]);

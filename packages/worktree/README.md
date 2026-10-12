@@ -1,6 +1,6 @@
 # @maxiaochao/pi-worktree
 
-`pi-worktree` CLI、Pi Extension 与配套 skill。它既能启动独立 Pi，也能让用户或 Agent 在当前 Pi 界面中切换 worktree，并保留完整对话。
+`pi-worktree` CLI、Pi Extension 与配套 skill。CLI 负责管理 worktree；Extension 让用户或 Agent 在当前 Pi 界面中切换，并保留完整对话。
 
 ![Worktree 在真实临时 Git 仓库中的运行截图](docs/screenshot.png)
 
@@ -13,14 +13,14 @@
 ![Worktree 隔离流程演示](docs/demo.gif)
 
 ```bash
-pi-worktree start feature -p "implement the feature"
-pi-worktree prepare --json feature
+pi-worktree create feature
+pi-worktree create --base main --json feature
 pi-worktree info feature
 pi-worktree out
 pi-worktree remove feature
 ```
 
-`start` 从当前分支创建或复用 `.worktrees/feature`，记录 base，并在该目录启动 Pi。`prepare` 复用同一创建逻辑，但只返回目标，不启动嵌套 Pi。
+`create` 从当前分支（或显式 `--base`）创建或复用 `.worktrees/feature` 并记录 base，不启动 Pi。`--json` 提供相同操作的机器可读结果。
 
 在交互式 Pi 中，用户可以保留当前界面和完整对话：
 
@@ -61,8 +61,7 @@ pi update npm:@maxiaochao/pi-worktree # 更新独立子包
 ## 命令
 
 ```bash
-pi-worktree start <name> [pi args...]
-pi-worktree prepare [--base <ref>] [--json] <name>
+pi-worktree create [--base <ref>] [--json] <name>
 pi-worktree list
 pi-worktree info <name>
 pi-worktree out
@@ -70,6 +69,6 @@ pi-worktree remove <name>
 pi-worktree prune
 ```
 
-`prepare --json` 是 Extension 和其他宿主使用的幂等机器接口，返回 `created`、`attached`、`reused` 或 `already-active`，以及绝对路径、分支和 dirty 状态。已有 worktree 会复用；已存在但未挂载的同名分支会挂载；stale 注册、非法名称和路径冲突会显式失败。
+`create` 是幂等接口；`create --json` 供 Extension 和其他宿主使用，返回 `created`、`attached`、`reused` 或 `already-active`，以及绝对路径、分支和 dirty 状态。已有 worktree 会复用；已存在但未挂载的同名分支会挂载；stale 注册、非法名称和路径冲突会显式失败。
 
 Agent 用法见 `skills/pi-worktree/SKILL.md`。测试流程、夹具和结果见 [TESTING.md](TESTING.md)。
