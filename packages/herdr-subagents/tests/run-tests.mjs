@@ -75,6 +75,7 @@ function fakeHerdr(mode = "completed") {
 	let active = 0;
 	let maxActive = 0;
 	let taskRuns = 0;
+	let promptBarrier;
 	const agents = new Map();
 	const writeAttemptReport = (directory, report) => {
 		const task = JSON.parse(readFileSync(join(directory, "task.json"), "utf8"));
@@ -87,6 +88,18 @@ function fakeHerdr(mode = "completed") {
 	return {
 		calls,
 		get maxActive() { return maxActive; },
+		expectConcurrentPrompts(count) {
+			let release;
+			const barrier = { count, arrivals: 0, promise: new Promise((resolve) => { release = resolve; }) };
+			const finish = () => {
+				if (promptBarrier !== barrier) return;
+				promptBarrier = undefined;
+				clearTimeout(barrier.timeout);
+				release();
+			};
+			barrier.finish = finish;
+			promptBarrier = barrier;
+		},
 		async createTab(request) {
 			calls.push(["createTab", request]);
 			taskDirectory = request.env.PI_HERDR_SUBAGENTS_TASK_DIR;
@@ -104,6 +117,13 @@ function fakeHerdr(mode = "completed") {
 			const runNumber = ++taskRuns;
 			active += 1;
 			maxActive = Math.max(maxActive, active);
+			const barrier = promptBarrier;
+			if (barrier) {
+				barrier.timeout ??= setTimeout(barrier.finish, 10_000);
+				barrier.arrivals += 1;
+				if (barrier.arrivals >= barrier.count) barrier.finish();
+				await barrier.promise;
+			}
 			await new Promise((resolve) => setTimeout(resolve, mode === "ui-blocked" ? 30 : request.prompt.includes("slow") ? 15 : 2));
 			if (mode === "delivery-unknown-late") {
 				const task = JSON.parse(readFileSync(join(directory, "task.json"), "utf8"));
@@ -599,6 +619,7 @@ try {
 	check("configured persona uses displayed effective values", !configuredRun.isError && configuredStart.args.includes("task/model") && configuredStart.args.includes("high") && configuredStart.args.includes("--skill") && configuredStart.args.includes("project-skill"));
 
 	const analystHerdr = fakeHerdr();
+	analystHerdr.expectConcurrentPrompts(3);
 	const analystBatch = await executeHerdrSubagents({ label: "independent-analysis", concurrency: 3, tasks: [
 		{ name: "sol-audit", prompt: "slow audit", agent: "analyst", model: "vendor/sol" },
 		{ name: "grok-replicate", prompt: "slow replicate", agent: "analyst", model: "vendor/grok" },
@@ -611,6 +632,7 @@ try {
 	check("completed analyst batch closes its run tab", analystHerdr.calls.at(-1)?.[0] === "closeTab");
 
 	const batchHerdr = fakeHerdr();
+	batchHerdr.expectConcurrentPrompts(2);
 	const batchUpdates = [];
 	const batch = await executeHerdrSubagents({ label: "reviews", concurrency: 2, tasks: [
 		{ name: "one", prompt: "one slow", agent: "explorer" },
@@ -1724,6 +1746,7 @@ try {
 	const queuedRecoveryHerdr = fakeHerdr();
 	await reconcileSubagentRuns(queuedRecoveryRoot, queuedRecoveryHerdr);
 	check("reconciliation preserves unstarted task records as queued", JSON.parse(readFileSync(join(secondRecoveryTask, "task.json"), "utf8")).status === "queued" && JSON.parse(readFileSync(join(thirdRecoveryTask, "task.json"), "utf8")).status === "queued");
+	queuedRecoveryHerdr.expectConcurrentPrompts(2);
 	await continueQueuedRun(queuedRunDirectory, queuedRecoveryHerdr);
 	check("startup continuation restores bounded concurrency", queuedRecoveryHerdr.maxActive === 2 && JSON.parse(readFileSync(join(secondRecoveryTask, "task.json"), "utf8")).status === "completed" && JSON.parse(readFileSync(join(thirdRecoveryTask, "task.json"), "utf8")).status === "completed" && JSON.parse(readFileSync(join(queuedRunDirectory, "run.json"), "utf8")).status === "completed");
 	const staleContinuationRoot = join(root, "stale-continuation");
