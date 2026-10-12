@@ -1,3 +1,7 @@
+## 2026-10-12 - v0.11.4
+
+- bundle herdr-subagents v0.4.13: fix stale-idle child startup race and require real Herdr E2E release smoke
+
 ## 2026-10-12 - v0.11.3
 
 - harden coordinated publishing and make local release checks authoritative

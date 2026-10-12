@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-12 - v0.4.13
 
+- fix stale-idle child startup race and require real Herdr E2E release smoke
 - Make lifecycle tests accept both valid report-first and observation-first execution orderings.
 - Fix child startup being mistaken for completion when `before_agent_start` records the attempt as working before Herdr leaves its stale idle state.
 - Add mandatory real-Herdr single-Agent and concurrent batch smoke tests to the Herdr Subagents release gate.
