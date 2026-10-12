@@ -1,3 +1,7 @@
+## 2026-10-12 - v0.11.1
+
+- bundle herdr-subagents v0.4.11: add architecture documentation and clear-output guidance evaluation
+
 ## 2026-10-12 - v0.11.0
 
 - bundle worktree v0.4.0: Replace CLI start and prepare with the create-only command

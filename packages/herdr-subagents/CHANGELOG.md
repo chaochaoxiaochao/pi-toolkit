@@ -1,3 +1,7 @@
+## 2026-10-12 - v0.4.11
+
+- add architecture documentation and clear-output guidance evaluation
+
 ## 2026-10-12 - v0.4.10
 
 - Stabilize concurrency checks and cancellation synchronization on slower CI runners.
