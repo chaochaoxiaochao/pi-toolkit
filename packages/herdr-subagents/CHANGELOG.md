@@ -1,3 +1,7 @@
+## 2026-10-12 - v0.4.10
+
+- Stabilize concurrency checks and cancellation synchronization on slower CI runners.
+
 ## 2026-10-12 - v0.4.9
 
 - Stabilize concurrency checks on slower CI runners.
