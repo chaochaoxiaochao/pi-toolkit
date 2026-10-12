@@ -671,10 +671,32 @@ try {
 	check("the parallel run closes only after its last blocked lane is answered", !secondOfBoth.isError && secondOfBoth.details.status === "completed" && secondOfBoth.details.tasks.every((entry) => entry.status === "completed") && bothBlockedHerdr.calls.filter(([name]) => name === "closeTab").length === 1);
 	const mixedCancelHerdr = fakeHerdr();
 	const mixedCancelPrompt = mixedCancelHerdr.promptAgent.bind(mixedCancelHerdr);
-	mixedCancelHerdr.promptAgent = async (request) => request.prompt.includes("WAIT") ? await new Promise((_resolve, reject) => request.signal?.addEventListener("abort", () => reject(request.signal.reason), { once: true })) : mixedCancelPrompt(request);
+	let markMixedFailureSettled;
+	let markMixedWaitStarted;
+	const mixedFailureSettled = new Promise((resolve) => { markMixedFailureSettled = resolve; });
+	const mixedWaitStarted = new Promise((resolve) => { markMixedWaitStarted = resolve; });
+	mixedCancelHerdr.promptAgent = async (request) => {
+		if (request.prompt.includes("WAIT")) {
+			markMixedWaitStarted();
+			if (!request.signal) throw new Error("WAIT prompt requires an AbortSignal");
+			return await new Promise((_resolve, reject) => {
+				if (request.signal.aborted) reject(request.signal.reason);
+				else request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true });
+			});
+		}
+		return mixedCancelPrompt(request);
+	};
 	const mixedCancelController = new AbortController();
-	const mixedCancelPromise = executeHerdrSubagents({ concurrency: 2, tasks: [{ name: "fail-first", prompt: "FAIL", agent: "explorer" }, { name: "cancel-second", prompt: "WAIT", agent: "reviewer" }] }, mixedCancelController.signal, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: mixedCancelHerdr });
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	const mixedCancelPromise = executeHerdrSubagents(
+		{ concurrency: 2, tasks: [{ name: "fail-first", prompt: "FAIL", agent: "explorer" }, { name: "cancel-second", prompt: "WAIT", agent: "reviewer" }] },
+		mixedCancelController.signal,
+		(update) => {
+			if (update.details?.tasks?.some((task) => task.status === "failed")) markMixedFailureSettled();
+		},
+		{ cwd: root },
+		{ agentsDirectory: join(process.cwd(), "agents"), herdr: mixedCancelHerdr },
+	);
+	await Promise.all([mixedFailureSettled, mixedWaitStarted]);
 	mixedCancelController.abort(new Error("Parent Pi session closed."));
 	const mixedCancel = await mixedCancelPromise;
 	check("failed and cancelled production tasks aggregate to partial", mixedCancel.details.status === "partial" && mixedCancel.details.tasks.some((task) => task.status === "failed") && mixedCancel.details.tasks.some((task) => task.status === "cancelled"));
