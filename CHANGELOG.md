@@ -1,3 +1,7 @@
+## 2026-10-13 - v0.11.6
+
+- add a Why column to the child package table in README
+
 ## 2026-10-13 - v0.11.5
 
 - bundle herdr-subagents v0.4.14: allow explicit extension sources with native Pi package semantics and reliable cleanup checks
