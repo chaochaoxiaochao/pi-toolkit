@@ -2,6 +2,8 @@
 
 Run focused Pi subagents in visible, focusable Herdr panes and collect exactly one terminal result per task.
 
+The implementation is intentionally small: one task state machine, one derived run state, and one bounded worker pool. Herdr provides visible panes and navigation; the package only dispatches serial or read-only parallel work, waits for a report, and records the result. It does not add a second workflow engine around Pi.
+
 ## Execution contract
 
 `herdr_subagents` accepts an ordered, non-empty `tasks` array.
@@ -40,6 +42,8 @@ An atomically renamed attempt report is the authoritative completion signal. Her
 Duplicate identical reports are idempotent. A conflicting report for the same task attempt is rejected. Terminal task records are immutable.
 
 ## State model
+
+The same small state machine is used for every task; there are no separate foreground, background, blocked, resumed, or retry lifecycles.
 
 New task records use:
 

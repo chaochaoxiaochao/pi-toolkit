@@ -4,6 +4,8 @@
 
 Herdr owns terminal presentation and pane operations. The package owns scheduling and durable state. Pi children own only their attempt result.
 
+The implementation deliberately stays small: one task state machine, one run aggregation rule, and one bounded worker pool. Serial and read-only parallel dispatch share the same path. There are no alternate lifecycle engines for background work, blocking, retries, or resume.
+
 ## State machines
 
 Task:
