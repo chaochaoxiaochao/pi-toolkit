@@ -1,3 +1,7 @@
+## 2026-10-13 - v0.11.5
+
+- bundle herdr-subagents v0.4.14: allow explicit extension sources with native Pi package semantics and reliable cleanup checks
+
 ## 2026-10-12 - v0.11.4
 
 - bundle herdr-subagents v0.4.13: fix stale-idle child startup race and require real Herdr E2E release smoke

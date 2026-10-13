@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-13 - v0.4.14
 
+- allow explicit extension sources with native Pi package semantics and reliable cleanup checks
 - Add persona `extensions` in Markdown and JSON with project → global → effective Markdown precedence, replacement arrays, and explicit clearing.
 - Pass local files/directories and native npm/git/built-in sources to child Pi while retaining `--no-extensions` and mandatory child extensions.
 - Persist sources for historical, failed/blocked, and queued-task restarts; expose effective sources in persona listing.
