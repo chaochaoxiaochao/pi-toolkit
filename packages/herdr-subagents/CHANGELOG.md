@@ -1,3 +1,7 @@
+## 2026-10-13 - v0.5.0
+
+- simplify lifecycle to one report-first state machine with strict serial and bounded read-only parallel execution
+
 ## 2026-10-13 - v0.4.14
 
 - allow explicit extension sources with native Pi package semantics and reliable cleanup checks

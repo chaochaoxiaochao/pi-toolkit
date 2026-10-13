@@ -1,3 +1,7 @@
+## 2026-10-13 - v0.11.7
+
+- bundle herdr-subagents v0.5.0: simplify lifecycle to one report-first state machine with strict serial and bounded read-only parallel execution
+
 ## 2026-10-13 - v0.11.6
 
 - add a Why column to the child package table in README
