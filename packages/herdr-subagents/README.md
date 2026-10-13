@@ -4,6 +4,14 @@ Run focused Pi subagents in visible, focusable Herdr panes and collect exactly o
 
 The implementation is intentionally small: one task state machine, one derived run state, and one bounded worker pool. Herdr provides visible panes and navigation; the package only dispatches serial or read-only parallel work, waits for a report, and records the result. It does not add a second workflow engine around Pi.
 
+![Herdr Subagents running as visible panes](docs/screenshot.png)
+
+## Demo
+
+https://github.com/user-attachments/assets/8ddf3ae6-a11a-492b-9cae-d9496ba65b67
+
+The reproducible source recording is retained as [`docs/demo.webm`](docs/demo.webm).
+
 ## Execution contract
 
 `herdr_subagents` accepts an ordered, non-empty `tasks` array.
