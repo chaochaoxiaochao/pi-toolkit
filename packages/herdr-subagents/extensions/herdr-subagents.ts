@@ -88,7 +88,7 @@ async function handleHerdrCommand(args: string, ctx: ExtensionCommandContext, fl
 	}
 	const configuration = loadSubagentConfiguration(ctx.cwd, packageAgentsDir, ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined);
 	if (section === "agents") {
-		ctx.ui.notify(configuration.personas.map((persona) => `${persona.name}: ${persona.source}, ${persona.access}, model=${persona.model ?? "unresolved"} (${persona.modelSource}), thinking=${persona.thinking ?? "default"}, tools=${persona.tools?.join(",") ?? "default"}, skills=${persona.skills.join(",") || "none"}`).join("\n"), "info");
+		ctx.ui.notify(configuration.personas.map((persona) => `${persona.name}: ${persona.source}, ${persona.access}, model=${persona.model ?? "unresolved"} (${persona.modelSource}), thinking=${persona.thinking ?? "default"}, tools=${persona.tools?.join(",") ?? "default"}, skills=${persona.skills.join(",") || "none"}, extensions=${persona.extensions.join(",") || "none"} (${persona.extensionsSource})`).join("\n"), "info");
 		return;
 	}
 	if (section === "settings") {

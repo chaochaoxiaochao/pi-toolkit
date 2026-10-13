@@ -83,6 +83,7 @@ export interface TaskRecord {
 	thinking?: string;
 	tools?: string[];
 	skills?: string[];
+	extensions?: string[];
 	systemPrompt?: string;
 	sessionFile?: string;
 	startedAt?: string;

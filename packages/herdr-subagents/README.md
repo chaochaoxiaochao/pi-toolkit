@@ -160,7 +160,7 @@ These are all supported top-level fields in `herdr-subagents.json`:
 | `defaultThinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` | Unset | Thinking level below persona-specific settings. Provider/model support can vary. If unset, parent thinking is inherited only when the parent model is also inherited. |
 | `personas` | Object keyed by an existing persona name | `{}` | Per-persona JSON overrides described below. This does not create a persona; a matching Markdown definition must exist. |
 
-Known fields with an invalid JSON type, an empty required string, or a non-positive integer are ignored with a diagnostic shown by `/herdr-subagents settings`. Model IDs, thinking-level compatibility, and skill availability are ultimately validated by Pi when the child starts. When `defaultConcurrency` exceeds `maxConcurrency`, the effective default is reduced to the maximum.
+Known fields with an invalid JSON type, an empty required string, or a non-positive integer are ignored with a diagnostic shown by `/herdr-subagents settings`. Model IDs, thinking-level compatibility, and skill/extension source availability are ultimately handled by Pi when the child starts. When `defaultConcurrency` exceeds `maxConcurrency`, the effective default is reduced to the maximum.
 
 Each `personas.<name>` object supports exactly these overrides:
 
@@ -168,7 +168,8 @@ Each `personas.<name>` object supports exactly these overrides:
 | --- | --- | --- |
 | `model` | Non-empty Pi model string | Overrides the model from the effective persona Markdown and `defaultModel`. |
 | `thinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` | Overrides persona Markdown and `defaultThinking`. The value is passed to Pi's `--thinking` option. |
-| `skills` | Array of non-empty strings | Replaces the entire lower-precedence skill list. Use `[]` to clear inherited skills. Each item is passed to child Pi as `--skill`. |
+| `skills` | Array of non-empty strings | Replaces the entire lower-precedence explicit skill list. Use `[]` to clear that list. Each item is passed to child Pi as `--skill`. Package-provided skills are separate; see below. |
+| `extensions` | Array of non-empty Pi source strings | Replaces the entire lower-precedence extension-source list. Use `[]` to clear it. Each item is passed as `--extension` after the mandatory child extensions. Accepts local files/directories, `npm:` and `git:` Pi packages, and `builtin:` sources. |
 
 JSON persona overrides cannot change `name`, `description`, `access`, `tools`, or the system prompt; define those in persona Markdown.
 
@@ -281,7 +282,49 @@ The child thinking level is selected in this order:
 4. effective `defaultThinking` JSON setting (project overrides global)
 5. parent Pi thinking level when the child also inherits the parent model
 
-Thinking has no call-level override. `skills` uses the first three persona-level steps and has no global default; a project `skills` array replaces, rather than appends to, the global or Markdown list.
+Thinking has no call-level override. `skills` and `extensions` use the first three persona-level steps and have no global default. A project array replaces, rather than appends to, the global or effective Markdown list; `[]` explicitly clears it. There is no task-level extension override.
+
+### Explicit extension sources and Pi packages
+
+For a local routing hook, add this frontmatter to a persona Markdown file (the hook must already exist):
+
+```md
+---
+name: routed-explorer
+description: Explorer with a provider routing hook
+access: read
+tools: read, bash, grep, find, ls, codemode
+extensions: ~/.pi/agent/extensions/gateway-routing.ts
+---
+Inspect the requested code and report your findings.
+```
+
+Frontmatter accepts a single source or a comma-separated inline list, optionally enclosed in brackets. Use `extensions: []` to clear the list. Like the existing persona format, it does not support multiline YAML lists.
+
+JSON accepts an array only. For example, override the built-in explorer with a local hook and an npm Pi package:
+
+```json
+{
+  "personas": {
+    "explorer": {
+      "extensions": [
+        "~/.pi/agent/extensions/gateway-routing.ts",
+        "npm:@example/pi-tools@1.0.0"
+      ]
+    }
+  }
+}
+```
+
+`@example/pi-tools` is illustrative; replace it with a trusted Pi package. An ordinary npm library is not automatically a Pi extension package. Pin npm versions or git refs when reproducible restarts matter. Relative local paths resolve from the child working directory (the project root), **not** from the JSON or Markdown file. `~` resolves to the user's home directory. Source strings are passed to Pi without rewriting `npm:`, `git:`, or `builtin:` identifiers.
+
+**This field uses Pi's native package-loading semantics. It is not an extensions-only resource filter.** A file loads that extension. A Pi package can also load its declared **skills, prompt templates, and themes**. In particular, explicitly selected package skills still load despite the child's `--no-skills`; persona `skills: []` clears only the explicit skill list, not skills carried by an extension package. To select one extension without the package's other resources, use its local extension-file path or a dedicated package that exposes only the intended resources. The string list does not support Pi's settings object-form resource filters.
+
+Children still start with `--no-extensions`, then explicitly load `builtin:codemode`, the bundled `subagent-report`, and the configured sources in order. Unconfigured personas retain their existing behavior. The list does not inherit the parent's extensions, installed-package settings, or package resource filters. Pi manages source resolution, caching, dependency installation, and startup diagnostics; an npm/git source may require network access. Herdr Subagents does not implement a separate installer or guarantee that Pi's extension warnings terminate a task. Inspect the child's startup diagnostics when a required routing hook does not run.
+
+Effective sources are saved in each task record and shown by persona listing. Historical resume, failed/blocked-task restarts, and queued-task recovery reuse the saved list instead of re-reading current persona overrides. A live child is not reloaded when configuration changes. Saving a source does not freeze its code: local files and unpinned package versions can change.
+
+Load only trusted extension code. `access: read` controls scheduling; it is not a sandbox for extension hooks, which can perform side effects outside model tools. `PI_HERDR_SUBAGENTS_CHILD` prevents **this package** from registering recursively, not arbitrary third-party extensions. Loading a package does not broaden an explicit `tools` allowlist. Persona `tools` still accepts only the existing built-in names; adding extension-defined tools to that schema is a separate feature.
 
 Override the model for one task:
 
@@ -313,7 +356,7 @@ Queued background submissions are persisted before dispatch. Closing the parent 
 
 Tab, pane, and child startup commands are not automatically retried: an error may arrive after Herdr already created the resource. Recovery is best effort, not complete: Herdr 0.9.2 has no idempotency key for tab creation or pane splitting, so a `SIGKILL` after the external resource is created but before its ID is durably persisted can leave an orphan that cannot be identified for cleanup. A failure after prompt submission is preserved and never automatically rerun. Historical follow-ups use a recoverable task-scoped `.resume.lock`, so different tasks can continue concurrently without allowing two writers for one saved session. Herdr exposes no retrying state, and Pi exposes no reliable public auto-retry hook, so `retrying` is supported by the runtime schema and Fleet but is not fabricated from ambiguous lifecycle events. `stalledWarningSeconds` emits a warning without killing long-running work. Run/task/report snapshots use atomic replacement so interruption cannot expose half-written JSON.
 
-The child does not inherit parent extensions, parent conversation, or unconfigured skills, but normal project context files still apply. It uses the same Pi installation, provider configuration, model catalog, and credentials as the parent.
+The child does not inherit parent extensions or parent conversation. Skills load from explicit persona paths and from explicitly selected Pi packages; normal project context files still apply. It uses the same Pi installation, provider configuration, model catalog, and credentials as the parent.
 
 ## Development and tests
 

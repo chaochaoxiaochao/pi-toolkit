@@ -39,6 +39,8 @@ Restart Pi after updating. The `todo` tool and widget will no longer load. `pi u
 
 Each child README owns its feature description, motivation or upstream alignment, examples, screenshots/demos, configuration, and test documentation.
 
+Herdr Subagents personas can opt into local extension files or npm/git Pi packages through `extensions`. This uses native Pi package semantics: package-provided skills, prompt templates, and themes may also load, and `--no-skills` does not exclude explicitly selected package skills. See the [extension-source contract](packages/herdr-subagents/README.md#explicit-extension-sources-and-pi-packages) for precedence, isolation, and examples.
+
 Multiple standalone children may be installed together. `pi-todo` may also be installed alongside the complete toolkit because Todo is no longer bundled. Do not install another bundled child alongside the complete toolkit because that exposes the same resource twice.
 
 To keep Todo after updating the toolkit:

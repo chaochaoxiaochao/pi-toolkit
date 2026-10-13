@@ -16,6 +16,7 @@ export interface LiveTaskRecord {
 	thinking?: string;
 	tools?: string[];
 	skills?: string[];
+	extensions?: string[];
 	currentAttemptId?: string;
 }
 
@@ -41,6 +42,7 @@ export function childPiArgs(task: LiveTaskRecord, systemPromptFile: string): str
 		"--no-skills",
 		"--append-system-prompt", systemPromptFile,
 	];
+	for (const extension of task.extensions ?? []) args.push("--extension", extension);
 	if (task.model) args.push("--model", task.model);
 	if (task.thinking) args.push("--thinking", task.thinking);
 	if (task.tools?.length) args.push("--tools", [...new Set([...task.tools, "codemode", "subagent_report"])].join(","));

@@ -27,6 +27,7 @@ export interface BatchTask {
 	thinking?: string;
 	tools?: string[];
 	skills: string[];
+	extensions?: string[];
 	systemPrompt: string;
 }
 
@@ -103,7 +104,7 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 		const taskRecord: TaskRecord = {
 			id: taskId, runId, order: index + 1, name: task.name, status: "queued", prompt: task.prompt,
 			agent: task.agent, access: task.access, model: task.model, thinking: task.thinking,
-			tools: task.tools, skills: task.skills, systemPrompt: reportProtocolPrompt(task.systemPrompt), sessionFile,
+			tools: task.tools, skills: task.skills, extensions: task.extensions, systemPrompt: reportProtocolPrompt(task.systemPrompt), sessionFile,
 		};
 		await mkdir(taskDirectory, { recursive: true, mode: 0o700 });
 		await writeFile(systemPromptFile, String(taskRecord.systemPrompt), { encoding: "utf8", mode: 0o600 });

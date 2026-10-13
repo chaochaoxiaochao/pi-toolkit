@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { discoverPackageAgents, type AgentDefinition } from "./personas.ts";
 
 export type PersonaAccess = "read" | "write";
-export interface PersonaConfig { model?: string; thinking?: string; skills?: string[]; }
+export interface PersonaConfig { model?: string; thinking?: string; skills?: string[]; extensions?: string[]; }
 export interface SubagentConfig {
 	defaultConcurrency: number;
 	maxConcurrency: number;
@@ -22,6 +22,8 @@ export interface EffectivePersona extends AgentDefinition {
 	thinkingSource: string;
 	skills: string[];
 	skillsSource: string;
+	extensions: string[];
+	extensionsSource: string;
 }
 export interface SubagentConfiguration {
 	settings: SubagentConfig;
@@ -83,9 +85,11 @@ function mergeConfig(base: SubagentConfig, input: ConfigFile, source: string, so
 				if (typeof value === "string" && value.trim()) valid[field] = value.trim();
 				else diagnostics.push(`${source} persona '${name}' ${field} must be a non-empty string`);
 			}
-			if (raw.skills !== undefined) {
-				if (Array.isArray(raw.skills) && raw.skills.every((value) => typeof value === "string" && value.trim())) valid.skills = raw.skills.map((value) => value.trim());
-				else diagnostics.push(`${source} persona '${name}' skills must be an array of non-empty strings`);
+			for (const field of ["skills", "extensions"] as const) {
+				const value = raw[field];
+				if (value === undefined) continue;
+				if (Array.isArray(value) && value.every((item) => typeof item === "string" && item.trim())) valid[field] = value.map((item) => item.trim());
+				else diagnostics.push(`${source} persona '${name}' ${field} must be an array of non-empty strings`);
 			}
 			input.personas[name] = valid;
 			result.personas[name] = { ...(result.personas[name] ?? {}), ...valid };
@@ -123,7 +127,9 @@ export function loadSubagentConfiguration(cwd: string, packageAgentsDirectory: s
 		const thinkingSource = projectPersona.thinking ? "project persona" : globalPersona.thinking ? "global persona" : definition.thinking ? `${source} persona` : settings.defaultThinking ? settingSources.defaultThinking : "default";
 		const skills = projectPersona.skills ?? globalPersona.skills ?? definition.skills ?? [];
 		const skillsSource = projectPersona.skills ? "project persona" : globalPersona.skills ? "global persona" : definition.skills ? `${source} persona` : "none";
-		return { ...definition, source, access: definition.access ?? "write", model, modelSource, thinking, thinkingSource, skills, skillsSource };
+		const extensions = projectPersona.extensions ?? globalPersona.extensions ?? definition.extensions ?? [];
+		const extensionsSource = projectPersona.extensions ? "project persona" : globalPersona.extensions ? "global persona" : definition.extensions ? `${source} persona` : "none";
+		return { ...definition, source, access: definition.access ?? "write", model, modelSource, thinking, thinkingSource, skills, skillsSource, extensions, extensionsSource };
 	}).sort((left, right) => left.name.localeCompare(right.name));
 	return { settings, settingSources, personas, diagnostics };
 }

@@ -73,7 +73,7 @@ export function listText(discovery: SubagentConfiguration): string {
 		const model = agent.model ?? "unresolved";
 		const tools = agent.tools?.join(", ") ?? "Pi default built-in tools";
 		const skills = agent.skills.join(", ") || "none";
-		lines.push(`- ${agent.name}: ${agent.description} (source: ${agent.source}; access: ${agent.access}; model: ${model} [${agent.modelSource}]; thinking: ${agent.thinking ?? "default"}; tools: ${tools}; skills: ${skills})`);
+		lines.push(`- ${agent.name}: ${agent.description} (source: ${agent.source}; access: ${agent.access}; model: ${model} [${agent.modelSource}]; thinking: ${agent.thinking ?? "default"}; tools: ${tools}; skills: ${skills}; extensions: ${agent.extensions.join(", ") || "none"} [${agent.extensionsSource}])`);
 	}
 	if (discovery.diagnostics.length > 0) {
 		lines.push("", "Persona diagnostics:", ...discovery.diagnostics.map((diagnostic) => `- ${diagnostic}`));
@@ -184,7 +184,7 @@ async function executeBatch({ params, signal, onUpdate, ctx, dependencies, disco
 		const personaName = task.agent?.trim() || "worker";
 		const persona = discovery.personas.find((candidate) => candidate.name === personaName);
 		if (!persona) return errorResponse(`Unknown persona '${personaName}'.\n\n${listText(discovery)}`);
-		resolved.push({ name: task.name, prompt: task.prompt, agent: persona.name, access: persona.access, model: task.model?.trim() || persona.model, thinking: persona.thinking ?? (persona.modelSource === "parent session" && !task.model ? ctx.thinkingLevel : undefined), tools: persona.tools, skills: persona.skills, systemPrompt: persona.systemPrompt });
+		resolved.push({ name: task.name, prompt: task.prompt, agent: persona.name, access: persona.access, model: task.model?.trim() || persona.model, thinking: persona.thinking ?? (persona.modelSource === "parent session" && !task.model ? ctx.thinkingLevel : undefined), tools: persona.tools, skills: persona.skills, extensions: persona.extensions, systemPrompt: persona.systemPrompt });
 	}
 	try {
 		const result = await runHerdrSubagentsBatch(resolved, {

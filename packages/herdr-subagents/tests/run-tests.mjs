@@ -26,6 +26,7 @@ import { isAbortError } from "../src/errors.ts";
 import { acquireDirectoryLock, withRunStateLock } from "../src/run-state.ts";
 import { childPiArgs } from "../src/live-agent.ts";
 import registerSubagentReport from "../extensions/subagent-report.ts";
+import { waitFor } from "./wait-for.mjs";
 
 /** Drives one task through the batch runner and projects its single result like a task-scoped run. */
 async function runSingleTask(prompt, { label, agent, model, tools, systemPrompt, onStalled, ...options } = {}) {
@@ -581,6 +582,10 @@ try {
 
 	const definition = parseAgentMarkdown(`---\nname: reviewer\ndescription: Review code\nmodel: fake/model\ntools: read, grep\n---\nReview carefully.`, "reviewer.md");
 	check("persona frontmatter parsing", definition.name === "reviewer" && definition.model === "fake/model" && definition.tools?.join(",") === "read,grep" && definition.systemPrompt === "Review carefully.");
+	const extensionDefinition = parseAgentMarkdown(`---\nname: routed\ndescription: Routed explorer\nextensions: "~/.pi/agent/extensions/gateway-routing.ts", npm:@example/pi-tools@1.0.0\n---\nExplore.`, "routed.md");
+	check("persona frontmatter accepts local and npm extension sources", extensionDefinition.extensions?.join(",") === "~/.pi/agent/extensions/gateway-routing.ts,npm:@example/pi-tools@1.0.0");
+	const clearedExtensions = parseAgentMarkdown(`---\nname: routed\ndescription: Routed explorer\nextensions: []\n---\nExplore.`);
+	check("persona frontmatter can explicitly clear extension sources", Array.isArray(clearedExtensions.extensions) && clearedExtensions.extensions.length === 0);
 	const inheritedToolArgs = childPiArgs({ id: "inherited", sessionFile: "/tmp/inherited.jsonl" }, "/tmp/system.md");
 	check("child Pi enables codemode when a persona inherits default tools", inheritedToolArgs.includes("builtin:codemode") && inheritedToolArgs[inheritedToolArgs.indexOf("--tools") + 1] === "+codemode");
 	const explicitToolArgs = childPiArgs({ id: "explicit", sessionFile: "/tmp/explicit.jsonl", tools: ["read"] }, "/tmp/system.md");
@@ -632,6 +637,51 @@ try {
 	const configuredRun = await executeHerdrSubagents({ tasks: [{ name: "configured", prompt: "Use configured values", agent: "worker", model: "task/model" }] }, undefined, undefined, { cwd: configRoot, model: { provider: "parent", id: "model" }, thinkingLevel: "medium" }, { agentsDirectory: packageAgents, configurationPaths, herdr: configuredHerdr });
 	const configuredStart = configuredHerdr.calls.find(([name]) => name === "startAgent")[1];
 	check("configured persona uses displayed effective values", !configuredRun.isError && configuredStart.args.includes("task/model") && configuredStart.args.includes("high") && configuredStart.args.includes("--skill") && configuredStart.args.includes("project-skill"));
+
+	const extensionRoot = join(root, "extension-sources");
+	const extensionAgents = join(extensionRoot, "agents");
+	mkdirSync(extensionAgents, { recursive: true });
+	writeFileSync(join(extensionAgents, "routed.md"), `---\nname: routed\ndescription: Routed explorer\naccess: read\ntools: read\nextensions: ./markdown.ts\n---\nExplore.`);
+	const extensionPaths = { globalConfig: join(extensionRoot, "global.json"), projectConfig: join(extensionRoot, "project.json"), globalAgents: join(extensionRoot, "missing-global"), projectAgents: join(extensionRoot, "missing-project") };
+	const extensionPersona = () => loadSubagentConfiguration(extensionRoot, extensionAgents, undefined, extensionPaths).personas[0];
+	check("Markdown extension sources are effective without JSON overrides", extensionPersona()?.extensions?.join(",") === "./markdown.ts" && extensionPersona()?.extensionsSource === "package persona");
+	writeFileSync(extensionPaths.globalConfig, JSON.stringify({ personas: { routed: { extensions: ["./global.ts"] } } }));
+	check("global JSON replaces Markdown extension sources", extensionPersona()?.extensions?.join(",") === "./global.ts" && extensionPersona()?.extensionsSource === "global persona");
+	const extensionSources = ["~/.pi/agent/extensions/gateway-routing.ts", "npm:@example/pi-tools@1.0.0", "./local package"];
+	writeFileSync(extensionPaths.projectConfig, JSON.stringify({ personas: { routed: { extensions: extensionSources.map((source) => ` ${source} `) } } }));
+	check("project JSON trims and replaces global extension sources", JSON.stringify(extensionPersona()?.extensions) === JSON.stringify(extensionSources) && extensionPersona()?.extensionsSource === "project persona");
+	const extensionDependencies = { agentsDirectory: extensionAgents, configurationPaths: extensionPaths };
+	const sourceValues = (args) => args.flatMap((value, index) => value === "--extension" ? [args[index + 1]] : []);
+	const extensionRunHerdr = fakeHerdr();
+	const extensionRun = await executeHerdrSubagents({ tasks: [{ name: "routed", agent: "routed", prompt: "Review" }] }, undefined, undefined, { cwd: extensionRoot }, { ...extensionDependencies, herdr: extensionRunHerdr });
+	const extensionStart = extensionRunHerdr.calls.find(([name]) => name === "startAgent")[1];
+	check("explicit extension sources follow mandatory child extensions without shell splitting", !extensionRun.isError && extensionStart.args.includes("--no-extensions") && extensionStart.args.includes("--no-skills") && sourceValues(extensionStart.args)[0] === "builtin:codemode" && sourceValues(extensionStart.args)[1].endsWith("/extensions/subagent-report.ts") && JSON.stringify(sourceValues(extensionStart.args).slice(2)) === JSON.stringify(extensionSources) && extensionStart.args.includes("read,codemode,subagent_report"));
+	const extensionRecord = JSON.parse(readFileSync(join(extensionRun.details.tasks[0].recordDirectory, "task.json"), "utf8"));
+	check("effective extension sources are persisted in durable tasks", JSON.stringify(extensionRecord.extensions) === JSON.stringify(extensionSources));
+	const extensionHistory = await listSubagentHistory(extensionRoot);
+	check("history exposes saved extension sources", JSON.stringify(extensionHistory[0]?.tasks[0]?.extensions) === JSON.stringify(extensionSources));
+	const extensionList = await executeHerdrSubagents({ action: "list" }, undefined, undefined, { cwd: extensionRoot }, extensionDependencies);
+	check("persona listing shows extension sources and their precedence", extensionList.content[0].text.includes("npm:@example/pi-tools@1.0.0") && extensionList.content[0].text.includes("project persona"));
+	writeFileSync(extensionPaths.projectConfig, JSON.stringify({ personas: { routed: { extensions: [] } } }));
+	check("empty project extension list clears lower-precedence sources", extensionPersona()?.extensions?.length === 0 && extensionPersona()?.extensionsSource === "project persona");
+	const extensionResumeHerdr = fakeHerdr();
+	const extensionResume = await executeHerdrSubagents({ action: "resume", runId: extensionRun.details.runId, task: 1, prompt: "Follow up" }, undefined, undefined, { cwd: extensionRoot }, { ...extensionDependencies, herdr: extensionResumeHerdr });
+	const extensionResumeStart = extensionResumeHerdr.calls.find(([name]) => name === "startAgent")[1];
+	check("historical restart retains saved sources after configuration changes", !extensionResume.isError && JSON.stringify(sourceValues(extensionResumeStart.args).slice(2)) === JSON.stringify(extensionSources));
+	for (const invalidSources of ["npm:example", [""], ["valid", 42], null]) {
+		writeFileSync(extensionPaths.projectConfig, JSON.stringify({ personas: { routed: { extensions: invalidSources } } }));
+		const invalidSourcesConfig = loadSubagentConfiguration(extensionRoot, extensionAgents, undefined, extensionPaths);
+		check(`invalid extension sources are diagnosed: ${JSON.stringify(invalidSources)}`, invalidSourcesConfig.diagnostics.some((message) => message.includes("extensions must be an array of non-empty strings")) && invalidSourcesConfig.personas[0]?.extensions?.join(",") === "./global.ts");
+	}
+	writeFileSync(extensionPaths.projectConfig, JSON.stringify({ personas: { routed: { extensions: extensionSources } } }));
+	const extensionBlockedHerdr = fakeHerdr("blocked");
+	const extensionBlocked = await executeHerdrSubagents({ tasks: [{ name: "routed-blocked", agent: "routed", prompt: "Ask a question" }] }, undefined, undefined, { cwd: extensionRoot }, { ...extensionDependencies, herdr: extensionBlockedHerdr });
+	const extensionResponseHerdr = fakeHerdr();
+	extensionResponseHerdr.isTaskRunning = async () => false;
+	const extensionAnswered = await executeHerdrSubagents({ action: "respond", runId: extensionBlocked.details.runId, task: 1, answer: "Use main" }, undefined, undefined, { cwd: extensionRoot }, { ...extensionDependencies, herdr: extensionResponseHerdr });
+	const extensionResponseStart = extensionResponseHerdr.calls.find(([name]) => name === "startAgent")?.[1];
+	check("blocked response restart retains saved extension sources", !extensionAnswered.isError && extensionResponseStart && JSON.stringify(sourceValues(extensionResponseStart.args).slice(2)) === JSON.stringify(extensionSources));
+	check("unconfigured children keep only mandatory extensions", sourceValues(inheritedToolArgs).length === 2 && JSON.stringify(childPiArgs({ id: "inherited", sessionFile: "/tmp/inherited.jsonl", extensions: [] }, "/tmp/system.md")) === JSON.stringify(inheritedToolArgs));
 
 	const analystHerdr = fakeHerdr();
 	analystHerdr.expectConcurrentPrompts(3);
@@ -761,7 +811,7 @@ try {
 	check("write-capable batch is forced serial", writerBatch.details.effectiveConcurrency === 1 && writerHerdr.maxActive === 1 && writerHerdr.calls.filter(([name]) => name === "splitPane").length === 1);
 	const focusedHerdr = fakeHerdr("focused");
 	await executeHerdrSubagents({ tasks: [{ name: "inspect", prompt: "inspect", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: focusedHerdr });
-	await new Promise((resolve) => setTimeout(resolve, 0));
+	await waitFor(() => focusedHerdr.calls.some(([name]) => name === "closeTab"), "focused tab close");
 	const focusedCalls = focusedHerdr.calls.map(([name]) => name);
 	check("focused completed tab defers cleanup until focus leaves", focusedCalls.indexOf("waitForTabUnfocused") >= 0 && focusedCalls.indexOf("closeTab") > focusedCalls.indexOf("waitForTabUnfocused"));
 	const pendingCleanupHerdr = fakeHerdr();
@@ -774,7 +824,7 @@ try {
 	const resumeWhilePending = await executeHerdrSubagents({ action: "resume", runId: pendingCleanupRun.details.runId, task: 1, prompt: "too soon" }, undefined, undefined, { cwd: root }, { agentsDirectory: join(process.cwd(), "agents"), herdr: pendingCleanupHerdr });
 	check("pending tab cleanup blocks deletion but permits an isolated resume generation", pendingCleanupRecord.cleanupPendingTabIds?.includes(pendingCleanupRun.details.tabId) && cleanupWhilePending.isError && !resumeWhilePending.isError);
 	releasePendingCleanup();
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await waitFor(() => !JSON.parse(readFileSync(join(pendingCleanupRun.details.recordDirectory, "run.json"), "utf8")).cleanupPendingTabIds && !existsSync(join(pendingCleanupRun.details.recordDirectory, ".state.lock")), "deferred cleanup state commit");
 	const releasedCleanupRecord = JSON.parse(readFileSync(join(pendingCleanupRun.details.recordDirectory, "run.json"), "utf8"));
 	check("deferred cleanup merges into the latest run record", releasedCleanupRecord.status === "completed" && !("cleanupPendingTabIds" in releasedCleanupRecord));
 	const shutdownDeferredHerdr = fakeHerdr();
@@ -789,13 +839,13 @@ try {
 	const shutdownDeferredController = new AbortController();
 	await executeHerdrSubagents({ tasks: [{ name: "shutdown-deferred", prompt: "inspect", agent: "explorer" }] }, shutdownDeferredController.signal, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: shutdownDeferredHerdr });
 	shutdownDeferredController.abort(new Error("Parent Pi session closed."));
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await waitFor(() => shutdownDeferredHerdr.calls.some(([name]) => name === "closeTab"), "shutdown close of a focused tab");
 	check("parent shutdown force-closes a settled focused tab", shutdownDeferredHerdr.calls.some(([name]) => name === "closeTab"));
 	const deferredFailureHerdr = fakeHerdr();
 	deferredFailureHerdr.isTabFocused = async () => true;
 	deferredFailureHerdr.closeTab = async () => { throw new Error("deferred close failed"); };
 	const deferredFailure = await executeHerdrSubagents({ tasks: [{ name: "deferred-cleanup", prompt: "inspect", agent: "explorer" }] }, undefined, undefined, { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: deferredFailureHerdr });
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await waitFor(() => JSON.parse(readFileSync(join(deferredFailure.details.recordDirectory, "run.json"), "utf8")).cleanupError === "deferred close failed" && !existsSync(join(deferredFailure.details.recordDirectory, ".state.lock")), "deferred cleanup error commit");
 	const deferredFailureRecord = JSON.parse(readFileSync(join(deferredFailure.details.recordDirectory, "run.json"), "utf8"));
 	check("deferred focus cleanup failure remains durably retryable", deferredFailureRecord.cleanupError === "deferred close failed" && deferredFailureRecord.cleanupPendingTabIds?.includes(deferredFailure.details.tabId));
 	const deferredSingleHerdr = fakeHerdr();
@@ -803,7 +853,7 @@ try {
 	deferredSingleHerdr.closeTab = async () => { throw new Error("single deferred close failed"); };
 	const deferredSingleUpdates = [];
 	const deferredSingle = await executeHerdrSubagents({ tasks: [{ name: "deferred-single", prompt: "single deferred cleanup", agent: "explorer" }] }, undefined, (update) => deferredSingleUpdates.push(update), { cwd: root, model: { provider: "fake", id: "model" } }, { agentsDirectory: join(process.cwd(), "agents"), herdr: deferredSingleHerdr });
-	await new Promise((resolve) => setTimeout(resolve, 10));
+	await waitFor(() => deferredSingleUpdates.some((update) => update.details.cleanupError) && !existsSync(join(deferredSingle.details.recordDirectory, ".state.lock")), "deferred cleanup error notification");
 	const deferredSingleRun = JSON.parse(readFileSync(join(deferredSingle.details.recordDirectory, "run.json"), "utf8"));
 	check("deferred cleanup failure is persisted and surfaced without changing completion", deferredSingleRun.status === "completed" && deferredSingleRun.cleanupError === "single deferred close failed" && deferredSingleUpdates.some((update) => update.content[0].text.includes("cleanup failed") && update.details.cleanupError));
 	const cancelledHerdr = fakeHerdr();
@@ -1791,13 +1841,14 @@ try {
 	const staleContinuationTask = join(staleContinuationRun, "tasks", "01-task");
 	mkdirSync(staleContinuationTask, { recursive: true });
 	writeFileSync(join(staleContinuationRun, "run.json"), JSON.stringify({ id: "stale-continuation", label: "stale-continuation", status: "running", cwd: staleContinuationRoot, effectiveConcurrency: 1, tabId: "w1:t-old", paneIds: ["w1:p-old"], startedAt: new Date().toISOString() }));
-	writeFileSync(join(staleContinuationTask, "task.json"), JSON.stringify({ id: "stale-task", runId: "stale-continuation", order: 1, name: "stale-task", status: "queued", prompt: "continue", agent: "explorer", skills: [], sessionFile: join(staleContinuationTask, "session.jsonl") }));
+	writeFileSync(join(staleContinuationTask, "task.json"), JSON.stringify({ id: "stale-task", runId: "stale-continuation", order: 1, name: "stale-task", status: "queued", prompt: "continue", agent: "explorer", skills: [], extensions: extensionSources, sessionFile: join(staleContinuationTask, "session.jsonl") }));
 	writeFileSync(join(staleContinuationTask, "system-prompt.md"), "Report the result.");
 	const staleContinuationHerdr = fakeHerdr();
 	staleContinuationHerdr.paneExists = async () => false;
 	staleContinuationHerdr.createTab = async (request) => { staleContinuationHerdr.calls.push(["createTab", request]); return { tabId: "w1:t-new", paneId: "w1:p-new" }; };
 	await continueQueuedRun(staleContinuationRun, staleContinuationHerdr);
 	const staleContinuationRecord = JSON.parse(readFileSync(join(staleContinuationRun, "run.json"), "utf8"));
+	check("queued recovery retains saved extension sources", JSON.stringify(sourceValues(staleContinuationHerdr.calls.find(([name]) => name === "startAgent")[1].args).slice(2)) === JSON.stringify(extensionSources));
 	check("queued recovery closes a replaced stale tab", staleContinuationRecord.status === "completed" && staleContinuationRecord.tabId === "w1:t-new" && !staleContinuationRecord.staleTabIds && staleContinuationHerdr.calls.some(([name, request]) => name === "closeTab" && request.tabId === "w1:t-old"));
 	const failedCleanupRoot = join(root, "stale-continuation-cleanup-failure");
 	const failedCleanupRun = join(failedCleanupRoot, ".pi", "herdr-subagents", "runs", "run");

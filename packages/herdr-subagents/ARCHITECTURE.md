@@ -275,7 +275,7 @@ Merging them into one physical file would either put long prompts into JSON or r
 
 ### Sources of confusion to remove
 
-1. Persona Markdown and JSON both expose `model`, `thinking`, and `skills`; this is intentional override layering but must be described as one resolution pipeline.
+1. Persona Markdown and JSON both expose `model`, `thinking`, `skills`, and `extensions`; this is intentional override layering but must be described as one resolution pipeline.
 2. Call-level task model overrides are resolved later in `tool.ts`, after configuration loading.
 3. TypeBox validates shape while `validation.ts` validates action-dependent requirements; these are complementary but currently look like duplicated validation.
 4. Downstream modules receive partially resolved values instead of one canonical run plan.
@@ -313,6 +313,7 @@ interface ResolvedRunPlan {
     thinking?: string;
     tools?: string[];
     skills: string[];
+    extensions: string[];
     systemPrompt: string;
   }>;
   provenance: Record<string, string>;

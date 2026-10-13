@@ -7,7 +7,7 @@ import { isActiveStatus, readReport, readRunRecord, readTaskRecord, type Persist
 import { findRunDirectory } from "./run-locator.ts";
 import { resumeHistoricalTaskConcurrent } from "./historical-resume.ts";
 
-export interface HistoricalTask { order: number; id: string; name: string; agent: string; status: TaskStatus; summary?: string; question?: string; documents: PersistedDocument[]; recordDirectory: string; sessionFile: string; model?: string; thinking?: string; tools?: string[]; skills: string[]; access?: string; }
+export interface HistoricalTask { order: number; id: string; name: string; agent: string; status: TaskStatus; summary?: string; question?: string; documents: PersistedDocument[]; recordDirectory: string; sessionFile: string; model?: string; thinking?: string; tools?: string[]; skills: string[]; extensions?: string[]; access?: string; }
 export interface HistoricalRun { id: string; label: string; status: RunStatus; startedAt: string; completedAt?: string; effectiveConcurrency?: number; cleanupPendingTabIds?: string[]; tasks: HistoricalTask[]; recordDirectory: string; }
 
 export async function ensureRuntimeIgnored(cwd: string): Promise<void> {
@@ -66,7 +66,7 @@ export async function listSubagentHistory(cwd: string): Promise<HistoricalRun[]>
 					historyStatus = "failed";
 					report = { summary: `Missing structured report: ${reportFile}`, documents: [] };
 				}
-				tasks.push({ order: task.order ?? tasks.length + 1, id: task.id, name: task.name ?? task.agent ?? "worker", agent: task.agent ?? "worker", status: historyStatus, summary: report.summary, question: report.question, documents: report.documents ?? [], recordDirectory: taskDirectory, sessionFile: task.sessionFile, model: task.model, thinking: task.thinking, tools: task.tools, skills: task.skills ?? [], access: task.access });
+				tasks.push({ order: task.order ?? tasks.length + 1, id: task.id, name: task.name ?? task.agent ?? "worker", agent: task.agent ?? "worker", status: historyStatus, summary: report.summary, question: report.question, documents: report.documents ?? [], recordDirectory: taskDirectory, sessionFile: task.sessionFile, model: task.model, thinking: task.thinking, tools: task.tools, skills: task.skills ?? [], extensions: task.extensions ?? [], access: task.access });
 			}
 			history.push({ id: run.id, label: run.label, status: projectedStatus, startedAt: run.startedAt, completedAt: run.completedAt, effectiveConcurrency: run.effectiveConcurrency, cleanupPendingTabIds: run.cleanupPendingTabIds, tasks, recordDirectory: directory });
 		} catch (error) {

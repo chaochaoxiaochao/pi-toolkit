@@ -8,6 +8,8 @@
 
 ## Unreleased
 
+- Add opt-in Herdr Subagents persona extension sources, including npm/git Pi packages, with saved restart configuration and documented native package-resource semantics.
+- Harden Herdr Subagents cleanup checks with condition-based waits, lock/focus regressions, and retained failure diagnostics; keep production cleanup behavior unchanged.
 - Fix Herdr Subagents startup failures caused by stale idle observations and require real child-Agent smoke tests before releasing that package.
 
 - Replace split child/root publishing with one idempotent root-tag workflow, make final-version local checks authoritative, keep CI publication-only, and remove timing-sensitive Herdr lifecycle assertions.

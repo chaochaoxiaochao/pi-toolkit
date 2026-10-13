@@ -1,3 +1,12 @@
+## Unreleased
+
+- Add persona `extensions` in Markdown and JSON with project → global → effective Markdown precedence, replacement arrays, and explicit clearing.
+- Pass local files/directories and native npm/git/built-in sources to child Pi while retaining `--no-extensions` and mandatory child extensions.
+- Persist sources for historical, failed/blocked, and queued-task restarts; expose effective sources in persona listing.
+- Document that explicit Pi packages can load skills, prompts, and themes, including package skills despite `--no-skills`, without automatically broadening explicit tool allowlists.
+- Add deterministic source/precedence/restart tests, a real Pi file/package loading check, and package-source coverage in the real concurrent Herdr smoke.
+- Replace deferred-cleanup test sleeps with bounded condition waits; add a controlled lock-contention regression. Make real Herdr smoke respect deferred cleanup, optionally test focus/restore, and preserve failure traces and live tab/pane snapshots instead of deleting the evidence.
+
 ## 2026-10-12 - v0.4.13
 
 - fix stale-idle child startup race and require real Herdr E2E release smoke

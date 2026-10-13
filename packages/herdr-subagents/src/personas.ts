@@ -21,6 +21,7 @@ export interface AgentDefinition {
 	access?: "read" | "write";
 	thinking?: string;
 	skills?: string[];
+	extensions?: string[];
 	systemPrompt: string;
 	filePath: string;
 }
@@ -79,6 +80,9 @@ export function parseAgentMarkdown(content: string, filePath = "<memory>"): Agen
 	const access = rawAccess as "read" | "write" | undefined;
 	const thinking = fields.get("thinking")?.trim() || undefined;
 	const skills = fields.has("skills") ? parseList(fields.get("skills") ?? "") : undefined;
+	const rawExtensions = fields.get("extensions");
+	const extensions = rawExtensions?.trim() === "[]" ? [] : rawExtensions === undefined ? undefined : parseList(rawExtensions);
+	if (rawExtensions !== undefined && !extensions) throw new Error("frontmatter extensions must contain non-empty sources or []");
 	return {
 		name,
 		description,
@@ -87,6 +91,7 @@ export function parseAgentMarkdown(content: string, filePath = "<memory>"): Agen
 		...(access ? { access } : {}),
 		...(thinking ? { thinking } : {}),
 		...(skills ? { skills } : {}),
+		...(extensions ? { extensions } : {}),
 		systemPrompt: lines.slice(end + 1).join("\n").trim(),
 		filePath,
 	};
