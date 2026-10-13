@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { runHerdrSubagentsBatch } from "../src/batch-runner.ts";
+import registerSubagentReport from "../extensions/subagent-report.ts";
 import { applyTaskStatus } from "../src/records.ts";
 
 process.env.HERDR_ENV = "1";
@@ -83,9 +84,9 @@ function fakeHerdr() {
 	};
 }
 
-async function run(tasks, concurrency, herdr = fakeHerdr()) {
+async function run(tasks, concurrency, herdr = fakeHerdr(), signal) {
 	const result = await runHerdrSubagentsBatch(tasks, {
-		label: "state-machine-test", concurrency, maxConcurrency: 4, cwd: root, herdr,
+		label: "state-machine-test", concurrency, maxConcurrency: 4, cwd: root, herdr, signal,
 	});
 	return { result, herdr };
 }
@@ -130,9 +131,48 @@ async function run(tasks, concurrency, herdr = fakeHerdr()) {
 	assert.deepEqual(result.tasks.map((entry) => entry.status), ["failed", "completed"]);
 }
 
+{
+	const { result } = await run([task("bad-one", "fail one"), task("bad-two", "fail two")], 2);
+	assert.equal(result.status, "failed");
+	assert.deepEqual(result.tasks.map((entry) => entry.status), ["failed", "failed"]);
+}
+
+{
+	const controller = new AbortController();
+	setTimeout(() => controller.abort(new Error("test cancellation")), 8);
+	const { result } = await run([task("active", "slow active"), task("queued", "queued")], 1, fakeHerdr(), controller.signal);
+	assert.equal(result.status, "cancelled");
+	assert.deepEqual(result.activity.map((entry) => entry.status), ["cancelled", "cancelled"]);
+}
+
 await assert.rejects(() => run([task("writer", "edit", "write"), task("reader", "read")], 2), /require concurrency 1/);
 
 const terminal = { id: "task", runId: "run", order: 1, status: "completed" };
 assert.throws(() => applyTaskStatus(terminal, "running"), /terminal tasks are immutable/);
+
+{
+	const directory = join(root, "report-idempotency");
+	mkdirSync(directory, { recursive: true });
+	const attemptId = "11111111-1111-4111-8111-111111111111";
+	writeFileSync(join(directory, "task.json"), JSON.stringify({ id: "task", runId: "run", order: 1, status: "running", currentAttemptId: attemptId }));
+	const handlers = new Map();
+	let reportTool;
+	registerSubagentReport({
+		registerTool(tool) { reportTool = tool; },
+		registerCommand() {}, registerShortcut() {},
+		on(name, handler) { handlers.set(name, handler); },
+		events: { on() {} },
+		async exec() { return { code: 0, stdout: "", stderr: "", killed: false }; },
+	});
+	process.env.PI_HERDR_SUBAGENTS_TASK_DIR = directory;
+	await handlers.get("before_agent_start")?.();
+	const report = { status: "completed", summary: "done", result: "full result", documents: [] };
+	await reportTool.execute("first", report);
+	await reportTool.execute("duplicate", report);
+	await assert.rejects(() => reportTool.execute("conflict", { ...report, summary: "different" }), /Conflicting subagent_report/);
+	const persisted = JSON.parse(readFileSync(join(directory, "reports", `${attemptId}.json`), "utf8"));
+	assert.equal(persisted.summary, "done");
+	delete process.env.PI_HERDR_SUBAGENTS_TASK_DIR;
+}
 
 console.log("PASS core Herdr state machine");

@@ -8,21 +8,58 @@ Herdr owns terminal presentation and pane operations. The package owns schedulin
 
 Task:
 
-```
-queued -> running -> completed
-                  -> failed
-                  -> cancelled
+```mermaid
+stateDiagram-v2
+    [*] --> queued
+    queued --> running: worker slot available
+    queued --> cancelled: parent cancellation
+    running --> completed: valid completed report
+    running --> failed: valid failed report or process exits without report
+    running --> cancelled: parent cancellation
+    completed --> [*]
+    failed --> [*]
+    cancelled --> [*]
 ```
 
 The three terminal states are immutable. Follow-up work creates a new task or run.
 
 Run:
 
-```
-running -> completed | failed | partial | cancelled
+```mermaid
+stateDiagram-v2
+    [*] --> running
+    running --> completed: every task completed
+    running --> failed: every task failed
+    running --> cancelled: every task cancelled
+    running --> partial: terminal outcomes are mixed
+    completed --> [*]
+    failed --> [*]
+    cancelled --> [*]
+    partial --> [*]
 ```
 
 Run state is derived from task state. `partial` means terminal tasks have mixed outcomes.
+
+Scheduler and arbitration:
+
+```mermaid
+flowchart TD
+    Q[Queued tasks] -->|FIFO, free worker slot| S[Start Pi in Herdr pane]
+    S --> P[Deliver prompt exactly once]
+    P --> R{Attempt report exists?}
+    R -->|yes| V[Validate attempt and report]
+    V --> T[Commit immutable terminal task]
+    R -->|no| L{Child Pi process alive?}
+    L -->|yes| W[Herdr wait wake-up]
+    W --> R
+    L -->|no| C{Final disk reconciliation}
+    C -->|report found| V
+    C -->|no report| F[Commit failed task]
+    T --> Q
+    F --> Q
+```
+
+Herdr `idle`, `blocked`, and `done` never transition a business task; they only wake the reconciliation loop.
 
 Legacy readers still accept old `starting` and `blocked` values so existing archives can be inspected and cleaned up. New execution does not produce them.
 
