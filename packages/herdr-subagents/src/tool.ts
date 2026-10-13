@@ -1,12 +1,10 @@
 import { CliHerdrAutomation, type HerdrAutomation } from "./herdr.ts";
 import { loadSubagentConfiguration, type ConfigurationPaths, type SubagentConfiguration } from "./config.ts";
 import { runHerdrSubagentsBatch, type BatchResult, type BatchTask } from "./batch-runner.ts";
-import { respondToBlockedTask } from "./blocking.ts";
-import { cleanSubagentRun, historyText, listSubagentHistory, resumeHistoricalTask } from "./history.ts";
+import { cleanSubagentRun, historyText, listSubagentHistory } from "./history.ts";
 import { HERDR_ACTIONS, validateControlParams, validateRunParams } from "./validation.ts";
 import type { OwnerIdentity } from "./ownership.ts";
 import { cancelActiveSubagentRuns } from "./reconcile.ts";
-import { cancelQueuedRuns, loadQueuedRuns } from "./queued-runs.ts";
 import { getSubagentRunStatus, runStatusText } from "./status.ts";
 
 export interface HerdrSubagentsTaskParams { name: string; prompt: string; agent?: string; model?: string; }
@@ -15,28 +13,20 @@ export interface HerdrSubagentsRunParams {
 	tasks: HerdrSubagentsTaskParams[];
 	label?: string;
 	concurrency?: number;
-	background?: boolean;
 }
 
 export interface HerdrSubagentsControlToolParams {
-	action: "list" | "status" | "respond" | "history" | "resume" | "cancel" | "cleanup";
+	action: "list" | "status" | "history" | "cancel" | "cleanup";
 	runId?: string;
-	answer?: string;
-	task?: number;
-	prompt?: string;
 }
 
 /** Internal superset used by shared execution helpers. */
 export interface HerdrSubagentsToolParams {
-	action?: "list" | "status" | "respond" | "history" | "resume" | "cancel" | "cleanup";
-	prompt?: string;
+	action?: "list" | "status" | "history" | "cancel" | "cleanup";
 	label?: string;
 	tasks?: HerdrSubagentsTaskParams[];
 	concurrency?: number;
-	background?: boolean;
 	runId?: string;
-	answer?: string;
-	task?: number;
 }
 
 export interface HerdrSubagentsToolContext {
@@ -51,7 +41,7 @@ export interface HerdrSubagentsToolDependencies {
 	configurationPaths?: ConfigurationPaths;
 	owner?: OwnerIdentity;
 	runId?: string;
-	cancelRun?: (runId: string) => Promise<{ cancelled: boolean; queued?: boolean; cleanupErrors?: string[] }>;
+	cancelRun?: (runId: string) => Promise<{ cancelled: boolean; cleanupErrors?: string[] }>;
 }
 
 export type HerdrSubagentsBatchDetails = BatchResult & { prompts: string[] };
@@ -127,50 +117,19 @@ const actionHandlers = {
 		const requestedRunId = (params.runId as string).trim();
 		try {
 			const runId = (await getSubagentRunStatus(ctx.cwd, requestedRunId))?.runId ?? requestedRunId;
-			let result: { cancelled: boolean; queued?: boolean; cleanupErrors?: string[] };
+			let result: { cancelled: boolean; cleanupErrors?: string[] };
 			if (dependencies.cancelRun) result = await dependencies.cancelRun(runId);
 			else {
 				const reason = "Subagent run cancelled by user.";
-				const queued = (await loadQueuedRuns(ctx.cwd)).some((run) => run.runId === runId);
-				if (queued) {
-					await cancelQueuedRuns(ctx.cwd, [runId], { reason, owner: dependencies.owner });
-					result = { cancelled: true, queued: true };
-				} else {
-					const cancellation = await cancelActiveSubagentRuns(ctx.cwd, dependencies.herdr ?? new CliHerdrAutomation(), { reason, owner: dependencies.owner, runId });
-					result = { cancelled: cancellation.cancelledRuns > 0, cleanupErrors: cancellation.cleanupErrors };
-				}
+				const cancellation = await cancelActiveSubagentRuns(ctx.cwd, dependencies.herdr ?? new CliHerdrAutomation(), { reason, owner: dependencies.owner, runId });
+				result = { cancelled: cancellation.cancelledRuns > 0, cleanupErrors: cancellation.cleanupErrors };
 			}
 			const suffix = result.cleanupErrors?.length ? ` Cleanup warnings: ${result.cleanupErrors.join("; ")}` : "";
-			const text = result.cancelled ? `Cancelled Subagent run ${runId}.${suffix}` : `Subagent run '${runId}' is not active or queued.`;
+			const text = result.cancelled ? `Cancelled Subagent run ${runId}.${suffix}` : `Subagent run '${runId}' is not active.`;
 			return { content: [{ type: "text", text }], details: { action: "cancel", runId, ...result }, ...(result.cancelled ? {} : { isError: true }) };
 		} catch (error) {
 			return errorResponse(error instanceof Error ? error.message : String(error), { action: "cancel", runId: requestedRunId, cancelled: false });
 		}
-	},
-	async resume({ params, signal, onUpdate, ctx, dependencies, discovery }: ToolExecutionContext) {
-		try {
-			const result = await resumeHistoricalTask(ctx.cwd, params.runId as string, params.task as number, (params.prompt as string).trim(), {
-				herdr: dependencies.herdr, signal, owner: dependencies.owner, stalledWarningSeconds: discovery.settings.stalledWarningSeconds,
-				onUpdate: (partial) => onUpdate?.({ content: [{ type: "text", text: partial.summary }], details: partial }),
-				onStalled: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "resume", runId: params.runId, stalled: true } }),
-				onCleanupError: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "resume", runId: params.runId, cleanupError: text } }),
-			});
-			return { content: [{ type: "text", text: result.summary }], details: result, ...(result.status === "failed" || result.status === "cancelled" ? { isError: true } : {}) };
-		} catch (error) { return errorResponse(error instanceof Error ? error.message : String(error)); }
-	},
-	async respond({ params, signal, onUpdate, ctx, dependencies }: ToolExecutionContext) {
-		try {
-			const result = await respondToBlockedTask(ctx.cwd, (params.runId as string).trim(), (params.answer as string).trim(), {
-				herdr: dependencies.herdr, taskNumber: params.task as number, signal, owner: dependencies.owner,
-				onUpdate: (partial) => onUpdate?.({ content: [{ type: "text", text: partial.summary }], details: partial }),
-				onStalled: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "respond", runId: params.runId, stalled: true } }),
-				onWarning: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "respond", runId: params.runId, warning: text } }),
-				onCleanupError: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "respond", runId: params.runId, cleanupError: text } }),
-			});
-			const blockedControl = result.status === "blocked" ? { allowedActions: ["respond", "cancel"] as const } : {};
-			const text = [result.summary, ...(result.question ? [`Question: ${result.question}`] : []), ...(result.status === "blocked" ? [`Run ID: ${result.runId}`, `Answer with herdr_subagents_control({ action: "respond", runId: "${result.runId}", answer: "..." }) or cancel this run.`] : []), ...result.documents.map((document) => `${document.description}: ${document.path}`)].join("\n");
-			return { content: [{ type: "text", text }], details: { ...result, ...blockedControl }, ...(result.status === "failed" || result.status === "partial" || result.status === "cancelled" ? { isError: true } : {}) };
-		} catch (error) { return errorResponse(error instanceof Error ? error.message : String(error)); }
 	},
 	async list({ discovery }: ToolExecutionContext) {
 		return { content: [{ type: "text", text: listText(discovery) }], details: { action: "list", agents: discovery.personas, diagnostics: discovery.diagnostics, settings: discovery.settings } };
@@ -201,10 +160,9 @@ async function executeBatch({ params, signal, onUpdate, ctx, dependencies, disco
 			onUpdate: (partial) => onUpdate?.({ content: [{ type: "text", text: partial.summary }], details: { ...partial, prompts: tasks.map((task) => task.prompt) } }),
 		});
 		const lines = [result.summary, ...result.tasks.map((task) => `- ${task.name}: ${task.status} — ${task.summary}`)];
-		if (result.status === "blocked") lines.push("", `Run ID: ${result.runId}`, `Answer with herdr_subagents_control({ action: "respond", runId: "${result.runId}", answer: "..." }) or cancel this run before starting another foreground run.`);
 		if (result.documents.length) lines.push("", "Documents:", ...result.documents.map((document) => `- ${document.description}: ${document.path}`));
 		const isError = result.status === "failed" || result.status === "partial" || result.status === "cancelled";
-		return { content: [{ type: "text", text: lines.join("\n") }], details: { ...result, prompts: tasks.map((task) => task.prompt), ...(result.status === "blocked" ? { allowedActions: ["respond", "cancel"] } : {}) }, ...(isError ? { isError: true } : {}) };
+		return { content: [{ type: "text", text: lines.join("\n") }], details: { ...result, prompts: tasks.map((task) => task.prompt) }, ...(isError ? { isError: true } : {}) };
 	} catch (error) {
 		const text = error instanceof Error ? error.message : String(error);
 		const diagnostic = error as { recordDirectory?: string; runId?: string };

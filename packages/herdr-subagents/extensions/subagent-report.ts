@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { dirname, resolve } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
@@ -23,7 +23,7 @@ async function returnToParent(pi: ExtensionAPI, ctx: { ui: { notify(message: str
 }
 
 const ReportParams = Type.Object({
-	status: StringEnum(["completed", "blocked", "failed"] as const, { description: "Outcome of this turn. completed: the task is finished. blocked: you have a specific question or decision the parent agent must answer before you can continue, and the run should stay open waiting for it. failed: this task cannot be completed, so the run should not wait for an answer." }),
+	status: StringEnum(["completed", "failed"] as const, { description: "Terminal task outcome. completed: the task is finished. failed: the task cannot be completed." }),
 	summary: Type.String({ minLength: 1, description: "One concise paragraph for the parent agent." }),
 	result: Type.String({ description: "Complete final result. Stored on disk and excluded from the parent context." }),
 	documents: Type.Optional(Type.Array(Type.Object({
@@ -31,7 +31,6 @@ const ReportParams = Type.Object({
 		description: Type.String({ minLength: 1, description: "Short description of the document." }),
 	}))),
 	error: Type.Optional(Type.String({ minLength: 1, description: "Failure detail when status is failed." })),
-	question: Type.Optional(Type.String({ minLength: 1, description: "Exact question for the parent agent when status is blocked." })),
 });
 
 function writeAtomic(path: string, content: string): void {
@@ -74,7 +73,14 @@ export default function (pi: ExtensionAPI) {
 	pi.on("agent_start", () => reportHerdrState("working"));
 	pi.on("agent_settled", (_event, ctx) => {
 		const taskDirectory = process.env.PI_HERDR_SUBAGENTS_TASK_DIR?.trim();
-		if (taskDirectory && activeAttemptId) writeAttemptState(taskDirectory, activeAttemptId, "settled");
+		if (taskDirectory && activeAttemptId) {
+			writeAttemptState(taskDirectory, activeAttemptId, "settled");
+			const reported = existsSync(attemptReportPath(taskDirectory, activeAttemptId));
+			// agent_settled is Pi's final automatic-work boundary. Ending the child here
+			// gives the orchestrator an authoritative no-report process-exit signal while
+			// still allowing all provider auto-retries to finish first.
+			setTimeout(() => process.exit(reported ? 0 : 2), 25);
+		}
 		if (ctx?.isIdle?.() === true) reportHerdrState("idle");
 	});
 	pi.events.on("herdr:blocked", (data: { active?: boolean; label?: string }) => {
@@ -103,7 +109,7 @@ export default function (pi: ExtensionAPI) {
 			const attemptId = activeAttemptId ?? currentAttemptId(taskDirectory);
 			mkdirSync(taskDirectory, { recursive: true, mode: 0o700 });
 			const resultPath = resultPathForAttemptId(taskDirectory, attemptId);
-			writeAtomic(resultPath, params.result);
+			const reportPath = attemptReportPath(taskDirectory, attemptId);
 			const documents = (params.documents ?? []).map((document) => ({
 				path: resolve(process.cwd(), document.path),
 				description: document.description,
@@ -117,10 +123,18 @@ export default function (pi: ExtensionAPI) {
 				summary: params.summary,
 				documents,
 				...(params.error ? { error: params.error } : {}),
-				...(params.question ? { question: params.question } : {}),
 				reportedAt: new Date().toISOString(),
 			};
-			writeAtomic(attemptReportPath(taskDirectory, attemptId), `${JSON.stringify(report, null, 2)}\n`);
+			if (existsSync(reportPath)) {
+				const existing = JSON.parse(readFileSync(reportPath, "utf8")) as Record<string, unknown>;
+				const comparable = ({ reportedAt: _reportedAt, ...value }: Record<string, unknown>) => value;
+				const sameReport = JSON.stringify(comparable(existing)) === JSON.stringify(comparable(report));
+				const sameResult = existsSync(resultPath) && readFileSync(resultPath, "utf8") === params.result;
+				if (!sameReport || !sameResult) throw new Error("Conflicting subagent_report already exists for this task.");
+			} else {
+				writeAtomic(resultPath, params.result);
+				writeAtomic(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+			}
 			return {
 				content: [{ type: "text" as const, text: `${params.status}: ${params.summary}` }],
 				details: report,

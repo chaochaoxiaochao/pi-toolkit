@@ -1,3 +1,14 @@
+# Changelog
+
+## 0.5.0
+
+- Replace overlapping dispatcher, turn, blocked, resume, and retry lifecycle decisions with a report-first task state machine.
+- Run every child as a visible one-shot Pi process and use process exit as the only no-report failure signal.
+- Wait for all tasks in strict serial or bounded read-only parallel execution; remove background submission and early failure detach.
+- Make terminal tasks immutable, make identical duplicate reports idempotent, and reject conflicting replacements.
+- Reject parallel write-capable runs instead of silently coercing their concurrency.
+- Keep legacy state values readable for archived-run inspection and cleanup.
+
 ## 2026-10-13 - v0.4.14
 
 - allow explicit extension sources with native Pi package semantics and reliable cleanup checks

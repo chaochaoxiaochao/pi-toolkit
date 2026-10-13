@@ -91,7 +91,10 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 	if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_WORKSPACE_ID) throw new Error("Herdr Subagents must run from a Pi session inside Herdr.");
 	const runId = options.runId ?? randomUUID();
 	const requestedConcurrency = Math.max(1, Math.floor(options.concurrency));
-	const effectiveConcurrency = tasks.some((task) => task.access === "write") ? 1 : Math.min(requestedConcurrency, options.maxConcurrency, tasks.length);
+	if (requestedConcurrency > 1 && tasks.some((task) => task.access === "write")) {
+		throw new Error("Write-capable tasks require concurrency 1; parallel writes are not safe.");
+	}
+	const effectiveConcurrency = Math.min(requestedConcurrency, options.maxConcurrency, tasks.length);
 	const runDirectory = join(options.cwd, ".pi", "herdr-subagents", "runs", `${timestamp().replace(/[-:.]/g, "").replace("Z", "Z-")}${runId.slice(0, 8)}`);
 	const runFile = join(runDirectory, "run.json");
 	await ensureRuntimeIgnored(options.cwd);
@@ -113,7 +116,7 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 		return { taskId, taskDirectory, sessionFile, reportFile: join(taskDirectory, "report.json"), taskFile, systemPromptFile, taskRecord };
 	}));
 	const runRecord: RunRecord = {
-		id: runId, label: options.label, status: "starting", cwd: options.cwd, ...ownerRecord(options.owner), requestedConcurrency,
+		id: runId, label: options.label, status: "running", cwd: options.cwd, ...ownerRecord(options.owner), requestedConcurrency,
 		effectiveConcurrency, stalledWarningSeconds: options.stalledWarningSeconds, startedAt: timestamp(), taskIds: contexts.map((context) => context.taskId), paneIds: [],
 	};
 	await writeJsonAtomic(runFile, runRecord);
@@ -205,7 +208,6 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 				const index = nextIndex++;
 				if (index >= tasks.length) return;
 				await runOne(index);
-				if (results[index]?.status === "blocked") return;
 			}
 		};
 		const workers = await Promise.allSettled(Array.from({ length: effectiveConcurrency }, worker));

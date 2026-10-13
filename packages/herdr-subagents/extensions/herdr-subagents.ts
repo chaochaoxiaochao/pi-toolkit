@@ -5,15 +5,13 @@ import { Container, Editor, Text } from "@earendil-works/pi-tui";
 import { loadSubagentConfiguration } from "../src/config.ts";
 import { CliHerdrAutomation, type HerdrAutomation } from "../src/herdr.ts";
 import { activeRunText } from "../src/monitor.ts";
-import { RunDispatcher } from "../src/dispatcher.ts";
 import { historyText, listSubagentHistory } from "../src/history.ts";
-import { cancelQueuedRuns, loadQueuedRuns, persistQueuedRun, removeQueuedRun } from "../src/queued-runs.ts";
+import { cancelQueuedRuns, loadQueuedRuns } from "../src/queued-runs.ts";
 import { cancelActiveSubagentRuns, reconcileSubagentRuns } from "../src/reconcile.ts";
 import { executeHerdrSubagents, executeHerdrSubagentsControl, type HerdrSubagentsBatchDetails, type HerdrSubagentsControlToolParams, type HerdrSubagentsRunParams } from "../src/tool.ts";
 import { HerdrSubagentsControlParams, HerdrSubagentsParams } from "../src/parameters.ts";
 import { HERDR_ACTIONS } from "../src/validation.ts";
 import { FleetController, type FleetWidgetRuntime } from "../src/fleet-controller.ts";
-import { isSettledRunStatus } from "../src/records.ts";
 
 const packageAgentsDir = fileURLToPath(new URL("../agents/", import.meta.url));
 
@@ -39,7 +37,7 @@ export function normalizeHerdrSubagentsArguments(args: unknown): HerdrSubagentsR
 	if (!args || typeof args !== "object") return args as HerdrSubagentsRunParams;
 	const legacy = args as Record<string, unknown>;
 	if (Array.isArray(legacy.tasks) || typeof legacy.prompt !== "string" || legacy.action !== undefined) return args as HerdrSubagentsRunParams;
-	if (Object.keys(legacy).some((key) => !["prompt", "agent", "label", "model", "background"].includes(key))) return args as HerdrSubagentsRunParams;
+	if (Object.keys(legacy).some((key) => !["prompt", "agent", "label", "model"].includes(key))) return args as HerdrSubagentsRunParams;
 	const label = typeof legacy.label === "string" ? legacy.label : undefined;
 	return {
 		tasks: [{
@@ -49,7 +47,6 @@ export function normalizeHerdrSubagentsArguments(args: unknown): HerdrSubagentsR
 			...(typeof legacy.model === "string" ? { model: legacy.model } : {}),
 		}],
 		...(label ? { label } : {}),
-		...(typeof legacy.background === "boolean" ? { background: legacy.background } : {}),
 	};
 }
 
@@ -124,17 +121,12 @@ async function recoverParentSession(cwd: string, herdr: HerdrAutomation, owner: 
 	catch (error) { notify(`Subagent recovery could not inspect active runs: ${error instanceof Error ? error.message : String(error)}`); }
 }
 
-async function shutdownParentSession(options: { cwd: string; herdr: HerdrAutomation; owner: { sessionId?: string; processId: number }; dispatcher: RunDispatcher; fleet: FleetController; sessionController: AbortController; runControllers: Map<string, AbortController>; inFlight: Set<Promise<unknown>>; notify: (message: string) => void }): Promise<void> {
-	options.dispatcher.pause();
+async function shutdownParentSession(options: { cwd: string; herdr: HerdrAutomation; owner: { sessionId?: string; processId: number }; fleet: FleetController; sessionController: AbortController; runControllers: Map<string, AbortController>; inFlight: Set<Promise<unknown>>; notify: (message: string) => void }): Promise<void> {
 	options.sessionController.abort(new Error("Parent Pi session closed."));
-	const queuedRunIds = options.dispatcher.cancelQueued(new Error("Parent Pi session closed."));
-	await cancelQueuedRuns(options.cwd, queuedRunIds, { reason: "Parent Pi session closed.", owner: options.owner });
 	for (const controller of options.runControllers.values()) controller.abort(new Error("Parent Pi session closed."));
 	options.fleet.shutdown();
 	await Promise.allSettled([...options.inFlight]);
 	const cancellation = await cancelActiveSubagentRuns(options.cwd, options.herdr, { reason: "Parent Pi session closed.", owner: options.owner });
-	const retainedRunId = options.dispatcher.snapshot().activeRunId;
-	if (retainedRunId) options.dispatcher.release(retainedRunId);
 	for (const message of cancellation.cleanupErrors) options.notify(message);
 }
 
@@ -144,168 +136,58 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 	const execute = dependencies.execute ?? executeHerdrSubagents;
 	const executeControl = dependencies.executeControl ?? executeHerdrSubagentsControl;
 	const isEditorComponent = dependencies.isEditor ?? ((value: unknown) => value instanceof Editor);
-	const dispatcher = new RunDispatcher();
 	const fleet = new FleetController(herdr, isEditorComponent, dependencies.createFleetWidget, dependencies.fleetWidgetRuntime);
 	const runControllers = new Map<string, AbortController>();
 	const runPromises = new Map<string, Promise<unknown>>();
 	const inFlight = new Set<Promise<unknown>>();
 	let sessionController = new AbortController();
 	let ownerSessionId: string | undefined;
-	let sessionGeneration = 0;
-	const notifyRun = (runId: string, result: { details: unknown; content?: Array<{ type: string; text?: string }> }) => {
-		const details = result.details as Partial<HerdrSubagentsBatchDetails> & { errorMessage?: string };
-		if (!details.tasks || !details.documents || !details.status) {
-			const error = details.errorMessage ?? result.content?.find((item) => item.type === "text")?.text ?? "Unknown Subagent failure.";
-			pi.sendMessage({ customType: "herdr-subagents-run", content: `Subagent run ${runId} failed: ${error}`, display: true, details: { runId, status: "failed" } }, { triggerTurn: true, deliverAs: "followUp" });
-			return;
-		}
-		const lines = [`Subagent run ${runId} ${details.status}: ${details.summary}`, ...details.tasks.map((task) => `- ${task.name}: ${task.summary}`)];
-		if (details.documents.length) lines.push("Documents:", ...details.documents.map((document) => `- ${document.description}: ${document.path}`));
-		pi.sendMessage({ customType: "herdr-subagents-run", content: lines.join("\n"), display: true, details: { runId, status: details.status } }, { triggerTurn: true, deliverAs: "followUp" });
-	};
 
 	pi.on("session_shutdown", async (_event, ctx) => {
-		sessionGeneration += 1;
-		await shutdownParentSession({ cwd: ctx.cwd, herdr, owner: { sessionId: ownerSessionId, processId: process.pid }, dispatcher, fleet, sessionController, runControllers, inFlight, notify: (message) => ctx.ui.notify(message, "error") });
+		await shutdownParentSession({ cwd: ctx.cwd, herdr, owner: { sessionId: ownerSessionId, processId: process.pid }, fleet, sessionController, runControllers, inFlight, notify: (message) => ctx.ui.notify(message, "error") });
 	});
 	pi.on("session_start", async (_event, ctx) => {
-		sessionGeneration += 1;
 		sessionController.abort(new Error("Parent Pi session changed."));
 		sessionController = new AbortController();
 		ownerSessionId = `${ctx.sessionManager.getSessionId()}:${randomUUID()}`;
 		fleet.bind(ctx.ui, ctx.mode === "tui");
-		dispatcher.pause();
-		try { await recoverParentSession(ctx.cwd, herdr, { sessionId: ownerSessionId, processId: process.pid }, (message) => ctx.ui.notify(message, "error")); }
-		finally { dispatcher.resume(); }
+		await recoverParentSession(ctx.cwd, herdr, { sessionId: ownerSessionId, processId: process.pid }, (message) => ctx.ui.notify(message, "error"));
 	});
 
 	pi.registerTool({
 		name: "herdr_subagents",
 		label: "Herdr Subagents",
-		description: "Run one or more ordered tasks in visible interactive Herdr Pi Agents. Use one tasks item for a single task. Independent read-only tasks may run concurrently; write-capable runs are serialized. A task that needs the parent agent to answer or decide something reports blocked at any concurrency, keeps its live pane, and lets its independent siblings continue; answer it with herdr_subagents_control respond, which a blocked run waits for before another foreground run can start. Foreground calls wait for the batch unless a task fails, when the run continues in the background and returns its run ID immediately. Explicit background calls always return a run ID immediately. Complete results and Pi sessions stay in project-local records.",
+		description: "Run one or more ordered tasks in visible, focusable Herdr Pi panes. concurrency 1 is strict serial execution; higher values form a bounded pool for read-only tasks. Write-capable tasks require concurrency 1. The call returns only after every task has one terminal completed, failed, or cancelled result. Complete results and Pi sessions stay in project-local records.",
 		promptSnippet: "Run focused work in visible Herdr subagents",
 		parameters: HerdrSubagentsParams,
 		prepareArguments: normalizeHerdrSubagentsArguments,
 
 		async execute(_toolCallId, params: HerdrSubagentsRunParams, signal, onUpdate, ctx) {
-			const blockedForegroundResponse = (blockingRunId: string) => {
-				const text = `Cannot start a foreground Subagent run while blocked run ${blockingRunId} is waiting for input. Respond to or cancel that run first, or submit this run with background: true.`;
-				return { content: [{ type: "text" as const, text }], details: { errorMessage: text, blockingRunId }, isError: true };
-			};
-			const blockingRunId = dispatcher.snapshot().retainedRunId;
-			if (!params.background && blockingRunId) return blockedForegroundResponse(blockingRunId);
-			const generation = sessionGeneration;
 			const runId = randomUUID();
 			const controller = new AbortController();
-			const foregroundController = new AbortController();
-			let foregroundAttached = !params.background;
-			const abortForeground = () => {
-				if (foregroundAttached && signal?.aborted) foregroundController.abort(signal.reason);
-			};
-			if (foregroundAttached) {
-				if (signal?.aborted) abortForeground();
-				else signal?.addEventListener("abort", abortForeground, { once: true });
-			}
+			const runSignal = AbortSignal.any([controller.signal, sessionController.signal, ...(signal ? [signal] : [])]);
 			runControllers.set(runId, controller);
-			const runSignal = AbortSignal.any([controller.signal, sessionController.signal, ...(!params.background ? [foregroundController.signal] : [])]);
-			let resolveEarlyFailure: ((details: HerdrSubagentsBatchDetails) => void) | undefined;
-			const earlyFailure = new Promise<HerdrSubagentsBatchDetails>((resolve) => { resolveEarlyFailure = resolve; });
-			let failureObserved = false;
-			let runSettled = false;
-			const executeRun = async () => {
-				const result = await execute(params, runSignal, (update) => {
-					const details = update.details as HerdrSubagentsBatchDetails | undefined;
-					if (details?.activity) fleet.sync(details);
-					const hasUnfinishedSibling = details?.activity?.some((task) => task.status === "queued" || task.status === "running");
-					if (!params.background && !failureObserved && details?.effectiveConcurrency > 1 && hasUnfinishedSibling && details.tasks?.some((task) => task.status === "failed")) {
-						failureObserved = true;
-						foregroundAttached = false;
-						signal?.removeEventListener("abort", abortForeground);
-						resolveEarlyFailure?.(details);
-					}
-					const updateText = update.content.find((item) => item.type === "text")?.text;
-					const updateDetails = update.details as { warning?: string };
-					if (updateDetails.warning || updateText?.includes("cleanup failed") || (!foregroundAttached && updateText?.includes("appears stalled"))) ctx.ui.notify(updateDetails.warning ?? updateText ?? "Subagent warning", "warning");
-					if (foregroundAttached) onUpdate?.(update);
-				}, ctx, { agentsDirectory: packageAgentsDir, owner: { sessionId: ownerSessionId, processId: process.pid }, runId });
-				fleet.sync(result.details);
-				return result;
-			};
-			if (params.background) await persistQueuedRun(ctx.cwd, runId, params, { sessionId: ownerSessionId, processId: process.pid });
-			const promise = dispatcher.submit(runId, async () => {
-				const result = await executeRun();
-				const details = result.details as HerdrSubagentsBatchDetails;
-				const ownsDispatcher = dispatcher.snapshot().activeRunId === runId;
-				if (ownsDispatcher) fleet.setActive(details.status === "blocked" ? details : undefined);
-				else if (details.status === "blocked") fleet.clearRun(runId);
-				if (ownsDispatcher && fleet.active) {
-					dispatcher.retain(runId);
-				}
-				return result;
-			}, params.background ? undefined : { ...(signal ? { signal } : {}), onRetained: blockedForegroundResponse });
+			const promise = execute(params, runSignal, (update) => {
+				const details = update.details as HerdrSubagentsBatchDetails | undefined;
+				if (details?.activity) fleet.sync(details);
+				onUpdate?.(update);
+			}, ctx, {
+				agentsDirectory: packageAgentsDir,
+				herdr,
+				owner: { sessionId: ownerSessionId, processId: process.pid },
+				runId,
+			});
 			runPromises.set(runId, promise);
 			inFlight.add(promise);
-			void promise.finally(() => {
-				runSettled = true;
-				foregroundAttached = false;
-				signal?.removeEventListener("abort", abortForeground);
+			try {
+				const result = await promise;
+				fleet.sync(result.details);
+				return result;
+			} finally {
 				inFlight.delete(promise);
-				runControllers.delete(runId);
 				runPromises.delete(runId);
-			}).catch(() => undefined);
-			let backgroundLifecycleStarted = false;
-			const startBackgroundLifecycle = () => {
-				if (backgroundLifecycleStarted) return;
-				backgroundLifecycleStarted = true;
-				const lifecycle = promise.then((result) => {
-					if (generation !== sessionGeneration) return;
-					notifyRun(runId, result);
-					if (!fleet.active && !dispatcher.snapshot().activeRunId && dispatcher.snapshot().queuedRunIds.length === 0) fleet.render();
-				}).catch((error) => {
-					if (generation !== sessionGeneration) return;
-					if (controller.signal.aborted) {
-						pi.sendMessage({ customType: "herdr-subagents-run", content: `Subagent run ${runId} cancelled.`, display: true, details: { runId, status: "cancelled" } }, { triggerTurn: true, deliverAs: "followUp" });
-						return;
-					}
-					pi.sendMessage({ customType: "herdr-subagents-run", content: `Subagent run ${runId} failed: ${error instanceof Error ? error.message : String(error)}`, display: true, details: { runId, status: "failed" } }, { triggerTurn: true, deliverAs: "followUp" });
-				}).finally(() => removeQueuedRun(ctx.cwd, runId));
-				inFlight.add(lifecycle);
-				void lifecycle.finally(() => inFlight.delete(lifecycle)).catch(() => undefined);
-			};
-			if (params.background) {
-				startBackgroundLifecycle();
-				return { content: [{ type: "text" as const, text: `Subagent run queued: ${runId}` }], details: { runId, status: "queued", background: true } };
+				runControllers.delete(runId);
 			}
-			const foregroundOutcome = await Promise.race([
-				promise.then((result) => ({ kind: "settled" as const, result })),
-				earlyFailure.then((details) => ({ kind: "failed" as const, details })),
-			]);
-			if (foregroundOutcome.kind === "failed") {
-				try {
-					await persistQueuedRun(ctx.cwd, runId, params, { sessionId: ownerSessionId, processId: process.pid });
-				} catch (error) {
-					controller.abort(new Error("Could not persist failed foreground run for background continuation."));
-					await promise.catch(() => undefined);
-					await removeQueuedRun(ctx.cwd, runId).catch(() => undefined);
-					throw error;
-				}
-				if (runSettled) {
-					await removeQueuedRun(ctx.cwd, runId);
-					return promise;
-				}
-				dispatcher.detach(runId);
-				startBackgroundLifecycle();
-				const failedTask = foregroundOutcome.details.tasks.find((task) => task.status === "failed");
-				const failure = failedTask?.error ?? failedTask?.summary ?? "Unknown task failure.";
-				return {
-					content: [{ type: "text" as const, text: `Subagent run ${runId} continues in the background after ${failedTask?.name ?? "a task"} failed: ${failure}` }],
-					details: { ...foregroundOutcome.details, runId, background: true, earlyReturn: true, failedTask: failedTask ? { index: failedTask.index, name: failedTask.name, summary: failedTask.summary, ...(failedTask.error ? { error: failedTask.error } : {}) } : undefined },
-					isError: true,
-				};
-			}
-			const result = foregroundOutcome.result;
-			if (!fleet.active && !dispatcher.snapshot().activeRunId && dispatcher.snapshot().queuedRunIds.length === 0) fleet.resetSelection();
-			return result;
 		},
 
 		renderCall: renderToolCall,
@@ -315,7 +197,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 	pi.registerTool({
 		name: "herdr_subagents_control",
 		label: "Herdr Subagents Control",
-		description: "Inspect Herdr personas, query one run by ID, list run history, cancel active or queued work, answer a blocked task or continue a failed one with respond, resume a saved task, or remove a selected archived run. Continuing a failed task requires its task number and works while the rest of its batch still runs. Use status for one run and history only for the full archive. Use herdr_subagents to start new work.",
+		description: "Inspect Herdr personas, query one run by ID, list run history, cancel active work, or remove an archived run. Use herdr_subagents to start new work.",
 		parameters: HerdrSubagentsControlParams,
 
 		async execute(_toolCallId, params: HerdrSubagentsControlToolParams, signal, onUpdate, ctx) {
@@ -338,22 +220,15 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 					const reason = new Error("Subagent run cancelled by user.");
 					const targetController = runControllers.get(runId);
 					targetController?.abort(reason);
-					if (dispatcher.cancelQueuedRun(runId, reason)) {
-						await cancelQueuedRuns(ctx.cwd, [runId], { reason: reason.message, owner: { sessionId: ownerSessionId, processId: process.pid } });
-						fleet.clearRun(runId);
-						return { cancelled: true, queued: true };
-					}
 					const activePromise = runPromises.get(runId);
 					if (activePromise) {
 						await activePromise.catch(() => undefined);
 						fleet.clearRun(runId);
-						dispatcher.release(runId);
 						return { cancelled: true };
 					}
 					const cancellation = await cancelActiveSubagentRuns(ctx.cwd, herdr, { reason: reason.message, owner: { sessionId: ownerSessionId, processId: process.pid }, runId });
 					if (cancellation.cancelledRuns) {
 						fleet.clearRun(runId);
-						dispatcher.release(runId);
 					}
 					return { cancelled: cancellation.cancelledRuns > 0, cleanupErrors: cancellation.cleanupErrors };
 				},
@@ -361,15 +236,6 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 			inFlight.add(promise);
 			const result = await promise.finally(() => { inFlight.delete(promise); runControllers.delete(executionId); });
 			fleet.sync(result.details);
-			if (params.action === "respond") {
-				const details = result.details as { runId?: string; status?: string };
-				if (details.status === "blocked") fleet.sync(result.details);
-				else if (isSettledRunStatus(details.status)) {
-					const canonicalRunId = details.runId ?? params.runId;
-					fleet.clearRun(canonicalRunId);
-					if (canonicalRunId) dispatcher.release(canonicalRunId);
-				}
-			}
 			return result;
 		},
 
