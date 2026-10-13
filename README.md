@@ -28,14 +28,14 @@ Restart Pi after updating. The `todo` tool and widget will no longer load. `pi u
 
 ## Child packages
 
-| Package | Capability | Install | Update |
-|---|---|---|---|
-| [pi-todo](packages/todo/README.md) | Optional branch-local execution plan UI; not bundled with pi-toolkit | `pi install npm:@maxiaochao/pi-todo` | `pi update npm:@maxiaochao/pi-todo` |
-| [pi-cache-export](packages/cache-export/README.md) | Tau-aligned interactive cache dashboard for Pi sessions | `pi install npm:@maxiaochao/pi-cache-export` | `pi update npm:@maxiaochao/pi-cache-export` |
-| [pi-codex-edit](packages/codex-edit/README.md) | Codex-harness `apply_patch` routing for selected GPT models | `pi install npm:@maxiaochao/pi-codex-edit` | `pi update npm:@maxiaochao/pi-codex-edit` |
-| [pi-herdr-subagents](packages/herdr-subagents/README.md) | Interactive Herdr Pi Agents with bounded concurrency, direct navigation, and recovery | `pi install npm:@maxiaochao/pi-herdr-subagents` | `pi update npm:@maxiaochao/pi-herdr-subagents` |
-| [pi-scheduler](packages/scheduler/README.md) | Session-scoped interval prompts with Agent and `/schedule` controls | `pi install npm:@maxiaochao/pi-scheduler` | `pi update npm:@maxiaochao/pi-scheduler` |
-| [pi-worktree](packages/worktree/README.md) | Worktree CLI, current-session switching Extension, and agent skill | `pi install npm:@maxiaochao/pi-worktree` | `pi update npm:@maxiaochao/pi-worktree` |
+| Package | Capability | Install | Update | Why |
+|---|---|---|---|---|
+| [pi-todo](packages/todo/README.md) | Optional branch-local execution plan UI; not bundled with pi-toolkit | `pi install npm:@maxiaochao/pi-todo` | `pi update npm:@maxiaochao/pi-todo` | I don't recommend this for now, as both OpenAI and Claude Code official have stated that strong models are currently cumbersome in Todo |
+| [pi-cache-export](packages/cache-export/README.md) | Tau-aligned interactive cache dashboard for Pi sessions | `pi install npm:@maxiaochao/pi-cache-export` | `pi update npm:@maxiaochao/pi-cache-export` | Because I watched the cache video on @alejandro.ao YouTube, which has a Tau style page for viewing cache |
+| [pi-codex-edit](packages/codex-edit/README.md) | Codex-harness `apply_patch` routing for selected GPT models | `pi install npm:@maxiaochao/pi-codex-edit` | `pi update npm:@maxiaochao/pi-codex-edit` | The core lies in the fact that the Codex model is naturally good at apply_patch, and the model is trained on this during training. However, hash-based in-context patch schemes have high token costs and complexity |
+| [pi-herdr-subagents](packages/herdr-subagents/README.md) | Interactive Herdr Pi Agents with bounded concurrency, direct navigation, and recovery | `pi install npm:@maxiaochao/pi-herdr-subagents` | `pi update npm:@maxiaochao/pi-herdr-subagents` | I wanted several Agent tasks to run at the same time while each one stays a real interactive Pi session in its own Herdr pane, and the main conversation only receives short summaries instead of every child's full transcript |
+| [pi-scheduler](packages/scheduler/README.md) | Session-scoped interval prompts with Agent and `/schedule` controls | `pi install npm:@maxiaochao/pi-scheduler` | `pi update npm:@maxiaochao/pi-scheduler` | I don't recommend this, it's just that it sends messages to the main session at loop intervals |
+| [pi-worktree](packages/worktree/README.md) | Worktree CLI, current-session switching Extension, and agent skill | `pi install npm:@maxiaochao/pi-worktree` | `pi update npm:@maxiaochao/pi-worktree` | In addition to the basic worktree CLI + skill, what can be achieved is to directly switch to the worktree path in the main conversation to continue the task conversation after communicating the requirements in the main conversation |
 
 Each child README owns its feature description, motivation or upstream alignment, examples, screenshots/demos, configuration, and test documentation.
 
