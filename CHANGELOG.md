@@ -1,3 +1,7 @@
+## 2026-10-14 - v0.11.18
+
+- simplify global worktree isolation guidance
+
 ## 2026-10-14 - v0.11.17
 
 - openai-account-pool v0.1.7: fix the session account marker after successful requests and failover
