@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-14 - v0.1.6
 
+- clarify deterministic priority and session account status
 - Keep deterministic account priority while replacing the temporal `★下次` / `●当前` labels with the independent `★首选` / `●本会话` facts; automatic mode now visibly treats account #1 as the first priority.
 
 ## 2026-10-14 - v0.1.5

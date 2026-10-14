@@ -1,3 +1,7 @@
+## 2026-10-14 - v0.11.16
+
+- openai-account-pool v0.1.6: clarify deterministic priority and session account status
+
 ## 2026-10-14 - v0.11.15
 
 - openai-account-pool v0.1.5: make the current-account marker session-local and hide it until the session uses Codex
