@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-14 - v0.11.10
 
+- openai-account-pool v0.1.2: document that toolkit 0.11.9 was the last version to embed this package
 - Stop enabling `openai-account-pool` in `pi install npm:@maxiaochao/pi-toolkit`: the toolkit tarball and default loadout no longer contain it, and its source stays an independently installable child package.
 - Document which five child packages a toolkit install enables by default and which child stays a separate install. The toolkit README no longer describes Todo.
 
