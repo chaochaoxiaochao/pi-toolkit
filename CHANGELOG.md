@@ -1,3 +1,7 @@
+## Unreleased
+
+- hide the redundant OpenAI Account Pool `★下次` marker when it matches `●当前`
+
 ## 2026-10-14 - v0.11.12
 
 - scope release checks to changed packages and skip unchanged Herdr validation

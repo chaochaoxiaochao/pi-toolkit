@@ -1,3 +1,7 @@
+## Unreleased
+
+- Hide the redundant `★下次` status marker when the next-session preference is already the current account.
+
 ## 2026-10-14 - v0.1.3
 
 - defer account preference changes to new sessions for prompt-cache stability

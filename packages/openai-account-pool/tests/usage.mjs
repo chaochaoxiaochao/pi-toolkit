@@ -405,6 +405,24 @@ async function setupPool(credentials = [
 	}
 }
 
+// A current account that is also preferred for the next session shows only the current marker.
+{
+	const account = {
+		label: "#2 (b@example.com)",
+		state: "ready",
+		detail: "可用",
+		isCurrent: true,
+		isPreferredForNextSession: true,
+	};
+	assert.match(formatAccountStatusLine(account), /●当前$/);
+	assert.doesNotMatch(formatAccountStatusLine(account), /★下次/);
+	const widget = new CodexPoolStatusWidget({ fg: (_color, text) => text });
+	widget.update({ enabled: true, nativeLoginPresent: false, accounts: [account], summary: "" }, { loading: false });
+	const rendered = widget.render(120).join("\n");
+	assert.match(rendered, /●当前/);
+	assert.doesNotMatch(rendered, /★下次/);
+}
+
 // A failed live status lookup retains stored exhaustion and does not count the account as ready.
 {
 	const { agent, statePath } = await setupPool([fakeCredential(ACCOUNT_A, { now: NOW })]);
