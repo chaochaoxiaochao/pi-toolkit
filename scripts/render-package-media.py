@@ -14,17 +14,33 @@ ROOT = Path(__file__).resolve().parents[1]
 CAPTURE = Path(sys.argv[1]).resolve()
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
+# DejaVu has no CJK glyphs, so lines with Chinese text are drawn with Noto instead.
+FONT_CJK = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+FONT_CJK_BOLD = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
+
+
+def has_cjk(text):
+    return any("\u2e80" <= character <= "\u9fff" or "\uff00" <= character <= "\uffef"
+               for character in text)
 
 PACKAGES = {
     "todo": ("Pi Todo", "Production state-machine output"),
     "scheduler": ("Pi Scheduler", "Production scheduler with deterministic time"),
     "codex-edit": ("Pi Codex Edit", "Production parser and patch application"),
     "worktree": ("Pi Worktree", "Shipped CLI running in a temporary Git repository"),
+    "openai-account-pool": ("Pi OpenAI Account Pool",
+                            "Production wizard, status and failover over a temporary agent dir"),
 }
 
 
 def font(path, size):
     return ImageFont.truetype(path, size)
+
+
+def line_font(line, size, bold):
+    if has_cjk(line):
+        return font(FONT_CJK_BOLD if bold else FONT_CJK, size)
+    return font(FONT_BOLD if bold else FONT, size)
 
 
 def wrapped_lines(text, width=96):
@@ -33,7 +49,9 @@ def wrapped_lines(text, width=96):
         if not line:
             result.append("")
             continue
-        result.extend(textwrap.wrap(line, width=width, replace_whitespace=False,
+        # Chinese glyphs are twice as wide, so those lines wrap at half the column count.
+        columns = width // 2 if has_cjk(line) else width
+        result.extend(textwrap.wrap(line, width=columns, replace_whitespace=False,
                                     drop_whitespace=False) or [""])
     return result
 
@@ -52,17 +70,15 @@ def terminal_frame(title, subtitle, text, height):
               font=font(FONT_BOLD, 14), fill="#38bdf8")
 
     y = 168
-    regular = font(FONT, 18)
-    bold = font(FONT_BOLD, 18)
     for line in wrapped_lines(text):
         if line.startswith("$") or line.startswith("***"):
-            color, face = "#7dd3fc", bold
+            color, face = "#7dd3fc", line_font(line, 18, True)
         elif line.startswith("+"):
-            color, face = "#86efac", regular
+            color, face = "#86efac", line_font(line, 18, False)
         elif line.startswith("Result:") or line.endswith("successfully."):
-            color, face = "#4ade80", bold
+            color, face = "#4ade80", line_font(line, 18, True)
         else:
-            color, face = "#e2e8f0", regular
+            color, face = "#e2e8f0", line_font(line, 18, False)
         draw.text((58, y), line, font=face, fill=color)
         y += 27
     return image

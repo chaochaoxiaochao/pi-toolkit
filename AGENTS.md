@@ -16,6 +16,7 @@ pi-toolkit/
 │   ├── cache-export/            # @maxiaochao/pi-cache-export 权威源码
 │   ├── codex-edit/              # @maxiaochao/pi-codex-edit 权威源码
 │   ├── herdr-subagents/         # @maxiaochao/pi-herdr-subagents 权威源码
+│   ├── openai-account-pool/     # @maxiaochao/pi-openai-account-pool 权威源码
 │   ├── scheduler/               # @maxiaochao/pi-scheduler 权威源码
 │   └── worktree/                # @maxiaochao/pi-worktree：bin + completion + skill
 ├── skills/                      # 主包独有的通用 skills
@@ -44,6 +45,7 @@ pi-toolkit/
 - Codex Edit 必须加载 `packages/codex-edit/extensions/codex-edit.ts`；parser/matcher 改动必须覆盖重复 HTML/Markdown 区域、同路径多 update、多 hunk、多文件 patch，以及空 chunk、stale context 和冲突路径的安全失败。每个新生产问题先加入 `tests/comparison-cases.mjs`，且 native/released 两组对比都必须通过。`npm --prefix packages/codex-edit test` 必须从测试结果生成 `docs/test-report.md`，再转换为自包含 `docs/test-report.html`；提交和发版必须包含最新报告。冻结的 released baseline 保持不变。
 - Herdr Subagents persona 的 `extensions` 复用 Pi 原生来源语义；修改时验证覆盖优先级、历史续跑和显式包的附带资源，具体契约见子包 README 的 Explicit extension sources and Pi packages。
 - Herdr Subagents 必须运行全部确定性测试、加载 `packages/herdr-subagents/extensions/herdr-subagents.ts`，并在真实 Herdr 中验证只读并发批次和 tab 清理；媒体必须通过 `HERDR_MEDIA_WINDOW_ID=<window-id> node scripts/capture-package-media.mjs` 录制父 Pi 对话、逐一聚焦三个真实 Agent pane 和最终父会话结果，同时保留截图和完整 WebM 视频。
+- OpenAI Account Pool 必须运行全部确定性测试、加载 `packages/openai-account-pool/extensions/openai-account-pool.ts`，并验证：只有结构化 `usage_limit_reached` 或明确授权失效才切账号、向外输出后不重放、auth.json 仍是凭据权威来源且主条目只存非秘密引用。测试夹具凭据只限隔离临时目录，仓库、媒体和 tarball 不得包含真实令牌或授权 callback URL。
 - Scheduler 必须运行确定性 fake-clock 与 extension 集成测试、加载 `packages/scheduler/extensions/scheduler.ts`，并验证定时/手动触发统一使用 followUp、同一 schedule 最多积压一次、取消与 session shutdown 清理 timer；媒体展示真实核心状态机输出。
 - Cache Export 的发布验收要求确定性测试通过，并在有 Chrome 的环境中跑浏览器 E2E；skip 不算发布验收通过。
 - `packages/cache-export/src/tau-assets.ts` 来自 `huggingface/tau` 的 `session_usage.py`，只能重生成，不能手改。
@@ -85,6 +87,7 @@ pi install npm:@maxiaochao/pi-todo
 pi install npm:@maxiaochao/pi-cache-export
 pi install npm:@maxiaochao/pi-codex-edit
 pi install npm:@maxiaochao/pi-herdr-subagents
+pi install npm:@maxiaochao/pi-openai-account-pool
 pi install npm:@maxiaochao/pi-scheduler
 pi install npm:@maxiaochao/pi-worktree
 ```
@@ -100,7 +103,7 @@ pi install npm:@maxiaochao/pi-worktree
 子包修改统一使用联动发布：
 
 ```bash
-./scripts/release-package.sh <todo|cache-export|codex-edit|herdr-subagents|scheduler|worktree> <initial|patch|minor|major> "<note>" [主包 patch|minor|major]
+./scripts/release-package.sh <todo|cache-export|codex-edit|herdr-subagents|openai-account-pool|scheduler|worktree> <initial|patch|minor|major> "<note>" [主包 patch|minor|major]
 ```
 
 - 主包 tag 为 `vX.Y.Z`，是唯一发布触发器；`.github/workflows/publish.yml` 从同一 commit 解析可选子包并依次发布子包和主包。子包 tag `<slug>-vX.Y.Z` 只记录版本，不单独触发 workflow。
@@ -120,6 +123,7 @@ pi update npm:@maxiaochao/pi-todo
 pi update npm:@maxiaochao/pi-cache-export
 pi update npm:@maxiaochao/pi-codex-edit
 pi update npm:@maxiaochao/pi-herdr-subagents
+pi update npm:@maxiaochao/pi-openai-account-pool
 pi update npm:@maxiaochao/pi-scheduler
 pi update npm:@maxiaochao/pi-worktree
 ```

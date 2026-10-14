@@ -1,0 +1,45 @@
+{
+  "name": "@maxiaochao/pi-openai-account-pool",
+  "version": "0.1.0",
+  "description": "Pool several ChatGPT Plus/Pro logins behind pi's openai-codex provider and switch accounts automatically when one runs out of quota.",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "openai-codex",
+    "oauth"
+  ],
+  "files": [
+    "extensions",
+    "src",
+    "tests",
+    "docs",
+    "README.md",
+    "TESTING.md",
+    "CHANGELOG.md",
+    "package.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chaochaoxiaochao/pi-toolkit.git",
+    "directory": "packages/openai-account-pool"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/openai-account-pool.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types tests/store-ownership.mjs && node --experimental-strip-types tests/selection.mjs && node --experimental-strip-types tests/command-completions.mjs && node --experimental-strip-types tests/login-slot.mjs && node --experimental-strip-types tests/enrollment.mjs && node --experimental-strip-types tests/usage.mjs && node --experimental-strip-types tests/failover-stream.mjs && node --experimental-strip-types tests/multiprocess.mjs && node --experimental-strip-types tests/integration-login-ownership.mjs",
+    "load-test": "\"${PI_TEST_BINARY:-pi}\" -ne -ns --no-session -e ./extensions/openai-account-pool.ts"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

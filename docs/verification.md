@@ -45,4 +45,29 @@ This report covers the root bundle and the six independently releasable packages
 - Todo, BTW, Worktree installer, and Worktree CLI integration tests passed.
 - Media: all six screenshots are non-empty; Cache Export is a full-page 1440 × 2278 capture; Herdr Subagents includes a live WebM recording that moves from the parent Pi through each of three focused Agent panes and back to the final parent summary, with no GIF; the other five GIFs contain three distinct frames.
 
+
+## OpenAI Account Pool (2026-10-13)
+
+Run from the `codex-pool` worktree with Node v22.23.2 and Pi 1.2.0. No account identity or credential was displayed, logged, or published.
+
+- `npm --prefix packages/openai-account-pool test`: eight deterministic suites passed - credential ownership, selection and classification policy, login-slot ownership, enrollment wizard, live-usage normalization and races, stream failover, real multiprocess locking, and the login-ownership integration check.
+- `tests/multiprocess.mjs` uses real child processes, not simulated ones: two pi processes racing an expired rotating refresh token exchanged it exactly once, both ended up on the same live credential, and the loser reported no refresh. Four children writing concurrently with the parent lost no unrelated provider entry, and a valid credential was never refreshed.
+- `tests/failover-stream.mjs` covers the rules that matter for correctness: only a structured `usage_limit_reached` switches accounts, a plain 429 with the same friendly wording does not, nothing is replayed once output has reached the user, the proven limit is recorded even then, and an exhausted pool forwards the provider's own error plus a note.
+- `PI_TEST_BINARY="$(command -v pi)" npm run load-test`: all seven extension entrypoints loaded under real Pi 1.2.0, including `packages/openai-account-pool/extensions/openai-account-pool.ts`. The package's own `load-test` loaded it in a sessionless Pi as well.
+- `npm pack ./packages/openai-account-pool --dry-run` (29 files) and `npm pack --dry-run` (190 files) both contain the runtime, tests, documentation, screenshot, and demo. `git diff --check` reported no whitespace errors, and `npm test` at the root passed with all 47 checks.
+- A read-only live `wham/usage` query reached both configured pooled accounts through the implemented client. Both returned the expected primary and secondary windows, reset times, `allowed: true`, and `limit_reached: false`. Only account ordinals, percentages, and booleans were emitted. The two Herdr reviewer sessions also loaded this extension and completed real `openai-codex` model turns through the synthetic pool reference, proving child Pi can resolve pooled credentials.
+- Media was regenerated from real module execution: `node scripts/capture-package-media.mjs openai-account-pool` drives `runEnrollment`, `poolStatus`, and a real `createPoolProvider` request whose first account returns `usage_limit_reached`. The GIF has three distinct frames. Scanning the package, the screenshot, and the GIF found no token-shaped string or authorization callback URL; the only matches are the synthetic fixtures in `tests/enrollment.mjs` that assert redaction.
+- Fixture credentials exist only inside per-test temporary agent directories, which the tests delete, and account identifiers are masked everywhere they are shown.
+
+### Defects found and fixed during verification
+
+- The lock identified its own hold by inode and millisecond mtime. On this filesystem a directory recreated immediately reuses both, so a reclaimed lock could go unnoticed; the deterministic test caught it intermittently under full-suite load. Ownership is now a unique sub-millisecond heartbeat stamp we write ourselves, and it is re-checked immediately before each write instead of relying on a heartbeat having fired. Filesystems that keep only whole milliseconds degrade to proper-lockfile's own mtime check.
+- Reviewer reproductions found that a stale available usage response could erase newer quota evidence, an active cross-process probe lease could be bypassed, private-endpoint reads were not bounded while streaming, failed live status could present stored exhaustion as available, recovery estimates mixed unrelated model cooldowns or partial unknown resets, and refresh errors retained raw text. The usage write and evidence clearing are now one freshness-guarded transaction; leases always block other owners; usage reads have per-account time and byte limits; status retains known exhaustion; estimates share model scope and reject unknown blockers; errors collapse to a non-secret code. Deterministic regressions cover each behavior.
+
+### Not executed
+
+- A naturally occurring live failover between real accounts was not executed because neither account was exhausted. No paid quota was deliberately consumed. Structured quota failover remains covered through the real provider stream plumbing with fixture HTTP responses.
+- Full media regeneration for every package. `scripts/capture-herdr-subagents-media.mjs` requires a visible Herdr X11 session, so only the `openai-account-pool` slug was captured; the other packages keep their existing committed media.
+- Interoperability with Pi's own credential writer was verified against a test double that speaks the same on-disk lock protocol, not against a concurrently running Pi process.
+
 Open [`package-media-gallery.html`](package-media-gallery.html) to inspect every generated PNG, GIF, and video in one page.

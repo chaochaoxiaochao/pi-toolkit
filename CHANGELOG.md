@@ -1,3 +1,9 @@
+## Unreleased
+
+- bundle the OpenAI Account Pool package
+- Add `@maxiaochao/pi-openai-account-pool` with `/codex_pool`, which pools several ChatGPT Plus/Pro logins behind `openai-codex` and continues a request on the next usable account when one proves it is out of quota.
+- Let `node scripts/capture-package-media.mjs <slug>` regenerate media for selected packages, and render Chinese output with a CJK font.
+
 ## 2026-10-13 - v0.11.6
 
 - add a Why column to the child package table in README

@@ -10,6 +10,7 @@ const children = [
   ["cache-export", "@maxiaochao/pi-cache-export", "extensions/cache-export.ts", true],
   ["codex-edit", "@maxiaochao/pi-codex-edit", "extensions/codex-edit.ts", true],
   ["herdr-subagents", "@maxiaochao/pi-herdr-subagents", "extensions/herdr-subagents.ts", true],
+  ["openai-account-pool", "@maxiaochao/pi-openai-account-pool", "extensions/openai-account-pool.ts", true],
   ["scheduler", "@maxiaochao/pi-scheduler", "extensions/scheduler.ts", true],
   ["worktree", "@maxiaochao/pi-worktree", "extensions/worktree.ts", true],
 ];
@@ -46,6 +47,7 @@ assert.deepEqual(root.pi.extensions, [
   "./extensions/btw/index.ts",
   "./packages/codex-edit/extensions/codex-edit.ts",
   "./packages/herdr-subagents/extensions/herdr-subagents.ts",
+  "./packages/openai-account-pool/extensions/openai-account-pool.ts",
   "./packages/scheduler/extensions/scheduler.ts",
   "./packages/worktree/extensions/worktree.ts",
 ]);
