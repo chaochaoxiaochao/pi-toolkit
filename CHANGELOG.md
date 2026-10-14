@@ -1,3 +1,7 @@
+## 2026-10-14 - v0.11.12
+
+- scope release checks to changed packages and skip unchanged Herdr validation
+
 ## Unreleased
 
 - Scope child and root release checks to their owned code, and run Herdr tests or the real Agent smoke only when Herdr is the target or changed since the previous root release.
