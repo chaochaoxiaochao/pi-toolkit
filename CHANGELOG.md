@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-14 - v0.11.15
 
+- openai-account-pool v0.1.5: make the current-account marker session-local and hide it until the session uses Codex
 - make the OpenAI Account Pool `●当前` marker session-local and hide it before the session uses Codex
 
 ## 2026-10-14 - v0.11.14

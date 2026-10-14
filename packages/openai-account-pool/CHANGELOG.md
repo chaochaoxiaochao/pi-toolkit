@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-14 - v0.1.5
 
+- make the current-account marker session-local and hide it until the session uses Codex
 - Make `●当前` session-local: hide it until this Pi session successfully uses a pooled Codex account instead of showing another session's global history.
 
 ## 2026-10-14 - v0.1.4
