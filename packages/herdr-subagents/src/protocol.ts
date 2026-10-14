@@ -1,4 +1,4 @@
-export type ReportPromptKind = "initial" | "resumed" | "followup";
+export type ReportPromptKind = "initial" | "resumed" | "followup"; // legacy kinds remain readable
 
 const TURN_INTRO: Record<ReportPromptKind, string> = {
 	initial: "",
@@ -11,11 +11,10 @@ export function reportProtocolPrompt(systemPrompt: string, kind: ReportPromptKin
 		TURN_INTRO[kind],
 		systemPrompt.trim(),
 		"",
-		"When this turn is finished, call subagent_report exactly once for this turn.",
+		"Before this process exits, call subagent_report exactly once with a terminal result.",
 		"Put the complete final answer in result, a concise parent-facing paragraph in summary, and list any useful document paths.",
-		"Use status=completed when the task is finished.",
-		"Use status=blocked with question when you have a specific question or decision the parent agent must answer before you can continue; the run stays open waiting for it.",
-		"Use status=failed with error when this task cannot be completed, so the run does not wait for an answer.",
+		"Use status=completed when the task is finished, or status=failed with error when it cannot be completed.",
+		"Do not pause for parent input; make a reasonable assumption or report failed with the missing requirement.",
 	].filter((line, index) => line || index > 1).join("\n").trim();
 }
 

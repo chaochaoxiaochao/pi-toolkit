@@ -37,16 +37,20 @@ try {
 			});
 		}`);
 	const args = childPiArgs({ id: "probe", sessionFile: join(root, "session.jsonl"), tools: ["read"], extensions: [fileExtension, "./local package", probe] }, join(root, "system.md"));
+	// `builtin:codemode` is translated by `herdr agent start` and is covered by
+	// the real-Herdr smoke test. Direct Pi has no portable form of that alias.
+	const codemode = args.indexOf("builtin:codemode");
+	args.splice(codemode - 1, 2);
 	writeFileSync(join(root, "system.md"), "Extension source loading probe.");
 	const env = { ...process.env, PI_CODING_AGENT_DIR: join(root, "agent"), PI_HERDR_SUBAGENTS_CHILD: "1" };
 	for (const key of Object.keys(env)) if (key.startsWith("HERDR_") || key === "PI_HERDR_SUBAGENTS_TASK_DIR" || key === "PI_HERDR_SUBAGENTS_PARENT_PANE_ID") delete env[key];
-	const result = spawnSync(process.env.PI_TEST_BINARY?.trim() || "pi", [...args, "--offline", "--no-mcp"], { cwd: root, env, encoding: "utf8", timeout: 30_000 });
+	const result = spawnSync(process.env.PI_TEST_BINARY?.trim() || "pi", [...args, "--offline"], { cwd: root, env, encoding: "utf8", timeout: 30_000 });
 	assert.equal(result.error, undefined, String(result.error));
 	assert.equal(result.status, 0, result.stderr || result.stdout);
 	const loaded = JSON.parse(readFileSync(resultPath, "utf8"));
 	for (const command of ["file-extension", "package-extension", "skill:package-skill", "package-prompt", "parent"]) assert.ok(loaded.commands.includes(command), `Missing ${command}: ${JSON.stringify(loaded)}`);
-	assert.deepEqual([...loaded.tools].sort(), ["codemode", "read", "subagent_report"]);
-	console.log("PASS real Pi loads explicit file and package sources, including package skills/prompts despite discovery flags, without broadening the tool allowlist");
+	assert.deepEqual([...loaded.tools].sort(), ["read", "subagent_report"]);
+	console.log("PASS real Pi loads explicit file and package sources, including package skills/prompts despite discovery flags, without broadening the direct-Pi tool allowlist");
 } finally {
 	rmSync(root, { recursive: true, force: true });
 }

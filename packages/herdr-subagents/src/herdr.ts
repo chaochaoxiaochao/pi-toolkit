@@ -39,6 +39,7 @@ export interface HerdrAutomation {
 	startAgent(request: StartAgentRequest): Promise<void>;
 	promptAgent(request: PromptAgentRequest): Promise<{ status?: string }>;
 	getAgentState(target: string, signal?: AbortSignal): Promise<HerdrAgentState>;
+	waitForAgentChange?(target: string, signal?: AbortSignal): Promise<void>;
 	splitPane(request: SplitPaneRequest): Promise<{ paneId: string }>;
 	renamePane(paneId: string, label: string, signal?: AbortSignal): Promise<void>;
 	renameTab(tabId: string, label: string, signal?: AbortSignal): Promise<void>;
@@ -163,6 +164,16 @@ export class CliHerdrAutomation implements HerdrAutomation {
 		const response = parseResponse(await runCommand(this.binary, ["agent", "get", target], signal), "herdr agent get");
 		const state = response.result?.agent?.agent_status ?? response.result?.agent?.status;
 		return state === "working" || state === "blocked" || state === "idle" || state === "done" ? state : "unknown";
+	}
+
+	async waitForAgentChange(target: string, signal?: AbortSignal): Promise<void> {
+		try {
+			await runCommand(this.binary, ["agent", "wait", target, "--until", "idle", "--until", "blocked", "--until", "done", "--until", "unknown", "--timeout", "500"], signal);
+			await new Promise<void>((resolve) => setTimeout(resolve, 100));
+		} catch (error) {
+			if (error instanceof HerdrCommandError && /timed?\s*out|timeout/i.test(`${error.message}\n${error.stderr}`)) return;
+			throw error;
+		}
 	}
 
 	async splitPane(request: SplitPaneRequest): Promise<{ paneId: string }> {

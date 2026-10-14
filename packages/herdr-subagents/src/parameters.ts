@@ -12,13 +12,9 @@ export const HerdrSubagentsParams = Type.Object({
 	tasks: Type.Array(HerdrSubagentsTaskParams, { minItems: 1, description: "Ordered tasks to execute. Use one item for a single task; independent read-only tasks may run concurrently." }),
 	label: Type.Optional(Type.String({ minLength: 1, maxLength: 48, description: "Short Herdr run-tab label." })),
 	concurrency: Type.Optional(Type.Integer({ minimum: 1, description: "Maximum simultaneously active Agents. Write-capable tasks force concurrency one." })),
-	background: Type.Optional(Type.Boolean({ description: "Return a run ID immediately while the run continues in this parent session." })),
 }, { additionalProperties: false });
 
 export const HerdrSubagentsControlParams = Type.Object({
-	action: StringEnum(["list", "status", "respond", "history", "resume", "cancel", "cleanup"] as const, { description: "Control operation to perform." }),
-	runId: Type.Optional(Type.String({ minLength: 1, description: "Durable run ID used by status, respond, resume, cancel, or cleanup." })),
-	answer: Type.Optional(Type.String({ minLength: 1, description: "Message sent to the selected blocked or failed task when action is respond." })),
-	task: Type.Optional(Type.Integer({ minimum: 1, description: "One-based task number. Always required for respond, and selects the task for resume." })),
-	prompt: Type.Optional(Type.String({ minLength: 1, description: "Follow-up prompt used by resume." })),
+	action: StringEnum(["list", "status", "history", "cancel", "cleanup"] as const, { description: "Control operation to perform." }),
+	runId: Type.Optional(Type.String({ minLength: 1, description: "Durable run ID used by status, cancel, or cleanup." })),
 }, { additionalProperties: false });

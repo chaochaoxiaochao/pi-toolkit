@@ -1,363 +1,94 @@
-# @maxiaochao/pi-herdr-subagents
+# Herdr Subagents
 
-A Pi extension that runs focused foreground or background work as normal interactive Pi Agents in visible Herdr panes. Full answers and sessions stay in project-local records while the parent receives only concise summaries and document paths.
+Run focused Pi subagents in visible, focusable Herdr panes and collect exactly one terminal result per task.
 
-![A parent Pi conversation showing the live Herdr Subagents Fleet footer](docs/screenshot.png)
+The implementation is intentionally small: one task state machine, one derived run state, and one bounded worker pool. Herdr provides visible panes and navigation; the package only dispatches serial or read-only parallel work, waits for a report, and records the result. It does not add a second workflow engine around Pi.
+
+![Herdr Subagents running as visible panes](docs/screenshot.png)
 
 ## Demo
 
-The recording shows a real Pi conversation invoking a three-task read-only batch, the active Fleet footer in the parent, Herdr opening one interactive Agent pane per task, and the compact results returning to the parent.
-
 https://github.com/user-attachments/assets/8ddf3ae6-a11a-492b-9cae-d9496ba65b67
 
-The video starts a three-agent batch, focuses each live child pane in turn, captures the parent Fleet footer with yellow running indicators and true usage, then returns to the parent summary. Completed Fleet rows use green indicators. The reproducible source recording is retained as [`docs/demo.webm`](docs/demo.webm).
+The reproducible source recording is retained as [`docs/demo.webm`](docs/demo.webm).
 
-## Requirements and install
+## Execution contract
 
-Run Pi inside Herdr, then install the package:
+`herdr_subagents` accepts an ordered, non-empty `tasks` array.
 
-```bash
-pi install npm:@maxiaochao/pi-herdr-subagents
-```
-
-Update an existing standalone installation with:
-
-```bash
-pi update npm:@maxiaochao/pi-herdr-subagents
-```
-
-The full `@maxiaochao/pi-toolkit` package also bundles this extension. Install the full toolkit or this standalone child package, not both.
-
-Inside a Herdr workspace, the package registers `herdr_subagents`, `herdr_subagents_control`, and `/herdr-subagents`. Outside Herdr (or without a workspace ID), the extension registers none of them, so these capabilities are absent from the model context. Start Pi inside Herdr or reload the extension there to enable them.
-
-The design replaces hidden print-mode subprocesses with ordinary interactive Pi Agents managed through Herdr, so delegated work stays visible, inspectable, resumable, and durably recorded.
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the current execution architecture, the proposed decision-pause state machine, and configuration-normalization boundaries.
-
-## Usage
-
-Discover the effective personas first:
-
-```text
-herdr_subagents_control({ action: "list" })
-```
-
-Then run one self-contained task:
-
-```text
-herdr_subagents({
-  label: "auth-review",
-  tasks: [
-    { name: "auth", agent: "worker", prompt: "Inspect the authentication flow and summarize the risks" }
-  ]
-})
-```
-
-Or submit an ordered foreground batch:
-
-```text
-herdr_subagents({
-  label: "security-review",
-  concurrency: 3,
-  tasks: [
-    { name: "auth", agent: "reviewer", prompt: "Review authentication" },
-    { name: "sessions", agent: "explorer", prompt: "Trace session storage" }
-  ]
-})
-```
-
-`tasks` is always a non-empty array: one item is a single task and multiple items form a batch. Set `background: true` for either form to return a stable run ID immediately while the queue continues. The dispatcher starts batches FIFO, with one batch holding its active slot at a time; a failed foreground handoff releases that slot as described below. A blocked run retains the slot so its queued siblings can continue after an answer. While that slot is blocked, a new foreground submission fails immediately with the blocking run ID instead of waiting indefinitely; a background submission remains queued. Cancelling a foreground tool call while it is queued removes it from the queue immediately. Each background run sends one compact parent notification only when the whole run completes, partially fails, fails, or blocks. Individual successful tasks do not wake the parent model.
-
-A foreground concurrent batch normally waits for the whole batch. If any task fails while siblings are still running, the call immediately returns the stable `runId` and that failure's details, then durably continues the same batch in the background without cancelling its siblings. The handed-off batch releases its dispatcher slot immediately, so a later submission can start while its surviving tasks are still running. The detached batch remains cancellable and is still joined during session shutdown. Its final aggregate is delivered exactly once through the same follow-up notification used by an explicit background run.
-
-Background work normally relies on that terminal notification. When the user asks for progress or the parent must confirm a review gate before continuing, query only that run's compact snapshot:
-
-```text
-herdr_subagents_control({ action: "status", runId: "<run-id>" })
-```
-
-The snapshot reports the aggregate run state and every task's state, including a blocked question when present. It checks durable run state before queued state, never returns unrelated runs, and does not wait or trigger a parent turn. Do not poll full `history` for progress.
-
-Run controls accept the complete run UUID, the saved run-directory name, or any unique UUID prefix. Results always return the canonical complete UUID.
-
-Every child reports exactly one of three outcomes. `completed` and `failed` are terminal; `blocked` means the child is still alive in its pane but needs the parent agent to answer or decide something before it can go on. A blocked task keeps its Herdr tab, pane, partial report, and Pi session, and returns control to the parent with an exact question. Answer through the control tool to continue the original session:
-
-```text
-herdr_subagents_control({ action: "respond", runId: "<run-id>", task: 1, answer: "Use the main branch." })
-```
-
-Blocked is a normal control state, not a failed tool call. Only terminal failure, cancellation, or a partial aggregate is returned as a tool error.
-
-Blocking works the same way at any concurrency: a blocked task never holds up its independent siblings, which keep running and settling normally. A blocked run does keep the dispatcher slot until you respond or cancel it, so another foreground run started meanwhile is refused with the blocking run ID and a background run stays queued. That is what keeps a second write-capable run from editing the repository behind an unanswered question.
-
-A failed task is not a dead end. Name it explicitly to continue its original Pi session with another message, even while the rest of its batch is still running:
-
-```text
-herdr_subagents_control({ action: "respond", runId: "<run-id>", task: 2, answer: "Use the staging credentials and retry." })
-```
-
-The task resumes in its own live pane when that pane still hosts its child, and otherwise restarts from the saved session in a new pane. `task` is always required so an answer never picks a task implicitly. A task whose child never produced a saved Pi session cannot be continued and says so; submit a new run instead. Continuing a failed task never starts its batch's queued siblings, which the running batch still owns. While a continued task is working, its run stays `running` and its Herdr tab stays open even if the batch that created it has already settled.
-
-Blocked work always belongs to a live parent session. A historical follow-up may block too, keeping its shared resume tab until you answer it. Startup reconciliation cancels blocked work whose parent session disappeared, so no blocked run is ever left without an owner.
-
-Cancel one active or queued run with `herdr_subagents_control({ action: "cancel", runId: "<run-id>" })`. Cancellation aborts its live child prompts, archives active or queued tasks as cancelled, closes its run tab, and leaves unrelated runs alone.
-
-While a batch is active, a compact Fleet monitor stays below the editor. Its divider/title row summarizes the run, and each task row shows a hollow or filled status circle, the real persona and task name, business status or current runtime telemetry, live active duration, and cumulative child Pi token usage in one compact shared metrics column after the longest row rather than at the terminal edge. Herdr `blocked` is shown neutrally as `waiting_interaction` while the task remains `running`; only a child `subagent_report` with `status=blocked` makes the business task `blocked`. Prompt-delivery timeouts appear as `delivery_unknown` while a working live child is still allowed to publish its authoritative report. Running work uses Pi's warning/yellow semantic color and completed work uses success/green. Token totals use the child session's persisted assistant, tool-result, standalone usage, compaction, and branch-summary usage; they are never estimated. Queued tasks show neither fabricated time nor tokens. The monitor follows Pi theme semantics, truncates by visible terminal columns, and refreshes session usage from both file events and the running one-second timer.
-
-With an empty editor, press `↓` to enter the list, `↑`/`↓` to choose a task, `Enter` to focus its exact pane, and `Esc` to return. `/herdr-subagents focus <task-number>` remains available as a fallback. Inside every child Agent, press `Alt+P` or run `/parent` to return to the exact parent Agent pane; the shortcut is also shown in the child footer.
-
-## History
-
-Run `/herdr-subagents history` or `herdr_subagents_control({ action: "history" })` to list the full compact project-local run and task archive after Herdr tabs close. History does not accept a run ID and is not a status interface. Full results, described documents, artifacts, and persistent Pi sessions remain separate on disk and are not loaded into parent context.
-
-Continue a saved conversation with `herdr_subagents_control({ action: "resume", runId: "<run-id>", task: 1, prompt: "Follow up..." })`. Different settled tasks from the same run may resume concurrently in distinct panes of one shared resume tab; the same task remains single-writer and rejects a second resume. Remove only a selected archive with `herdr_subagents_control({ action: "cleanup", runId: "<run-id>" })`. History has no automatic count-based eviction. The extension adds the runtime path to local Git excludes when available (and otherwise uses `.pi/.gitignore`) without overwriting unrelated rules.
-
-Read-only tasks start FIFO up to the configured concurrency limit. A pane is created only when its task starts, belongs exclusively to that task, and is never reused. Completed panes remain inspectable while another task in the batch is unsettled. Results remain in input order, and one failed task does not cancel its siblings. Any batch containing a write-capable persona is forced to concurrency one.
-
-The widget shows one row per queued, running, blocked, failed, or completed task. Answering a blocked task or resuming saved history refreshes authoritative persona, timing, session, status, and pane projections as work advances. Active duration accumulates only while the task is running, excluding time spent queued or waiting for an answer. Completed rows remain selectable until the whole batch settles. `/herdr-subagents active` shows the same compact state. Native labels stay short: `SA · <batch>` for the tab and `<order> · <task>` for each pane. When all tasks settle, the tab closes immediately if unfocused or after the user leaves it; a deferred close failure is persisted and shown as a warning without changing the completed/failed business result. An already-missing tab is treated as successfully cleaned, so retries are idempotent.
-
-Foreground calls wait until all children report completion or a request for input when no task fails. On the first task failure, they return early as described above while the surviving children continue. Every child is started with Herdr's Agent lifecycle as a normal Pi TUI and prompted with wait semantics; no print-mode command or completion marker is injected into the pane. The child extension reports Pi's authoritative `agent_start`/`agent_settled` lifecycle to Herdr, so provider retry and fallback screens cannot end a task early through screen detection alone.
-
-## Reports and records
-
-The child must finish through the package's structured `subagent_report` tool. Every prompt gets a unique attempt ID; the child commits to an attempt-specific report, and the parent accepts only the matching report before updating the canonical task result. A late report from an older retry, response, or historical follow-up cannot settle a newer attempt. The parent receives only:
-
-- `completed`, `blocked`, or `failed` status
-- a concise summary
-- paths to useful documents
-- the task-record location
-
-The complete result is not copied into the parent model context. Each run is retained under:
-
-```text
-.pi/herdr-subagents/runs/<run>/tasks/<task>/
-```
-
-The task directory contains the full result, canonical structured report, attempt-scoped reports and lifecycle markers, task metadata, system prompt, and persistent Pi session. Run-level metadata is stored in the parent run directory.
-
-## Configuration and personas
-
-Herdr Subagents loads settings and persona definitions from separate files:
-
-| Scope | Settings | Persona definitions |
-| --- | --- | --- |
-| Project | `.pi/herdr-subagents.json` | `.pi/herdr-subagents/agents/*.md` |
-| Global | `~/.pi/agent/herdr-subagents.json` | `~/.pi/agent/herdr-subagents/agents/*.md` |
-| Package | built-in defaults | installed package `agents/*.md` |
-
-Project JSON values recursively override global JSON values. The built-in setting defaults are `defaultConcurrency: 1`, `maxConcurrency: 4`, and `stalledWarningSeconds: 300`. `defaultModel` and `defaultThinking` are unset, so the parent Pi model and its thinking level are inherited unless another setting wins.
-
-### Settings file option reference
-
-These are all supported top-level fields in `herdr-subagents.json`:
-
-| Option | Accepted value | Default | Effect |
-| --- | --- | --- | --- |
-| `defaultConcurrency` | Positive integer | `1` | Number of read-only tasks allowed to run together when a batch call omits `concurrency`. It is capped to `maxConcurrency`. |
-| `maxConcurrency` | Positive integer | `4` | Hard ceiling for requested/default batch concurrency. A batch containing any write-capable persona still runs serially. |
-| `stalledWarningSeconds` | Positive integer | `300` | Seconds before a still-running child emits a warning. This is not a timeout and does not stop the child. |
-| `defaultModel` | Non-empty Pi model string, normally `provider/model` | Unset | Model used when neither JSON persona settings nor persona Markdown select one. If unset, the parent model is inherited. Use `/herdr-subagents models` to list authenticated models. |
-| `defaultThinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` | Unset | Thinking level below persona-specific settings. Provider/model support can vary. If unset, parent thinking is inherited only when the parent model is also inherited. |
-| `personas` | Object keyed by an existing persona name | `{}` | Per-persona JSON overrides described below. This does not create a persona; a matching Markdown definition must exist. |
-
-Known fields with an invalid JSON type, an empty required string, or a non-positive integer are ignored with a diagnostic shown by `/herdr-subagents settings`. Model IDs, thinking-level compatibility, and skill/extension source availability are ultimately handled by Pi when the child starts. When `defaultConcurrency` exceeds `maxConcurrency`, the effective default is reduced to the maximum.
-
-Each `personas.<name>` object supports exactly these overrides:
-
-| Option | Accepted value | Effect |
-| --- | --- | --- |
-| `model` | Non-empty Pi model string | Overrides the model from the effective persona Markdown and `defaultModel`. |
-| `thinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` | Overrides persona Markdown and `defaultThinking`. The value is passed to Pi's `--thinking` option. |
-| `skills` | Array of non-empty strings | Replaces the entire lower-precedence explicit skill list. Use `[]` to clear that list. Each item is passed to child Pi as `--skill`. Package-provided skills are separate; see below. |
-| `extensions` | Array of non-empty Pi source strings | Replaces the entire lower-precedence extension-source list. Use `[]` to clear it. Each item is passed as `--extension` after the mandatory child extensions. Accepts local files/directories, `npm:` and `git:` Pi packages, and `builtin:` sources. |
-
-JSON persona overrides cannot change `name`, `description`, `access`, `tools`, or the system prompt; define those in persona Markdown.
-
-Every child Pi explicitly loads and enables `codemode`. Built-in personas include it in their tool allowlists. Custom personas may omit `tools` and inherit Pi's defaults plus `codemode`, or list `codemode` explicitly alongside their allowed tools. A read-only persona remains read-only because codemode can call only the tools enabled for that child session.
-
-A global configuration can establish shared defaults:
+- `concurrency: 1` runs tasks strictly in input order.
+- `concurrency: N` runs at most N read-only tasks at once.
+- A run containing a write-capable persona must use `concurrency: 1`; unsafe parallel writes are rejected.
+- One task failing does not cancel its siblings.
+- The tool returns only after every task is `completed`, `failed`, or `cancelled`.
+- There is no background queue, blocked/respond flow, automatic resume, or early failure detach.
 
 ```json
 {
-  "defaultConcurrency": 2,
-  "maxConcurrency": 4,
-  "stalledWarningSeconds": 300,
-  "defaultModel": "anthropic/claude-sonnet-4-5",
-  "defaultThinking": "medium",
-  "personas": {
-    "explorer": {
-      "model": "anthropic/claude-haiku-4-5",
-      "thinking": "medium",
-      "skills": ["code-search"]
-    },
-    "reviewer": {
-      "thinking": "high",
-      "skills": ["code-review"]
-    }
-  }
-}
-```
-
-The project file can override only the fields that differ. Persona fields are merged by persona name:
-
-```json
-{
-  "defaultConcurrency": 3,
-  "stalledWarningSeconds": 600,
-  "defaultThinking": "high",
-  "personas": {
-    "explorer": {
-      "model": "openai/gpt-5.2"
-    },
-    "reviewer": {
-      "skills": ["security-review", "code-review"]
-    }
-  }
-}
-```
-
-The package includes these personas:
-
-| Persona | Access | Built-in tools | Intended use |
-| --- | --- | --- | --- |
-| `worker` | write | `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls` | Focused implementation work |
-| `explorer` | read | `read`, `bash`, `grep`, `find`, `ls` | Fast codebase investigation |
-| `reviewer` | read | `read`, `bash`, `grep`, `find`, `ls` | Correctness and maintainability review |
-| `analyst` | read | `read`, `bash`, `grep`, `find`, `ls` | Neutral analysis with the method and role supplied by each task |
-
-`analyst` deliberately does not bind a model or review method. Use the task-level `model` field when independent tasks need different models, and put roles such as auditor, replicator, or adversary in each task prompt.
-
-Persona definitions use Markdown frontmatter followed by the child system prompt. For example, save this as `.pi/herdr-subagents/agents/security-reviewer.md`:
-
-```md
----
-name: security-reviewer
-description: Read-only reviewer for security risks
-access: read
-model: anthropic/claude-sonnet-4-5
-thinking: high
-tools: read, bash, grep, find, ls
-skills: security-review, code-review
----
-
-Review the assigned scope without modifying files. Report concrete risks and evidence.
-```
-
-Persona Markdown supports these frontmatter fields:
-
-| Field | Accepted value | Required/default | Effect |
-| --- | --- | --- | --- |
-| `name` | Non-empty string | Required | Persona identifier used by `agent`. Names must be unique within one persona directory. |
-| `description` | Non-empty string | Required | Description shown to the parent when agents are listed. |
-| `access` | `read` or `write` | `write` | Scheduling declaration. Any batch containing `write` is forced to concurrency one. `read` permits parallel scheduling but does not itself remove tools. |
-| `model` | Non-empty Pi model string | Unset | Persona model default. |
-| `thinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` | Unset | Persona thinking default passed to Pi's `--thinking` option. |
-| `tools` | Non-empty comma-separated list, optionally bracketed | Child Pi defaults | Restricts built-in tools. Supported names are `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, and `powershell`. `subagent_report` is always added. |
-| `skills` | Comma-separated list, optionally bracketed | None | Skills loaded explicitly into child Pi; automatic skill discovery is disabled. |
-
-The Markdown body after the frontmatter is the child system prompt and may be empty. To make a custom persona operationally read-only, set `access: read` **and** choose an appropriate `tools` allowlist; `access` alone is not a tool sandbox. Model names and skill values are passed to Pi, so they must be available in the installed Pi environment.
-
-Persona Markdown definitions use replacement precedence, not field merging. A same-name project definition replaces the entire global or package definition:
-
-1. project `.pi/herdr-subagents/agents/*.md`
-2. global `~/.pi/agent/herdr-subagents/agents/*.md`
-3. package built-ins
-
-### Model and persona-option precedence
-
-The child model is selected in this exact order:
-
-1. `model` on the task or call
-2. project `personas.<name>.model` JSON setting
-3. global `personas.<name>.model` JSON setting
-4. `model` in the effective persona Markdown frontmatter
-5. effective `defaultModel` JSON setting (project overrides global)
-6. parent Pi model
-
-The child thinking level is selected in this order:
-
-1. project `personas.<name>.thinking` JSON setting
-2. global `personas.<name>.thinking` JSON setting
-3. `thinking` in the effective persona Markdown frontmatter
-4. effective `defaultThinking` JSON setting (project overrides global)
-5. parent Pi thinking level when the child also inherits the parent model
-
-Thinking has no call-level override. `skills` and `extensions` use the first three persona-level steps and have no global default. A project array replaces, rather than appends to, the global or effective Markdown list; `[]` explicitly clears it. There is no task-level extension override.
-
-### Explicit extension sources and Pi packages
-
-For a local routing hook, add this frontmatter to a persona Markdown file (the hook must already exist):
-
-```md
----
-name: routed-explorer
-description: Explorer with a provider routing hook
-access: read
-tools: read, bash, grep, find, ls, codemode
-extensions: ~/.pi/agent/extensions/gateway-routing.ts
----
-Inspect the requested code and report your findings.
-```
-
-Frontmatter accepts a single source or a comma-separated inline list, optionally enclosed in brackets. Use `extensions: []` to clear the list. Like the existing persona format, it does not support multiline YAML lists.
-
-JSON accepts an array only. For example, override the built-in explorer with a local hook and an npm Pi package:
-
-```json
-{
-  "personas": {
-    "explorer": {
-      "extensions": [
-        "~/.pi/agent/extensions/gateway-routing.ts",
-        "npm:@example/pi-tools@1.0.0"
-      ]
-    }
-  }
-}
-```
-
-`@example/pi-tools` is illustrative; replace it with a trusted Pi package. An ordinary npm library is not automatically a Pi extension package. Pin npm versions or git refs when reproducible restarts matter. Relative local paths resolve from the child working directory (the project root), **not** from the JSON or Markdown file. `~` resolves to the user's home directory. Source strings are passed to Pi without rewriting `npm:`, `git:`, or `builtin:` identifiers.
-
-**This field uses Pi's native package-loading semantics. It is not an extensions-only resource filter.** A file loads that extension. A Pi package can also load its declared **skills, prompt templates, and themes**. In particular, explicitly selected package skills still load despite the child's `--no-skills`; persona `skills: []` clears only the explicit skill list, not skills carried by an extension package. To select one extension without the package's other resources, use its local extension-file path or a dedicated package that exposes only the intended resources. The string list does not support Pi's settings object-form resource filters.
-
-Children still start with `--no-extensions`, then explicitly load `builtin:codemode`, the bundled `subagent-report`, and the configured sources in order. Unconfigured personas retain their existing behavior. The list does not inherit the parent's extensions, installed-package settings, or package resource filters. Pi manages source resolution, caching, dependency installation, and startup diagnostics; an npm/git source may require network access. Herdr Subagents does not implement a separate installer or guarantee that Pi's extension warnings terminate a task. Inspect the child's startup diagnostics when a required routing hook does not run.
-
-Effective sources are saved in each task record and shown by persona listing. Historical resume, failed/blocked-task restarts, and queued-task recovery reuse the saved list instead of re-reading current persona overrides. A live child is not reloaded when configuration changes. Saving a source does not freeze its code: local files and unpinned package versions can change.
-
-Load only trusted extension code. `access: read` controls scheduling; it is not a sandbox for extension hooks, which can perform side effects outside model tools. `PI_HERDR_SUBAGENTS_CHILD` prevents **this package** from registering recursively, not arbitrary third-party extensions. Loading a package does not broaden an explicit `tools` allowlist. Persona `tools` still accepts only the existing built-in names; adding extension-defined tools to that schema is a separate feature.
-
-Override the model for one task:
-
-```text
-herdr_subagents({
-  tasks: [
-    { name: "authorization", agent: "reviewer", model: "anthropic/claude-opus-4-1:high", prompt: "Review the authorization boundary" }
+  "label": "review",
+  "concurrency": 2,
+  "tasks": [
+    { "name": "api", "prompt": "Review the API boundary.", "agent": "reviewer" },
+    { "name": "tests", "prompt": "Find missing test coverage.", "agent": "explorer" }
   ]
-})
+}
 ```
 
-Each task in a batch can select its own model:
+Each task starts a single-task interactive Pi process in its own Herdr pane. Herdr first confirms the interactive Pi is ready, then the prompt is delivered exactly once. Prompt acknowledgement never decides task completion. Panes remain ordinary Herdr panes: they can be focused and inspected while work is running.
 
-```text
-herdr_subagents({
-  concurrency: 2,
-  tasks: [
-    { name: "map", agent: "explorer", model: "anthropic/claude-haiku-4-5", prompt: "Map the request flow" },
-    { name: "review", agent: "reviewer", model: "anthropic/claude-sonnet-4-5", prompt: "Review input validation" }
-  ]
-})
+## Result protocol
+
+The child must call `subagent_report` once with a terminal status:
+
+- `completed`: the requested work finished.
+- `failed`: it cannot be completed; include `error`.
+
+The complete result is stored on disk. The parent receives only the compact summary and document paths.
+
+An atomically renamed attempt report is the authoritative completion signal. Herdr states such as `idle`, `blocked`, and `done` are wake-up hints only. A prompt transport error or Pi retry cannot fail a task while its child process remains alive. If the process exits without a valid report, the task fails explicitly.
+
+Duplicate identical reports are idempotent. A conflicting report for the same task attempt is rejected. Terminal task records are immutable.
+
+## State model
+
+The same small state machine is used for every task; there are no separate foreground, background, blocked, resumed, or retry lifecycles.
+
+New task records use:
+
+```
+queued -> running -> completed | failed | cancelled
 ```
 
-Run `/herdr-subagents agents`, `/herdr-subagents models`, or `/herdr-subagents settings` to inspect effective values and their sources.
+A run is `running` while any task is queued or running. Settled aggregate states are `completed`, `failed`, `partial`, or `cancelled`.
 
-## Recovery and failures
+Older records containing `starting` or `blocked` remain readable for history and cleanup, but new runs never write those states.
 
-Queued background submissions are persisted before dispatch. Closing the parent Pi session cancels queued, running, and blocked work, records `cancelled`, and closes the owned run tab. On the next Pi start, stale active records and queued submissions from a prior parent session are reconciled to a terminal state, including when Pi reused the same process, and leaked tabs are cleaned up when possible. Missing, truncated, or structurally invalid child reports become explicit failures or cancellation diagnostics; recovery errors are reported without leaving new submissions paused.
+## Durable records
 
-Tab, pane, and child startup commands are not automatically retried: an error may arrive after Herdr already created the resource. Recovery is best effort, not complete: Herdr 0.9.2 has no idempotency key for tab creation or pane splitting, so a `SIGKILL` after the external resource is created but before its ID is durably persisted can leave an orphan that cannot be identified for cleanup. A failure after prompt submission is preserved and never automatically rerun. Historical follow-ups use a recoverable task-scoped `.resume.lock`, so different tasks can continue concurrently without allowing two writers for one saved session. Herdr exposes no retrying state, and Pi exposes no reliable public auto-retry hook, so `retrying` is supported by the runtime schema and Fleet but is not fabricated from ambiguous lifecycle events. `stalledWarningSeconds` emits a warning without killing long-running work. Run/task/report snapshots use atomic replacement so interruption cannot expose half-written JSON.
+Records are stored under:
 
-The child does not inherit parent extensions or parent conversation. Skills load from explicit persona paths and from explicitly selected Pi packages; normal project context files still apply. It uses the same Pi installation, provider configuration, model catalog, and credentials as the parent.
+```
+.pi/herdr-subagents/runs/<sortable-run-id>/
+  run.json
+  tasks/<order>-<task-id>/
+    task.json
+    session.jsonl
+    system-prompt.md
+    report.json
+    reports/<attempt-id>.json
+    results/<attempt-id>.md
+```
 
-## Development and tests
+The orchestrator is the only writer of `run.json`, `task.json`, and promoted `report.json`. The child only writes its attempt-scoped result and report.
 
-See [TESTING.md](TESTING.md) for deterministic tests, extension loading, packaging, and real Herdr smoke requirements.
+## Control and UI
+
+`herdr_subagents_control` supports `list`, `status`, `history`, `cancel`, and `cleanup`. Follow-up work is a new task or run; settled tasks are never revived.
+
+Use `/herdr-subagents focus <task-number>` to focus a running pane. `/herdr-subagents active`, `history`, `agents`, `models`, and `settings` provide compact inspection.
+
+## Personas and settings
+
+Bundled personas are `worker`, `explorer`, `analyst`, and `reviewer`. Project personas can be added under `.pi/agents/` using the same frontmatter format as the bundled files. Access is declared as `read` or `write` and drives concurrency safety.
+
+Settings are read from the existing package configuration. `defaultConcurrency`, `maxConcurrency`, and `stalledWarningSeconds` remain supported.

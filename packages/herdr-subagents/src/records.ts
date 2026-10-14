@@ -252,6 +252,8 @@ export function applyLifecycleStatus<T extends { status: string; question?: stri
 }
 
 export function applyTaskStatus<T extends TaskRecord | TurnRecord>(record: T, status: TaskStatus, options: { question?: string; error?: string; at?: string } = {}): T {
+	const terminal = record.status === "completed" || record.status === "failed" || record.status === "cancelled";
+	if (terminal && record.status !== status) throw new Error(`Task is already terminal (${record.status}); terminal tasks are immutable.`);
 	const at = options.at ?? new Date().toISOString();
 	if ("order" in record) {
 		if (record.status === "running" && status !== "running") {
