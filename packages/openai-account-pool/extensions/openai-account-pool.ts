@@ -128,12 +128,13 @@ function enrollmentUi(ctx: ExtensionContext, oauth: NonNullable<Provider["auth"]
 	};
 }
 
-async function readStatus(ctx: ExtensionContext, live: boolean, signal?: AbortSignal): Promise<PoolStatus> {
+async function readStatus(ctx: ExtensionContext, live: boolean, signal?: AbortSignal, currentAccountId?: string): Promise<PoolStatus> {
 	const { authPath, statePath } = agentPaths();
 	const oauth = ctx.modelRegistry.getProvider(PROVIDER_ID)?.auth.oauth;
 	return poolStatus({
 		authPath,
 		statePath,
+		currentAccountId,
 		modelId: ctx.model?.id,
 		refresh: live && oauth
 			? async (credential, signal) =>
@@ -143,12 +144,12 @@ async function readStatus(ctx: ExtensionContext, live: boolean, signal?: AbortSi
 	});
 }
 
-async function showStatus(ctx: ExtensionContext, showTuiStatus: (ctx: ExtensionContext) => void): Promise<void> {
+async function showStatus(ctx: ExtensionContext, showTuiStatus: (ctx: ExtensionContext) => void, currentAccountId?: string): Promise<void> {
 	if (ctx.mode === "tui") {
 		showTuiStatus(ctx);
 		return;
 	}
-	const status = await readStatus(ctx, true);
+	const status = await readStatus(ctx, true, undefined, currentAccountId);
 	const lines = [status.summary, ...status.accounts.map(formatAccountStatusLine)];
 	ctx.ui.notify(lines.join("\n"));
 }
@@ -158,13 +159,14 @@ async function handleCommand(
 	ctx: ExtensionCommandContext,
 	provider: () => Provider | undefined,
 	showTuiStatus: (ctx: ExtensionContext) => void,
+	currentAccountId: (ctx: ExtensionContext) => string | undefined,
 ): Promise<void> {
 	const [subcommand = "", ...rest] = args.trim().split(/\s+/).filter(Boolean);
 	const { authPath, statePath } = agentPaths();
 
 	try {
 		if (subcommand === "status") {
-			await showStatus(ctx, showTuiStatus);
+			await showStatus(ctx, showTuiStatus, currentAccountId(ctx));
 			return;
 		}
 
@@ -277,6 +279,7 @@ export default function openaiAccountPool(pi: ExtensionAPI) {
 	let statusController: AbortController | undefined;
 	let statusTimer: ReturnType<typeof setTimeout> | undefined;
 	let statusGeneration = 0;
+	const currentAccountBySession = new WeakMap<ExtensionContext, string>();
 
 	const clearStatusPanel = (ctx: ExtensionContext) => {
 		statusController?.abort();
@@ -308,10 +311,10 @@ export default function openaiAccountPool(pi: ExtensionAPI) {
 		}, { placement: "aboveEditor" });
 		void (async () => {
 			try {
-				status = await readStatus(ctx, false, controller.signal);
+				status = await readStatus(ctx, false, controller.signal, currentAccountBySession.get(ctx));
 				if (generation !== statusGeneration) return;
 				render();
-				status = await readStatus(ctx, true, controller.signal);
+				status = await readStatus(ctx, true, controller.signal, currentAccountBySession.get(ctx));
 				if (generation !== statusGeneration) return;
 				loading = false;
 				render();
@@ -350,6 +353,7 @@ export default function openaiAccountPool(pi: ExtensionAPI) {
 			authPath,
 			statePath,
 			preferredAccountId,
+			onAccountSuccess: (accountId) => currentAccountBySession.set(ctx, accountId),
 			// Switch notes go to whichever context is current when the request runs.
 			notify: (message) => latest?.ui.notify(message, "warning"),
 		});
@@ -374,7 +378,7 @@ export default function openaiAccountPool(pi: ExtensionAPI) {
 		getArgumentCompletions: codexPoolArgumentCompletions,
 		handler: async (args, ctx) => {
 			await install(ctx);
-			await handleCommand(args, ctx, () => base, showTuiStatus);
+			await handleCommand(args, ctx, () => base, showTuiStatus, (session) => currentAccountBySession.get(session));
 		},
 	});
 }

@@ -132,8 +132,8 @@ function exhaustedUsageResponse() {
 	});
 }
 
-function poolRuntime(agent, statePath, notes, usageFetch = async () => exhaustedUsageResponse(), preferredAccountId) {
-	return { lazyStream, authPath: agent.authPath, statePath, probeOwner: "test-owner", notify: (message) => notes.push(message), usageFetch, preferredAccountId };
+function poolRuntime(agent, statePath, notes, usageFetch = async () => exhaustedUsageResponse(), preferredAccountId, onAccountSuccess) {
+	return { lazyStream, authPath: agent.authPath, statePath, probeOwner: "test-owner", notify: (message) => notes.push(message), usageFetch, preferredAccountId, onAccountSuccess };
 }
 
 // ---------------------------------------------------------------------------
@@ -144,8 +144,9 @@ function poolRuntime(agent, statePath, notes, usageFetch = async () => exhausted
 	try {
 		const log = { attempts: [], refreshes: [], fetches: [] };
 		const notes = [];
+		const successfulAccounts = [];
 		const base = scriptedProvider([{ kind: "quota" }, { kind: "ok", text: "hello" }], log);
-		const provider = createPoolProvider(base, poolRuntime(agent, statePath, notes));
+		const provider = createPoolProvider(base, poolRuntime(agent, statePath, notes, undefined, undefined, (accountId) => successfulAccounts.push(accountId)));
 		const observed = [];
 
 		const events = await collect(
@@ -169,6 +170,7 @@ function poolRuntime(agent, statePath, notes, usageFetch = async () => exhausted
 		assert.notEqual(usedTokens[0], usedTokens[1], "the retry used a different account");
 		assert.equal(notes.length, 1);
 		assert.match(notes[0], /额度已用尽/);
+		assert.deepEqual(successfulAccounts, [ACCOUNT_B], "only the account that completed this session's request becomes current");
 		assert.ok(!notes[0].includes(ACCOUNT_A), "account ids are masked in user-visible notes");
 
 		const state = await readPoolState(statePath);

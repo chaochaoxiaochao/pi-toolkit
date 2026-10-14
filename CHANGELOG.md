@@ -1,3 +1,7 @@
+## Unreleased
+
+- make the OpenAI Account Pool `●当前` marker session-local and hide it before the session uses Codex
+
 ## 2026-10-14 - v0.11.14
 
 - herdr-subagents v0.5.1: fix focus-safe run cleanup and compact report output

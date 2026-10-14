@@ -56,6 +56,8 @@ export interface PoolRuntime {
 	probeOwner?: string;
 	/** Shows a short, non-secret note when the pool switches or gives up. */
 	notify?: (message: string) => void;
+	/** Reports a successful account to this session's UI state. */
+	onAccountSuccess?: (accountId: string) => void;
 	/** Test seam for the private usage endpoint; ordinary model requests do not use it. */
 	usageFetch?: typeof globalThis.fetch;
 }
@@ -419,6 +421,7 @@ export function createPoolProvider(base: Provider, runtime: PoolRuntime): Provid
 				beforeSuccess: async () => {
 					sticky = account.id;
 					await recordSuccess({ statePath: runtime.statePath, account, requestStartedAtMs, clearEvidence: gate.clearsState });
+					runtime.onAccountSuccess?.(account.id);
 				},
 		});
 

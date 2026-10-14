@@ -1,3 +1,7 @@
+## Unreleased
+
+- Make `●当前` session-local: hide it until this Pi session successfully uses a pooled Codex account instead of showing another session's global history.
+
 ## 2026-10-14 - v0.1.4
 
 - hide the redundant next-session marker when it matches the current account

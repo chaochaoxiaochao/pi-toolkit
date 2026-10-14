@@ -217,6 +217,8 @@ export async function setDefaultAccount(input: { authPath: string; statePath: st
 export async function poolStatus(input: {
 	authPath: string;
 	statePath: string;
+	/** Account that has completed a request in this Pi session. */
+	currentAccountId?: string;
 	now?: number;
 	modelId?: string;
 	refresh?: (credential: AuthEntry, signal?: AbortSignal) => Promise<AuthEntry>;
@@ -258,7 +260,7 @@ export async function poolStatus(input: {
 	const accounts = availability.map((entry, index): AccountStatusLine => {
 		const account = snapshot.accounts[index];
 		const label = accountLabel(account);
-		const isCurrent = account.id === state.currentAccountId;
+		const isCurrent = account.id === input.currentAccountId;
 		const isPreferredForNextSession = account.id === state.preferredAccountId;
 		const live = refreshById.get(account.id);
 		const usage = live?.usage ?? storedUsage(state.accounts[account.id]);

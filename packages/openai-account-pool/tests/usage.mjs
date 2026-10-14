@@ -358,7 +358,7 @@ async function setupPool(credentials = [
 	assert.equal(accountReadyAtMs({ account, record, now: NOW, modelId: "wanted" }), undefined);
 }
 
-// Status queries all accounts, shows email and usage, and distinguishes current from next-session preference.
+// Status queries all accounts, shows email and usage, and uses only this session's current account.
 {
 	const { agent, statePath, snapshot } = await setupPool();
 	try {
@@ -368,6 +368,7 @@ async function setupPool(credentials = [
 		const status = await poolStatus({
 			authPath: agent.authPath,
 			statePath,
+			currentAccountId: ACCOUNT_B,
 			now: NOW,
 			refresh: async (credential) => credential,
 			fetch: async (_input, init) => { queried.push(init.headers["ChatGPT-Account-Id"]); return response(usagePayload()); },
@@ -395,6 +396,9 @@ async function setupPool(credentials = [
 		assert.ok(currentLine, JSON.stringify(rendered));
 		assert.ok(nextLine, JSON.stringify(rendered));
 		assert.match(currentLine, /●当前$/);
+		const unusedSession = await poolStatus({ authPath: agent.authPath, statePath, now: NOW });
+		assert.equal(unusedSession.accounts.some((account) => account.isCurrent), false);
+		assert.doesNotMatch(unusedSession.accounts.map(formatAccountStatusLine).join("\n"), /●当前/);
 		for (const line of status.accounts) {
 			assert.match(line.detail, /5 小时已用 20%/);
 			assert.match(line.detail, /7 天已用 30%/);
