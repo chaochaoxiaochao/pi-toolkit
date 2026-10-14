@@ -1,3 +1,7 @@
+## 2026-10-14 - v0.5.2
+
+- stop Pi startup from scanning historical runs or closing recorded Herdr tabs
+
 ## 2026-10-14 - v0.5.1
 
 - fix focus-safe run cleanup and compact report output
