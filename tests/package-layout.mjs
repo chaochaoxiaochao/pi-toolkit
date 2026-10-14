@@ -162,11 +162,14 @@ assert.ok(rootReleaseScript.indexOf("npm version") < rootReleaseScript.indexOf("
 assert.match(rootReleaseScript, /trap rollback_release_metadata ERR/);
 assert.match(rootReleaseScript, /git add package\.json CHANGELOG\.md/);
 assert.match(rootReleaseScript, /release checks changed unexpected file/);
-assert.match(releaseCheckScript, /npm test/);
-assert.match(releaseCheckScript, /npm run load-test/);
-assert.match(releaseCheckScript, /npm pack "\.\/packages\/\$SLUG" --dry-run/);
+assert.match(releaseCheckScript, /npm run test:root/);
+assert.match(releaseCheckScript, /npm run load-test:root/);
+assert.match(releaseCheckScript, /run npm --prefix "\$PACKAGE_DIR" test/);
+assert.match(releaseCheckScript, /has_package_script "\$PACKAGE_DIR" load-test/);
+assert.match(releaseCheckScript, /run npm pack "\.\/\$PACKAGE_DIR" --dry-run/);
 assert.match(releaseCheckScript, /npm --prefix packages\/herdr-subagents run test:real-herdr/);
-assert.doesNotMatch(releaseCheckScript, /if[^\n]*herdr-subagents/);
+assert.match(releaseCheckScript, /if \[\[ "\$SLUG" == herdr-subagents \]\]/);
+assert.match(releaseCheckScript, /git diff --quiet "\$BASE_TAG" -- packages\/herdr-subagents/);
 assert.match(releaseCheckScript, /npm pack --dry-run/);
 assert.match(publishIfNeededScript, /npm view "\$NAME@\$VERSION" version/);
 assert.match(publishIfNeededScript, /npm publish/);

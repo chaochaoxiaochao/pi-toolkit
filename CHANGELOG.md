@@ -1,3 +1,7 @@
+## Unreleased
+
+- Scope child and root release checks to their owned code, and run Herdr tests or the real Agent smoke only when Herdr is the target or changed since the previous root release.
+
 ## 2026-10-14 - v0.11.11
 
 - openai-account-pool v0.1.3: defer account preference changes to new sessions for prompt-cache stability
