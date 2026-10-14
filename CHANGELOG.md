@@ -1,3 +1,7 @@
+## 2026-10-14 - v0.11.20
+
+- herdr-subagents v0.5.3: allow optional Pi-native tool exposure while inheriting Pi defaults when unset
+
 ## 2026-10-14 - v0.11.19
 
 - herdr-subagents v0.5.2: stop Pi startup from scanning historical runs or closing recorded Herdr tabs
