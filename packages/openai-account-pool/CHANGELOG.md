@@ -1,3 +1,7 @@
+## 2026-10-14 - v0.1.1
+
+- publish the initial OpenAI Codex account pool and fix coordinated initial-release detection
+
 ## 2026-10-14 - v0.1.0
 
 - add OpenAI Codex account pooling with safe quota failover and live usage status
