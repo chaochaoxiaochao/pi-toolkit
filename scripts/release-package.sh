@@ -65,7 +65,7 @@ echo "==> 2/6 child changelog"
 node scripts/update-release-changelog.mjs "$PACKAGE_DIR/CHANGELOG.md" "$CHILD_VERSION" "$NOTE"
 
 echo "==> 3/6 root changelog"
-node scripts/update-release-changelog.mjs CHANGELOG.md "$ROOT_VERSION" "bundle $SLUG v$CHILD_VERSION: $NOTE"
+node scripts/update-release-changelog.mjs CHANGELOG.md "$ROOT_VERSION" "$SLUG v$CHILD_VERSION: $NOTE"
 
 echo "==> 4/6 release checks against final package versions"
 ./scripts/release-check.sh "$SLUG"

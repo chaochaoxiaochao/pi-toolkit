@@ -31,8 +31,8 @@ pi-toolkit/
 ## 组织原则
 
 - `packages/*` 是子包功能实现的单一源码；根 manifest 直接加载默认启用子包的路径，不设置 wrapper。`extensions/` 只放主包独有的 BTW。
-- 主包 tarball 直接包含默认启用子包的运行源码，不依赖 npm 上的子包版本，因此主包与子包可以独立发版。Todo 不在根 tarball 或默认 loadout 中。
-- 用户在完整工具包和已内嵌的独立子包之间二选一；同时安装可能重复注册 extension、skill 或 bin。Todo 是例外，可以与完整工具包一起安装。
+- 主包 tarball 直接包含默认启用子包的运行源码，不依赖 npm 上的子包版本，因此主包与子包可以独立发版。默认启用 cache-export、codex-edit、herdr-subagents、scheduler、worktree；Todo 与 OpenAI Account Pool 不在根 tarball 或默认 loadout 中。
+- 用户在完整工具包和已内嵌的独立子包之间二选一；同时安装可能重复注册 extension、skill 或 bin。Todo 与 OpenAI Account Pool 是例外，两者都不内嵌，可以与完整工具包一起安装。
 - BTW 保留在主包，不发布子包。
 - 每个子包必须包含 `package.json`、`README.md`、`TESTING.md`、`CHANGELOG.md`、确定性测试，以及适合该包的加载或集成检查。
 - 每个子包 README 必须说明功能、来源/设计动机、安装与更新、可复制示例，并引用真实实现生成的媒体。除 Herdr Subagents 外，每个子包包含 `docs/screenshot.png` 和 `docs/demo.gif`；Herdr Subagents 包含 `docs/screenshot.png` 和完整的 `docs/demo.webm`，README 通过 GitHub attachment URL 直接显示视频，不保留 GIF。执行 `node scripts/capture-package-media.mjs` 统一重生成媒体并进入 tarball。
@@ -45,7 +45,7 @@ pi-toolkit/
 - Codex Edit 必须加载 `packages/codex-edit/extensions/codex-edit.ts`；parser/matcher 改动必须覆盖重复 HTML/Markdown 区域、同路径多 update、多 hunk、多文件 patch，以及空 chunk、stale context 和冲突路径的安全失败。每个新生产问题先加入 `tests/comparison-cases.mjs`，且 native/released 两组对比都必须通过。`npm --prefix packages/codex-edit test` 必须从测试结果生成 `docs/test-report.md`，再转换为自包含 `docs/test-report.html`；提交和发版必须包含最新报告。冻结的 released baseline 保持不变。
 - Herdr Subagents persona 的 `extensions` 复用 Pi 原生来源语义；修改时验证覆盖优先级、历史续跑和显式包的附带资源，具体契约见子包 README 的 Explicit extension sources and Pi packages。
 - Herdr Subagents 必须运行全部确定性测试、加载 `packages/herdr-subagents/extensions/herdr-subagents.ts`，并在真实 Herdr 中验证只读并发批次和 tab 清理；媒体必须通过 `HERDR_MEDIA_WINDOW_ID=<window-id> node scripts/capture-package-media.mjs` 录制父 Pi 对话、逐一聚焦三个真实 Agent pane 和最终父会话结果，同时保留截图和完整 WebM 视频。
-- OpenAI Account Pool 必须运行全部确定性测试、加载 `packages/openai-account-pool/extensions/openai-account-pool.ts`，并验证：只有结构化 `usage_limit_reached` 或明确授权失效才切账号、向外输出后不重放、auth.json 仍是凭据权威来源且主条目只存非秘密引用。测试夹具凭据只限隔离临时目录，仓库、媒体和 tarball 不得包含真实令牌或授权 callback URL。
+- OpenAI Account Pool 必须运行全部确定性测试，并通过 `npm --prefix packages/openai-account-pool run load-test` 加载 `packages/openai-account-pool/extensions/openai-account-pool.ts`（该子包不在主包默认 loadout 和根 load-test 中），并验证：只有结构化 `usage_limit_reached` 或明确授权失效才切账号、向外输出后不重放、auth.json 仍是凭据权威来源且主条目只存非秘密引用。测试夹具凭据只限隔离临时目录，仓库、媒体和 tarball 不得包含真实令牌或授权 callback URL。
 - Scheduler 必须运行确定性 fake-clock 与 extension 集成测试、加载 `packages/scheduler/extensions/scheduler.ts`，并验证定时/手动触发统一使用 followUp、同一 schedule 最多积压一次、取消与 session shutdown 清理 timer；媒体展示真实核心状态机输出。
 - Cache Export 的发布验收要求确定性测试通过，并在有 Chrome 的环境中跑浏览器 E2E；skip 不算发布验收通过。
 - `packages/cache-export/src/tau-assets.ts` 来自 `huggingface/tau` 的 `session_usage.py`，只能重生成，不能手改。
@@ -78,7 +78,7 @@ pi-toolkit/
 pi install npm:@maxiaochao/pi-toolkit
 ```
 
-完整工具包默认不启用 Todo；需要进度 UI 时单独安装 `npm:@maxiaochao/pi-todo`。
+完整工具包默认启用 cache-export、codex-edit、herdr-subagents、scheduler、worktree；默认不启用 Todo 和 OpenAI Account Pool，两者都需要单独安装。
 
 按需单独安装：
 

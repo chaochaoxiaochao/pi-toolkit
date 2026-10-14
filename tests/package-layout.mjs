@@ -10,7 +10,7 @@ const children = [
   ["cache-export", "@maxiaochao/pi-cache-export", "extensions/cache-export.ts", true],
   ["codex-edit", "@maxiaochao/pi-codex-edit", "extensions/codex-edit.ts", true],
   ["herdr-subagents", "@maxiaochao/pi-herdr-subagents", "extensions/herdr-subagents.ts", true],
-  ["openai-account-pool", "@maxiaochao/pi-openai-account-pool", "extensions/openai-account-pool.ts", true],
+  ["openai-account-pool", "@maxiaochao/pi-openai-account-pool", "extensions/openai-account-pool.ts", false],
   ["scheduler", "@maxiaochao/pi-scheduler", "extensions/scheduler.ts", true],
   ["worktree", "@maxiaochao/pi-worktree", "extensions/worktree.ts", true],
 ];
@@ -40,6 +40,10 @@ for (const [slug, name, extension, bundled] of children) {
   assert.equal(manifest.files.includes("docs"), true, `${slug} does not publish docs media`);
   if (extension) assert.deepEqual(manifest.pi.extensions, [`./${extension}`]);
   assert.equal(root.files.includes(directory), bundled, `${slug} root bundle state is incorrect`);
+  if (!bundled) {
+    assert.equal(root.pi.extensions.some((entry) => entry.includes(`${directory}/`)), false, `${slug} must not be configured by the toolkit`);
+    assert.equal(root.scripts["load-test"].includes(directory), false, `${slug} must not be load-tested by the toolkit`);
+  }
 }
 
 assert.deepEqual(root.pi.extensions, [
@@ -47,7 +51,6 @@ assert.deepEqual(root.pi.extensions, [
   "./extensions/btw/index.ts",
   "./packages/codex-edit/extensions/codex-edit.ts",
   "./packages/herdr-subagents/extensions/herdr-subagents.ts",
-  "./packages/openai-account-pool/extensions/openai-account-pool.ts",
   "./packages/scheduler/extensions/scheduler.ts",
   "./packages/worktree/extensions/worktree.ts",
 ]);
@@ -147,6 +150,7 @@ assert.ok(releaseScript.indexOf("npm version") < releaseScript.indexOf('./script
 assert.match(releaseScript, /trap rollback_release_metadata ERR/);
 assert.match(releaseScript, /release checks changed unexpected file/);
 assert.match(releaseScript, /update-release-changelog\.mjs/);
+assert.match(releaseScript, /CHANGELOG\.md "\$ROOT_VERSION" "\$SLUG v\$CHILD_VERSION: \$NOTE"/, "the root release note must not claim every child is bundled");
 const rootReleaseScript = readFileSync("scripts/release.sh", "utf8");
 const releaseCheckScript = readFileSync("scripts/release-check.sh", "utf8");
 const publishIfNeededScript = readFileSync("scripts/publish-if-needed.sh", "utf8");

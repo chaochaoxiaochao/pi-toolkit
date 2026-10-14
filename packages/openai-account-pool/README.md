@@ -20,6 +20,8 @@ pi install npm:@maxiaochao/pi-openai-account-pool
 
 Update it with `pi update npm:@maxiaochao/pi-openai-account-pool`. Installing alone changes nothing: the pool turns on the first time you add an account.
 
+`pi install npm:@maxiaochao/pi-toolkit` does not enable this package, so the two installs may be combined. Toolkit 0.11.9 and earlier embedded it: do not add this package next to one of those versions, because `/codex_pool` would register twice.
+
 ## User command
 
 ```text
@@ -64,4 +66,4 @@ Update it with `pi update npm:@maxiaochao/pi-openai-account-pool`. Installing al
 pi remove npm:@maxiaochao/pi-openai-account-pool
 ```
 
-先运行 `/codex_pool off` 恢复单账号登录，再卸载，否则 `openai-codex` 会留下一条无法使用的池引用。不要同时安装独立包和已经内置本包的 toolkit 版本，否则命令会注册两次。
+先运行 `/codex_pool off` 恢复单账号登录，再卸载，否则 `openai-codex` 会留下一条无法使用的池引用。如果安装的是仍内置本包的主包版本（0.11.9 及更早），不要同时安装独立包，否则命令会注册两次。

@@ -1,5 +1,24 @@
 # Package split verification
 
+## Unbundling OpenAI Account Pool from the toolkit (2026-10-14)
+
+`pi install npm:@maxiaochao/pi-toolkit` no longer enables `@maxiaochao/pi-openai-account-pool`.
+
+- `node tests/package-layout.mjs`: passed. The layout test now requires `openai-account-pool` to be absent from the root `files` entry, the root `pi.extensions` loadout, and the root `load-test`, exactly as it already required for `todo`. It also pins the root release-changelog note, because that note may no longer claim every child is bundled.
+- `npm test`: exit 0. Root layout, BTW, and every child suite passed, including the eight OpenAI Account Pool deterministic suites, which the root test script still runs.
+- `npm run load-test`: exit 0 for the six remaining configured entrypoints (Cache Export, BTW, Codex Edit, Herdr Subagents, Scheduler, Worktree).
+- `npm --prefix packages/openai-account-pool run load-test`: exit 0. The removed entrypoint is verified through the child package's own documented command.
+- `npm pack --dry-run`: 162 files, down from 190. The tarball contains `packages/cache-export`, `packages/codex-edit`, `packages/herdr-subagents`, `packages/scheduler`, and `packages/worktree`, and no `packages/openai-account-pool`.
+- `npm pack ./packages/openai-account-pool --dry-run`: 32 files; the standalone tarball still contains its runtime, tests, documentation, screenshot, and demo.
+- `npm --prefix packages/herdr-subagents run test:real-herdr`: one real child Agent and two concurrent real child Agents completed and cleaned up.
+- `git diff --check`: no whitespace errors.
+
+### Not executed
+
+- `pi install npm:@maxiaochao/pi-toolkit` was not run against the real Pi installation, because that rewrites the personal loadout. The root manifest, the layout test, and the packed tarball contents cover the same declaration.
+- `@maxiaochao/pi-openai-account-pool@0.1.1` stays published on npm unchanged, and no npm deprecation was issued for it.
+- No media was regenerated: this change alters packaging and documentation only.
+
 ## Issue #21: explicit Herdr Subagents extension sources (2026-10-13)
 
 - `npm --prefix packages/herdr-subagents test`: 266 assertions passed, 0 failed. New cases cover Markdown/JSON source lists, precedence, clearing, diagnostics, npm/local argument preservation, unchanged mandatory extensions/tool allowlists, durable history, historical resume, blocked-task restart, and queued-task recovery.

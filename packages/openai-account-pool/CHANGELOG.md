@@ -1,3 +1,7 @@
+## Unreleased
+
+- Add the toolkit compatibility statement to Install, and limit the double-registration warning to toolkit 0.11.9 and earlier, which were the last versions to embed this package.
+
 ## 2026-10-14 - v0.1.1
 
 - publish the initial OpenAI Codex account pool and fix coordinated initial-release detection
