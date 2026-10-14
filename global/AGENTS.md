@@ -62,5 +62,3 @@ For frontend feature development, load the `web-browser` skill and verify the re
 ## 9. Worktree Isolation
 
 For a Git-repository task that coordinates substantial changes across multiple files or modules, or implements a feature intended for release, ask before editing whether to isolate it in a worktree. Skip the question when already in a linked worktree.
-
-If the user agrees, read the `pi-worktree` skill and establish the worktree before changing code. When no human is reachable, create a worktree only when the task explicitly requests one.
