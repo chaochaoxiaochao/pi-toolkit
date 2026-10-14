@@ -159,8 +159,12 @@ async function executeBatch({ params, signal, onUpdate, ctx, dependencies, disco
 			onCleanupError: (text) => onUpdate?.({ content: [{ type: "text", text }], details: { action: "batch", runId: dependencies.runId, cleanupError: text } }),
 			onUpdate: (partial) => onUpdate?.({ content: [{ type: "text", text: partial.summary }], details: { ...partial, prompts: tasks.map((task) => task.prompt) } }),
 		});
-		const lines = [result.summary, ...result.tasks.map((task) => `- ${task.name}: ${task.status} — ${task.summary}`)];
-		if (result.documents.length) lines.push("", "Documents:", ...result.documents.map((document) => `- ${document.description}: ${document.path}`));
+		const lines = [result.summary];
+		for (const task of result.tasks) {
+			lines.push(`- ${task.name}: ${task.status} — ${task.summary}`);
+			const resultDocument = task.documents[0];
+			if (resultDocument) lines.push(`  Result: ${resultDocument.path}`);
+		}
 		const isError = result.status === "failed" || result.status === "partial" || result.status === "cancelled";
 		return { content: [{ type: "text", text: lines.join("\n") }], details: { ...result, prompts: tasks.map((task) => task.prompt) }, ...(isError ? { isError: true } : {}) };
 	} catch (error) {

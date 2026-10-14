@@ -3,6 +3,7 @@ import net from "node:net";
 import { dirname, resolve } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { resultPathForAttemptId } from "../src/result-path.ts";
 import { PARENT_PANE_ENV } from "../src/live-agent.ts";
@@ -75,12 +76,11 @@ export default function (pi: ExtensionAPI) {
 		const taskDirectory = process.env.PI_HERDR_SUBAGENTS_TASK_DIR?.trim();
 		if (taskDirectory && activeAttemptId) {
 			writeAttemptState(taskDirectory, activeAttemptId, "settled");
-			const reported = existsSync(attemptReportPath(taskDirectory, activeAttemptId));
-			// agent_settled is Pi's final automatic-work boundary. Ending the child here
-			// gives the orchestrator an authoritative no-report process-exit signal while
-			// still allowing all provider auto-retries to finish first.
-			setTimeout(() => process.exit(reported ? 0 : 2), 25);
 		}
+		// Keep the interactive child alive at Pi's final automatic-work boundary.
+		// The orchestrator settles each task from its atomic report. Once every task in
+		// the run settles, it closes the owned tab immediately when unfocused or waits
+		// for the user to leave it. Force-exiting here can interrupt TUI restoration.
 		if (ctx?.isIdle?.() === true) reportHerdrState("idle");
 	});
 	pi.events.on("herdr:blocked", (data: { active?: boolean; label?: string }) => {
@@ -103,6 +103,19 @@ export default function (pi: ExtensionAPI) {
 		label: "Subagent Report",
 		description: "Finish this delegated task by saving its complete result and returning only a compact structured report to the parent.",
 		parameters: ReportParams,
+		renderCall(params, theme) {
+			const resultBytes = Buffer.byteLength(params.result, "utf8");
+			const size = resultBytes < 1024 ? `${resultBytes} B` : `${(resultBytes / 1024).toFixed(1)} KiB`;
+			return new Text(`${theme.fg("toolTitle", theme.bold("subagent_report "))}${theme.fg(params.status === "completed" ? "success" : "error", params.status)}${theme.fg("dim", ` · ${size} saved to disk`)}`, 0, 0);
+		},
+		renderResult(result, { isPartial }, theme) {
+			if (isPartial) return new Text(theme.fg("warning", "Saving report..."), 0, 0);
+			const report = result.details as { status?: string; summary?: string; documents?: Array<{ path?: string }> } | undefined;
+			const resultPath = report?.documents?.[0]?.path;
+			const status = report?.status ?? "saved";
+			const summary = report?.summary?.replaceAll("\n", " ") ?? "Report saved.";
+			return new Text(`${theme.fg(status === "completed" ? "success" : status === "failed" ? "error" : "accent", status)}${theme.fg("dim", ` · ${summary}${resultPath ? `\n${resultPath}` : ""}`)}`, 0, 0);
+		},
 		async execute(_toolCallId, params) {
 			const taskDirectory = process.env.PI_HERDR_SUBAGENTS_TASK_DIR?.trim();
 			if (!taskDirectory) throw new Error("PI_HERDR_SUBAGENTS_TASK_DIR is not set");

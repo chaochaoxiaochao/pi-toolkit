@@ -34,7 +34,7 @@ The reproducible source recording is retained as [`docs/demo.webm`](docs/demo.we
 }
 ```
 
-Each task starts a single-task interactive Pi process in its own Herdr pane. Herdr first confirms the interactive Pi is ready, then the prompt is delivered exactly once. Prompt acknowledgement never decides task completion. Panes remain ordinary Herdr panes: they can be focused and inspected while work is running.
+Each task starts a single-task interactive Pi process in its own Herdr pane. Herdr first confirms the interactive Pi is ready, then the prompt is delivered exactly once. Prompt acknowledgement never decides task completion. Panes remain ordinary Herdr panes: they can be focused and inspected while work is running or after it settles. An early-finishing child stays at the Pi UI while sibling tasks continue. After the whole run settles, cleanup closes an unfocused run tab immediately or waits for the user to leave a focused run tab.
 
 ## Result protocol
 
@@ -44,6 +44,8 @@ The child must call `subagent_report` once with a terminal status:
 - `failed`: it cannot be completed; include `error`.
 
 The complete result is stored on disk. The parent receives only the compact summary and document paths.
+
+The child UI renders only the report status and saved size instead of echoing the complete result argument. The parent-facing tool result includes one complete-result path per task; additional consulted-document metadata remains in the durable report.
 
 An atomically renamed attempt report is the authoritative completion signal. Herdr states such as `idle`, `blocked`, and `done` are wake-up hints only. A prompt transport error or Pi retry cannot fail a task while its child process remains alive. If the process exits without a valid report, the task fails explicitly.
 

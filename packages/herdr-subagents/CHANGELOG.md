@@ -1,3 +1,8 @@
+## Unreleased
+
+- keep settled child Pi TUIs alive until focus-aware tab cleanup, preventing abrupt exits and leaked ANSI control sequences in focused panes
+- render report submission compactly and return only each task's complete-result path to the parent model
+
 ## 2026-10-13 - v0.5.0
 
 - simplify lifecycle to one report-first state machine with strict serial and bounded read-only parallel execution

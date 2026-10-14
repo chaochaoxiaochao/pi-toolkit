@@ -80,7 +80,7 @@ There is no global dispatcher, persisted background queue, blocked response lane
 
 ## Child boundary
 
-Each task owns one Herdr pane and one single-task Pi process. Herdr first starts and detects the interactive Pi, then submits the prompt exactly once. The child extension exits the process at Pi’s final `agent_settled` boundary, giving each task an unambiguous process lifetime without parent-side prompt retries.
+Each task owns one Herdr pane and one single-task Pi process. Herdr first starts and detects the interactive Pi, then submits the prompt exactly once. At Pi’s final `agent_settled` boundary, the child extension records settled state but leaves the interactive process alive. The atomic report remains the authoritative task result. Early-finishing children remain visible while sibling tasks continue. Once the whole run settles, the orchestrator closes an unfocused owned tab immediately and defers a focused tab until the user leaves it, so Pi can restore the terminal normally.
 
 The child writes:
 

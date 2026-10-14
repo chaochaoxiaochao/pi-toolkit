@@ -1,3 +1,8 @@
+## Unreleased
+
+- fix Herdr Subagents so completed child Pi panes remain inspectable while focused and close cleanly after focus leaves, without raw ANSI fragments from forced TUI exits
+- keep large Subagent results on disk while showing compact report calls and one result path per task to the parent model
+
 ## 2026-10-14 - v0.11.13
 
 - openai-account-pool v0.1.4: hide the redundant next-session marker when it matches the current account

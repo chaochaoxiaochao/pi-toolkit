@@ -170,6 +170,24 @@ assert.throws(() => applyTaskStatus(terminal, "running"), /terminal tasks are im
 	await reportTool.execute("first", report);
 	await reportTool.execute("duplicate", report);
 	await assert.rejects(() => reportTool.execute("conflict", { ...report, summary: "different" }), /Conflicting subagent_report/);
+	const originalExit = process.exit;
+	let exitCode;
+	process.exit = (code) => { exitCode = code; };
+	try {
+		await handlers.get("agent_settled")?.({}, { isIdle: () => true });
+		await new Promise((resolve) => setTimeout(resolve, 40));
+	} finally {
+		process.exit = originalExit;
+	}
+	assert.equal(exitCode, undefined, "settled child must remain alive for focus-aware tab cleanup");
+	const attempt = JSON.parse(readFileSync(join(directory, "attempts", `${attemptId}.json`), "utf8"));
+	assert.equal(attempt.state, "settled");
+	const theme = { fg: (_color, text) => text, bold: (text) => text };
+	const renderedCall = reportTool.renderCall({ ...report, result: "FULL RESULT MUST NOT RENDER" }, theme).render(120).join("\n");
+	assert.match(renderedCall, /completed.*saved to disk/);
+	assert.doesNotMatch(renderedCall, /FULL RESULT MUST NOT RENDER/);
+	const renderedResult = reportTool.renderResult(await reportTool.execute("render", report), { isPartial: false }, theme).render(120).join("\n");
+	assert.match(renderedResult, /completed.*done/);
 	const persisted = JSON.parse(readFileSync(join(directory, "reports", `${attemptId}.json`), "utf8"));
 	assert.equal(persisted.summary, "done");
 	delete process.env.PI_HERDR_SUBAGENTS_TASK_DIR;
