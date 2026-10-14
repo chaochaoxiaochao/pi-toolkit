@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-14 - v0.11.11
 
+- openai-account-pool v0.1.3: defer account preference changes to new sessions for prompt-cache stability
 - OpenAI Account Pool: apply `/codex_pool use` only to new sessions and subagents, preserving the current session's account for prompt-cache stability and labeling the global choice as `★下次` in status.
 
 ## 2026-10-14 - v0.11.10

@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-14 - v0.1.3
 
+- defer account preference changes to new sessions for prompt-cache stability
 - Make `/codex_pool use` a global next-session preference: existing sessions keep their sampled account for prompt-cache stability, new sessions and subagents read the updated choice, and status marks it as `★下次` separately from `●当前`.
 
 ## 2026-10-14 - v0.1.2
