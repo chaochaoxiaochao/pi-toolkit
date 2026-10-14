@@ -110,3 +110,7 @@ Writing the same report again is idempotent. A conflicting replacement is reject
 ## Cancellation and shutdown
 
 Caller or parent-session cancellation aborts active waits, marks nonterminal tasks cancelled, and closes the Herdr tab owned by that session. A new Pi session never scans, mutates, resumes, or closes historical runs during startup. If Pi is terminated before its shutdown handlers run, its visible Subagent tabs remain for explicit user inspection or cleanup.
+
+## Tool exposure
+
+The extension reads optional `exposure` once before registering its two tools. When omitted, the extension also omits the registration field and delegates to Pi's default. Global or project configuration can select Pi's `model-only` or `direct` exposure explicitly. Changing this registration-time setting requires `/reload` or a Pi restart; the extension does not re-register tools during a session.

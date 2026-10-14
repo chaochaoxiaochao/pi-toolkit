@@ -4,8 +4,10 @@ import { dirname, join } from "node:path";
 import { discoverPackageAgents, type AgentDefinition } from "./personas.ts";
 
 export type PersonaAccess = "read" | "write";
+export type SubagentToolExposure = "direct" | "model-only";
 export interface PersonaConfig { model?: string; thinking?: string; skills?: string[]; extensions?: string[]; }
 export interface SubagentConfig {
+	exposure?: SubagentToolExposure;
 	defaultConcurrency: number;
 	maxConcurrency: number;
 	stalledWarningSeconds: number;
@@ -32,6 +34,7 @@ export interface SubagentConfiguration {
 	diagnostics: string[];
 }
 interface ConfigFile {
+	exposure?: string;
 	defaultConcurrency?: number;
 	maxConcurrency?: number;
 	stalledWarningSeconds?: number;
@@ -61,6 +64,10 @@ function readConfig(path: string, source: string, diagnostics: string[]): Config
 
 function mergeConfig(base: SubagentConfig, input: ConfigFile, source: string, sources: Record<string, string>, diagnostics: string[]): SubagentConfig {
 	const result: SubagentConfig = { ...base, personas: { ...base.personas } };
+	if (input.exposure !== undefined) {
+		if (input.exposure === "direct" || input.exposure === "model-only") { result.exposure = input.exposure; sources.exposure = source; }
+		else diagnostics.push(`${source} exposure must be 'direct' or 'model-only'`);
+	}
 	for (const key of ["defaultConcurrency", "maxConcurrency", "stalledWarningSeconds"] as const) {
 		const value = input[key];
 		if (value === undefined) continue;

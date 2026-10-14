@@ -160,10 +160,11 @@ assert.throws(() => applyTaskStatus(terminal, "running"), /terminal tasks are im
 	writeFileSync(join(runDirectory, "run.json"), JSON.stringify(historicalRun));
 	writeFileSync(join(taskDirectory, "task.json"), JSON.stringify({ id: "historical-task", runId: "historical-run", order: 1, status: "completed", completedAt: historicalRun.completedAt }));
 	const events = new Map();
+	const registeredTools = new Map();
 	const herdrCalls = [];
 	registerHerdrSubagents({
 		on(name, handler) { events.set(name, handler); },
-		registerTool() {},
+		registerTool(tool) { registeredTools.set(tool.name, tool); },
 		registerCommand() {},
 	}, {
 		herdr: {
@@ -180,6 +181,18 @@ assert.throws(() => applyTaskStatus(terminal, "running"), /terminal tasks are im
 	});
 	assert.deepEqual(herdrCalls, [], "Pi startup must not inspect or close historical Subagent tabs");
 	assert.deepEqual(JSON.parse(readFileSync(join(runDirectory, "run.json"), "utf8")), historicalRun, "Pi startup must not mutate historical Subagent records");
+	assert.equal(registeredTools.get("herdr_subagents")?.exposure, undefined, "Unconfigured Subagent execution must inherit Pi's exposure default");
+	assert.equal(registeredTools.get("herdr_subagents_control")?.exposure, undefined, "Unconfigured Subagent control must inherit Pi's exposure default");
+	mkdirSync(join(lifecycleRoot, ".pi"), { recursive: true });
+	writeFileSync(join(lifecycleRoot, ".pi", "herdr-subagents.json"), JSON.stringify({ exposure: "model-only" }));
+	const configuredTools = new Map();
+	registerHerdrSubagents({
+		on() {},
+		registerTool(tool) { configuredTools.set(tool.name, tool); },
+		registerCommand() {},
+	}, { herdr: {}, isEditor: () => false, configurationCwd: lifecycleRoot });
+	assert.equal(configuredTools.get("herdr_subagents")?.exposure, "model-only", "Project configuration can exclude Subagent execution from Codemode");
+	assert.equal(configuredTools.get("herdr_subagents_control")?.exposure, "model-only", "Project configuration applies consistently to both Subagent tools");
 }
 
 {

@@ -17,6 +17,7 @@ It verifies:
 - explicit failure when the process exits without a report;
 - parent cancellation of running and queued tasks;
 - startup isolation: a new Pi session neither mutates historical records nor closes their recorded Herdr tabs;
+- omitted exposure delegates both tools to Pi's default, while project configuration can consistently select model-only exposure;
 - immutable terminal task records;
 - idempotent duplicate reports and rejection of conflicting replacements;
 - keeping a settled child alive for focus-aware cleanup instead of force-exiting its TUI.

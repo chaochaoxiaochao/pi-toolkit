@@ -89,10 +89,12 @@ The orchestrator is the only writer of `run.json`, `task.json`, and promoted `re
 
 `herdr_subagents_control` supports `list`, `status`, `history`, `cancel`, and `cleanup`. Follow-up work is a new task or run; settled tasks are never revived.
 
+When `exposure` is absent, both tools omit the registration field and inherit Pi's default exposure. Set `"exposure": "model-only"` to keep explicit top-level model calls while excluding Codemode scripts and other nested tools, or `"exposure": "direct"` to request Pi's direct-and-nested behavior explicitly. Exposure is read when the extension loads, so use `/reload` or restart Pi after changing it.
+
 Use `/herdr-subagents focus <task-number>` to focus a running pane. `/herdr-subagents active`, `history`, `agents`, `models`, and `settings` provide compact inspection.
 
 ## Personas and settings
 
 Bundled personas are `worker`, `explorer`, `analyst`, and `reviewer`. Project personas can be added under `.pi/agents/` using the same frontmatter format as the bundled files. Access is declared as `read` or `write` and drives concurrency safety.
 
-Settings are read from the existing package configuration. `defaultConcurrency`, `maxConcurrency`, and `stalledWarningSeconds` remain supported.
+Settings are read from `~/.pi/agent/herdr-subagents.json` and the project-level `.pi/herdr-subagents.json`, with the project value taking precedence. Optional `exposure` accepts Pi's `model-only` or `direct`; omitting it delegates to Pi. `defaultConcurrency`, `maxConcurrency`, and `stalledWarningSeconds` remain supported.

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import type { AgentToolResult, ExtensionAPI, ExtensionCommandContext, Theme, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { Container, Editor, Text } from "@earendil-works/pi-tui";
-import { loadSubagentConfiguration } from "../src/config.ts";
+import { loadSubagentConfiguration, type ConfigurationPaths } from "../src/config.ts";
 import { CliHerdrAutomation, type HerdrAutomation } from "../src/herdr.ts";
 import { activeRunText } from "../src/monitor.ts";
 import { historyText, listSubagentHistory } from "../src/history.ts";
@@ -62,7 +62,7 @@ function renderToolResult(result: AgentToolResult<unknown>, _options: ToolRender
 	return new Text(content?.type === "text" ? content.text : "(no output)", 0, 0);
 }
 
-async function handleHerdrCommand(args: string, ctx: ExtensionCommandContext, fleet: FleetController): Promise<void> {
+async function handleHerdrCommand(args: string, ctx: ExtensionCommandContext, fleet: FleetController, registeredExposure: { value?: "direct" | "model-only"; source: string }): Promise<void> {
 	const section = args.trim() || "active";
 	if (section === "active") {
 		ctx.ui.notify(fleet.active ? activeRunText(fleet.active) : "No active Subagent run.", "info");
@@ -90,7 +90,7 @@ async function handleHerdrCommand(args: string, ctx: ExtensionCommandContext, fl
 	if (section === "settings") {
 		const settings = configuration.settings;
 		const values: Record<string, string | number | undefined> = { defaultConcurrency: settings.defaultConcurrency, maxConcurrency: settings.maxConcurrency, stalledWarningSeconds: settings.stalledWarningSeconds, defaultModel: settings.defaultModel, defaultThinking: settings.defaultThinking };
-		const lines = Object.entries(values).map(([key, value]) => `${key}=${String(value ?? "unset")} (${configuration.settingSources[key] ?? "built-in"})`);
+		const lines = [`exposure=${registeredExposure.value ?? "Pi default"} (${registeredExposure.source}; loaded at extension registration)`, ...Object.entries(values).map(([key, value]) => `${key}=${String(value ?? "unset")} (${configuration.settingSources[key] ?? "built-in"})`)];
 		if (configuration.diagnostics.length) lines.push("Diagnostics:", ...configuration.diagnostics);
 		ctx.ui.notify(lines.join("\n"), "info");
 		return;
@@ -100,6 +100,8 @@ async function handleHerdrCommand(args: string, ctx: ExtensionCommandContext, fl
 
 export interface HerdrSubagentsExtensionDependencies {
 	herdr?: HerdrAutomation;
+	configurationCwd?: string;
+	configurationPaths?: ConfigurationPaths;
 	execute?: typeof executeHerdrSubagents;
 	executeControl?: typeof executeHerdrSubagentsControl;
 	isEditor?: (value: unknown) => boolean;
@@ -121,6 +123,9 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 	const herdr = dependencies.herdr ?? new CliHerdrAutomation();
 	const execute = dependencies.execute ?? executeHerdrSubagents;
 	const executeControl = dependencies.executeControl ?? executeHerdrSubagentsControl;
+	const registrationConfiguration = loadSubagentConfiguration(dependencies.configurationCwd ?? process.cwd(), packageAgentsDir, undefined, dependencies.configurationPaths);
+	const exposure = registrationConfiguration.settings.exposure;
+	const registeredExposure = { value: exposure, source: registrationConfiguration.settingSources.exposure ?? "Pi" };
 	const isEditorComponent = dependencies.isEditor ?? ((value: unknown) => value instanceof Editor);
 	const fleet = new FleetController(herdr, isEditorComponent, dependencies.createFleetWidget, dependencies.fleetWidgetRuntime);
 	const runControllers = new Map<string, AbortController>();
@@ -141,6 +146,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 
 	pi.registerTool({
 		name: "herdr_subagents",
+		...(exposure ? { exposure } : {}),
 		label: "Herdr Subagents",
 		description: "Run one or more ordered tasks in visible, focusable Herdr Pi panes. concurrency 1 is strict serial execution; higher values form a bounded pool for read-only tasks. Write-capable tasks require concurrency 1. The call returns only after every task has one terminal completed, failed, or cancelled result. Complete results and Pi sessions stay in project-local records.",
 		promptSnippet: "Run focused work in visible Herdr subagents",
@@ -181,6 +187,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 
 	pi.registerTool({
 		name: "herdr_subagents_control",
+		...(exposure ? { exposure } : {}),
 		label: "Herdr Subagents Control",
 		description: "Inspect Herdr personas, query one run by ID, list run history, cancel active work, or remove an archived run. Use herdr_subagents to start new work.",
 		parameters: HerdrSubagentsControlParams,
@@ -231,7 +238,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 	pi.registerCommand("herdr-subagents", {
 		description: "Inspect effective subagent agents, models, and settings",
 		getArgumentCompletions: (prefix) => ["active", "history", "agents", "models", "settings", "focus "].filter((value) => value.startsWith(prefix)).map((value) => ({ value, label: value })),
-		handler: (args, ctx) => handleHerdrCommand(args, ctx, fleet),
+		handler: (args, ctx) => handleHerdrCommand(args, ctx, fleet, registeredExposure),
 	});
 }
 
