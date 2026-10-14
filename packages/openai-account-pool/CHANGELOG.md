@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-14 - v0.1.0
 
+- add OpenAI Codex account pooling with safe quota failover and live usage status
 - add multi-account failover for the openai-codex provider
 - Add `/codex_pool` with a continue/end loop that adds any number of ChatGPT accounts through the native OAuth flow and keeps an existing single login.
 - Switch accounts on proven subscription limits or proven authorization failures only, before any output reaches the conversation.
