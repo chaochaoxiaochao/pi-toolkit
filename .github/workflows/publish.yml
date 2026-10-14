@@ -29,10 +29,14 @@ jobs:
         run: |
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           test "$GITHUB_REF_NAME" = "v$PACKAGE_VERSION"
-          mapfile -t CHILD_MANIFESTS < <(git diff-tree --no-commit-id --name-only -r HEAD | grep -E '^packages/[^/]+/package.json$' || true)
-          test "${#CHILD_MANIFESTS[@]}" -le 1
-          if [[ "${#CHILD_MANIFESTS[@]}" -eq 1 ]]; then
-            PACKAGE_DIR=${CHILD_MANIFESTS[0]%/package.json}
+          # Initial child releases keep their predeclared 0.1.0 version, so package.json
+          # may be unchanged. The coordinated release always updates CHANGELOG.md.
+          mapfile -t CHILD_DIRS < <(git diff-tree --no-commit-id --name-only -r HEAD \
+            | sed -nE 's#^(packages/[^/]+)/(package.json|CHANGELOG.md)$#\1#p' \
+            | sort -u)
+          test "${#CHILD_DIRS[@]}" -le 1
+          if [[ "${#CHILD_DIRS[@]}" -eq 1 ]]; then
+            PACKAGE_DIR=${CHILD_DIRS[0]}
             SLUG=${PACKAGE_DIR#packages/}
             CHILD_VERSION=$(node -p "require('./$PACKAGE_DIR/package.json').version")
             CHILD_TAG="$SLUG-v$CHILD_VERSION"

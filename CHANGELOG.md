@@ -27,6 +27,8 @@
 
 ## Unreleased
 
+- detect initial child-package releases from their coordinated changelog update so CI does not skip npm publication when `package.json` remains at its predeclared `0.1.0`
+
 - Add opt-in Herdr Subagents persona extension sources, including npm/git Pi packages, with saved restart configuration and documented native package-resource semantics.
 - Harden Herdr Subagents cleanup checks with condition-based waits, lock/focus regressions, and retained failure diagnostics; keep production cleanup behavior unchanged.
 - Fix Herdr Subagents startup failures caused by stale idle observations and require real child-Agent smoke tests before releasing that package.
