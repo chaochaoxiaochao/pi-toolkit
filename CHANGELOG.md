@@ -24,6 +24,7 @@
 
 ## Unreleased
 
+- OpenAI Account Pool: restore `●本会话` after successful requests and failover across fresh command contexts; status and preference commands no longer reinstall the session provider.
 - Scope child and root release checks to their owned code, and run Herdr tests or the real Agent smoke only when Herdr is the target or changed since the previous root release.
 - OpenAI Account Pool: keep deterministic account priority and show it as `★首选`, separately from the session-local `●本会话` account; automatic mode uses account order rather than random selection.
 

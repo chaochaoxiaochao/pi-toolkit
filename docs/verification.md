@@ -1,5 +1,15 @@
 # Package split verification
 
+## OpenAI Account Pool: missing session marker (2026-10-14)
+
+- Reproduced before the fix with `tests/integration-session-status.mjs`: after a fixture quota failure on account #2 and successful failover to account #1, a fresh command context rendered account #1 without `●本会话`.
+- Keyed successful-account state and provider installation by `sessionManager.getSessionId()`. Status and preference commands no longer reinstall the provider or resample the session preference. Shutdown clears the session's state.
+- `npm --prefix packages/openai-account-pool test`: all ten suites passed. The new production-extension test uses Pi's real loader, runner and session manager; it covers TUI/RPC markers after failover, repeated command contexts, provider installation count, new-session isolation and first success, and shutdown/restart cleanup.
+- `PI_TEST_BINARY="$(command -v pi)" npm --prefix packages/openai-account-pool run load-test`: exit 0.
+- `npm pack ./packages/openai-account-pool --dry-run`: 33 files, including the new integration test.
+- `node tests/package-layout.mjs` and `git diff --check`: passed. Reviewed root README/AGENTS and manifests; installation boundaries are unchanged.
+- No real-account quota exhaustion, live terminal failover, media regeneration, or publication was performed. The tests use isolated temporary credentials and fixture HTTP responses only; the status layout itself is unchanged.
+
 ## Unbundling OpenAI Account Pool from the toolkit (2026-10-14)
 
 `pi install npm:@maxiaochao/pi-toolkit` no longer enables `@maxiaochao/pi-openai-account-pool`.

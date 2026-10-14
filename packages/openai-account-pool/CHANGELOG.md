@@ -1,3 +1,8 @@
+## Unreleased
+
+- Fix the missing `●本会话` marker after successful requests and quota failover by keying account state and provider installation by session ID, not transient extension context objects. Status and preference commands no longer reset the session's provider or sampled preference.
+- Add production-extension regression coverage using Pi's real loader, runner, fresh command contexts, TUI/RPC status, new-session isolation, and shutdown cleanup.
+
 ## 2026-10-14 - v0.1.6
 
 - clarify deterministic priority and session account status

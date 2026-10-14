@@ -274,12 +274,14 @@ async function handleCommand(
 export default function openaiAccountPool(pi: ExtensionAPI) {
 	let base: Provider | undefined;
 	let latest: ExtensionContext | undefined;
-	let installedFor: ExtensionContext | undefined;
+	let installedSessionId: string | undefined;
 	let statusPanel: { component: CodexPoolStatusWidget; tui: { requestRender(): void } } | undefined;
 	let statusController: AbortController | undefined;
 	let statusTimer: ReturnType<typeof setTimeout> | undefined;
 	let statusGeneration = 0;
-	const currentAccountBySession = new WeakMap<ExtensionContext, string>();
+	// Pi creates a fresh context for each event and command; object identity is not session identity.
+	const currentAccountBySession = new Map<string, string>();
+	const currentAccountId = (ctx: ExtensionContext) => currentAccountBySession.get(ctx.sessionManager.getSessionId());
 
 	const clearStatusPanel = (ctx: ExtensionContext) => {
 		statusController?.abort();
@@ -311,10 +313,10 @@ export default function openaiAccountPool(pi: ExtensionAPI) {
 		}, { placement: "aboveEditor" });
 		void (async () => {
 			try {
-				status = await readStatus(ctx, false, controller.signal, currentAccountBySession.get(ctx));
+				status = await readStatus(ctx, false, controller.signal, currentAccountId(ctx));
 				if (generation !== statusGeneration) return;
 				render();
-				status = await readStatus(ctx, true, controller.signal, currentAccountBySession.get(ctx));
+				status = await readStatus(ctx, true, controller.signal, currentAccountId(ctx));
 				if (generation !== statusGeneration) return;
 				loading = false;
 				render();
@@ -333,7 +335,8 @@ export default function openaiAccountPool(pi: ExtensionAPI) {
 
 	const install = async (ctx: ExtensionContext) => {
 		latest = ctx;
-		if (installedFor === ctx) return;
+		const sessionId = ctx.sessionManager.getSessionId();
+		if (installedSessionId === sessionId) return;
 		const current = ctx.modelRegistry.getProvider(PROVIDER_ID);
 		if (!current) return;
 		const wrappedBase = (current as Record<symbol, unknown>)[POOL_WRAPPER];
@@ -342,7 +345,7 @@ export default function openaiAccountPool(pi: ExtensionAPI) {
 			else if (wrappedBase === true) {
 				// Wrappers from older package versions do not retain their base provider.
 				// Keep them intact until the process restarts instead of wrapping twice.
-				installedFor = ctx;
+				installedSessionId = sessionId;
 				return;
 			} else base = current;
 		}
@@ -353,13 +356,13 @@ export default function openaiAccountPool(pi: ExtensionAPI) {
 			authPath,
 			statePath,
 			preferredAccountId,
-			onAccountSuccess: (accountId) => currentAccountBySession.set(ctx, accountId),
+			onAccountSuccess: (accountId) => currentAccountBySession.set(sessionId, accountId),
 			// Switch notes go to whichever context is current when the request runs.
 			notify: (message) => latest?.ui.notify(message, "warning"),
 		});
 		Object.defineProperty(wrapped, POOL_WRAPPER, { value: base, enumerable: false });
 		ctx.modelRegistry.registerProvider(wrapped);
-		installedFor = ctx;
+		installedSessionId = sessionId;
 	};
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -369,8 +372,12 @@ export default function openaiAccountPool(pi: ExtensionAPI) {
 	pi.on("session_shutdown", (_event, ctx) => {
 		statusGeneration += 1;
 		if (ctx.mode === "tui") clearStatusPanel(ctx);
-		if (latest === ctx) latest = undefined;
-		if (installedFor === ctx) installedFor = undefined;
+		const sessionId = ctx.sessionManager.getSessionId();
+		currentAccountBySession.delete(sessionId);
+		if (installedSessionId === sessionId) {
+			latest = undefined;
+			installedSessionId = undefined;
+		}
 	});
 
 	pi.registerCommand("codex_pool", {
@@ -378,7 +385,7 @@ export default function openaiAccountPool(pi: ExtensionAPI) {
 		getArgumentCompletions: codexPoolArgumentCompletions,
 		handler: async (args, ctx) => {
 			await install(ctx);
-			await handleCommand(args, ctx, () => base, showTuiStatus, (session) => currentAccountBySession.get(session));
+			await handleCommand(args, ctx, () => base, showTuiStatus, currentAccountId);
 		},
 	});
 }
