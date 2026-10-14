@@ -193,23 +193,23 @@ async function handleCommand(
 			const query = rest.join(" ");
 			if (query === "auto") {
 				await setDefaultAccount({ authPath, statePath, accountId: undefined });
-				ctx.ui.notify("已恢复自动选号，将从下一个新会话开始生效；当前会话不变。");
+				ctx.ui.notify("已恢复按编号确定优先级；本会话仍继续使用原账号。");
 				return;
 			}
 			const accounts = [...snapshot.accounts].sort((left, right) => left.ordinal - right.ordinal);
 			const current = await readPreferredAccountId(statePath);
 			const chosen = query
 				? resolveAccount(snapshot, query)
-				: await pickAccount(ctx, `新会话默认用哪个账号？当前设置：${current ? accountLabel(accounts.find((account) => account.id === current) ?? accounts[0]) : "自动"}`, accounts, [AUTOMATIC]);
+				: await pickAccount(ctx, `优先使用哪个账号？当前设置：${current ? accountLabel(accounts.find((account) => account.id === current) ?? accounts[0]) : "按编号"}`, accounts, [AUTOMATIC]);
 			if (chosen === undefined) return;
 			if (chosen === AUTOMATIC) {
 				await setDefaultAccount({ authPath, statePath, accountId: undefined });
-				ctx.ui.notify("已恢复自动选号，将从下一个新会话开始生效；当前会话不变。");
+				ctx.ui.notify("已恢复按编号确定优先级；本会话仍继续使用原账号。");
 				return;
 			}
 			const account = chosen as PoolAccount;
 			await setDefaultAccount({ authPath, statePath, accountId: account.id });
-			ctx.ui.notify(`新会话将从 ${accountLabel(account)} 开始；当前会话不变。它额度用完或需要重新授权时，仍会自动切到其他账号。`);
+			ctx.ui.notify(`已将 ${accountLabel(account)} 设为首选账号；本会话仍继续使用原账号。它额度用完或需要重新授权时，仍会自动切到其他账号。`);
 			return;
 		}
 

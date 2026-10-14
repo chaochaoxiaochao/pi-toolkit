@@ -379,11 +379,11 @@ async function setupPool(credentials = [
 		assert.doesNotMatch(status.accounts[0].label, /当前|默认/);
 		assert.match(status.accounts[1].label, /b@example\.com/);
 		assert.equal(status.accounts[0].isCurrent, false);
-		assert.equal(status.accounts[0].isPreferredForNextSession, true);
+		assert.equal(status.accounts[0].isPreferred, true);
 		assert.equal(status.accounts[1].isCurrent, true);
-		assert.equal(status.accounts[1].isPreferredForNextSession, false);
-		assert.match(formatAccountStatusLine(status.accounts[0]), /★下次$/);
-		assert.match(formatAccountStatusLine(status.accounts[1]), /●当前$/);
+		assert.equal(status.accounts[1].isPreferred, false);
+		assert.match(formatAccountStatusLine(status.accounts[0]), /★首选$/);
+		assert.match(formatAccountStatusLine(status.accounts[1]), /●本会话$/);
 		assert.doesNotMatch(status.accounts[1].label, /★默认/);
 		const theme = { fg: (_color, text) => text };
 		const widget = new CodexPoolStatusWidget(theme);
@@ -391,14 +391,14 @@ async function setupPool(credentials = [
 		widget.update(status, { loading: true });
 		const rendered = widget.render(160);
 		assert.match(rendered.join("\n"), /正在更新官网额度/);
-		const currentLine = rendered.find((line) => line.includes("●当前"));
-		const nextLine = rendered.find((line) => line.includes("★下次"));
+		const currentLine = rendered.find((line) => line.includes("●本会话"));
+		const preferredLine = rendered.find((line) => line.includes("★首选"));
 		assert.ok(currentLine, JSON.stringify(rendered));
-		assert.ok(nextLine, JSON.stringify(rendered));
-		assert.match(currentLine, /●当前$/);
+		assert.ok(preferredLine, JSON.stringify(rendered));
+		assert.match(currentLine, /●本会话$/);
 		const unusedSession = await poolStatus({ authPath: agent.authPath, statePath, now: NOW });
 		assert.equal(unusedSession.accounts.some((account) => account.isCurrent), false);
-		assert.doesNotMatch(unusedSession.accounts.map(formatAccountStatusLine).join("\n"), /●当前/);
+		assert.doesNotMatch(unusedSession.accounts.map(formatAccountStatusLine).join("\n"), /●本会话/);
 		for (const line of status.accounts) {
 			assert.match(line.detail, /5 小时已用 20%/);
 			assert.match(line.detail, /7 天已用 30%/);
@@ -409,22 +409,20 @@ async function setupPool(credentials = [
 	}
 }
 
-// A current account that is also preferred for the next session shows only the current marker.
+// Preference and session use are independent facts, so both markers remain visible.
 {
 	const account = {
 		label: "#2 (b@example.com)",
 		state: "ready",
 		detail: "可用",
 		isCurrent: true,
-		isPreferredForNextSession: true,
+		isPreferred: true,
 	};
-	assert.match(formatAccountStatusLine(account), /●当前$/);
-	assert.doesNotMatch(formatAccountStatusLine(account), /★下次/);
+	assert.match(formatAccountStatusLine(account), /★首选 ●本会话$/);
 	const widget = new CodexPoolStatusWidget({ fg: (_color, text) => text });
 	widget.update({ enabled: true, nativeLoginPresent: false, accounts: [account], summary: "" }, { loading: false });
 	const rendered = widget.render(120).join("\n");
-	assert.match(rendered, /●当前/);
-	assert.doesNotMatch(rendered, /★下次/);
+	assert.match(rendered, /★首选 ●本会话/);
 }
 
 // A failed live status lookup retains stored exhaustion and does not count the account as ready.

@@ -17,8 +17,7 @@ function stateColor(state: AccountState): "success" | "warning" | "error" {
 }
 
 export function formatAccountStatusLine(account: PoolStatus["accounts"][number]): string {
-	const showNext = account.isPreferredForNextSession && !account.isCurrent;
-	return `${account.label} ${account.detail}${showNext ? " ★下次" : ""}${account.isCurrent ? " ●当前" : ""}`;
+	return `${account.label} ${account.detail}${account.isPreferred ? " ★首选" : ""}${account.isCurrent ? " ●本会话" : ""}`;
 }
 
 export class CodexPoolStatusWidget {
@@ -52,8 +51,7 @@ export class CodexPoolStatusWidget {
 		for (const account of this.status?.accounts ?? []) {
 			const color = stateColor(account.state);
 			const base = `  ${this.theme.fg(color, marker(account.state))} ${this.theme.fg("accent", account.label)} ${this.theme.fg("text", account.detail)}`;
-			const showNext = account.isPreferredForNextSession && !account.isCurrent;
-			const suffix = `${showNext ? ` ${this.theme.fg("accent", "★下次")}` : ""}${account.isCurrent ? ` ${this.theme.fg("accent", "●当前")}` : ""}`;
+			const suffix = `${account.isPreferred ? ` ${this.theme.fg("accent", "★首选")}` : ""}${account.isCurrent ? ` ${this.theme.fg("accent", "●本会话")}` : ""}`;
 			const baseWidth = Math.max(0, width - visibleWidth(suffix));
 			lines.push(`${truncateToWidth(base, baseWidth)}${suffix}`);
 		}

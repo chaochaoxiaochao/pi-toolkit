@@ -187,7 +187,7 @@ export interface AccountStatusLine {
 	state: AccountState;
 	detail: string;
 	isCurrent: boolean;
-	isPreferredForNextSession: boolean;
+	isPreferred: boolean;
 }
 
 export interface PoolStatus {
@@ -199,7 +199,7 @@ export interface PoolStatus {
 }
 
 /**
- * Sets the account future sessions start from, or returns to automatic order with `undefined`.
+ * Sets the account future sessions prefer, or returns to deterministic account order with `undefined`.
  * Failover still applies: a pinned account that runs out of quota hands the request on.
  */
 export async function setDefaultAccount(input: { authPath: string; statePath: string; accountId: string | undefined }): Promise<PoolAccount | undefined> {
@@ -257,16 +257,17 @@ export async function poolStatus(input: {
 		now,
 		modelId: input.modelId,
 	});
+	const preferredAccountId = state.preferredAccountId ?? snapshot.accounts[0]?.id;
 	const accounts = availability.map((entry, index): AccountStatusLine => {
 		const account = snapshot.accounts[index];
 		const label = accountLabel(account);
 		const isCurrent = account.id === input.currentAccountId;
-		const isPreferredForNextSession = account.id === state.preferredAccountId;
+		const isPreferred = account.id === preferredAccountId;
 		const live = refreshById.get(account.id);
 		const usage = live?.usage ?? storedUsage(state.accounts[account.id]);
 		const usageText = live?.error ? "用量未知" : describeUsage(usage, now) ?? "用量未知";
-		if (entry.authInvalid) return { label, state: "reauth", detail: "需要重新授权，运行 /codex_pool 重新登录这个账号", isCurrent, isPreferredForNextSession };
-		if (entry.unavailable?.reason === "probe_in_progress") return { label, state: "probing", detail: "另一个进程正在重试", isCurrent, isPreferredForNextSession };
+		if (entry.authInvalid) return { label, state: "reauth", detail: "需要重新授权，运行 /codex_pool 重新登录这个账号", isCurrent, isPreferred };
+		if (entry.unavailable?.reason === "probe_in_progress") return { label, state: "probing", detail: "另一个进程正在重试", isCurrent, isPreferred };
 		if (entry.unavailable || (usage && !usageAvailable(usage))) {
 			const reset = entry.unavailable?.serverResetAtMs;
 			return {
@@ -274,10 +275,10 @@ export async function poolStatus(input: {
 				state: "cooling",
 				detail: `${usageText}；${reset ? `额度冷却中，约 ${Math.max(1, Math.round((reset - now) / 60_000))} 分钟后恢复` : "额度暂不可用"}`,
 				isCurrent,
-				isPreferredForNextSession,
+				isPreferred,
 			};
 		}
-		return { label, state: "ready", detail: `${usageText}；${entry.needsProbe ? "冷却已过，下次请求会先试这个账号" : "可用"}`, isCurrent, isPreferredForNextSession };
+		return { label, state: "ready", detail: `${usageText}；${entry.needsProbe ? "冷却已过，下次请求会先试这个账号" : "可用"}`, isCurrent, isPreferred };
 	});
 
 	const ready = accounts.filter((entry) => entry.state === "ready").length;

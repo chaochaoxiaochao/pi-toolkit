@@ -286,7 +286,7 @@ const paths = (agent) => ({ authPath: agent.authPath, statePath: poolStatePathFo
 }
 
 // ---------------------------------------------------------------------------
-// The next-session default is shared globally and dropped with its account.
+// The explicit preference is shared globally and dropped with its account.
 // ---------------------------------------------------------------------------
 {
 	const agent = makeAgentDir();
@@ -300,10 +300,11 @@ const paths = (agent) => ({ authPath: agent.authPath, statePath: poolStatePathFo
 		await runEnrollment({ authPath, statePath, ui });
 
 		assert.equal(await readPreferredAccountId(statePath), undefined, "no default until the user picks one");
+		assert.equal((await poolStatus({ authPath, statePath })).accounts[0].isPreferred, true, "automatic mode gives the first account highest priority");
 		const chosen = await setDefaultAccount({ authPath, statePath, accountId: ACCOUNT_B });
 		assert.equal(chosen.ordinal, 2);
 		assert.equal(await readPreferredAccountId(statePath), ACCOUNT_B, "the default lives in the shared state file");
-		assert.equal((await poolStatus({ authPath, statePath })).accounts[1].isPreferredForNextSession, true, "status identifies the next-session preference");
+		assert.equal((await poolStatus({ authPath, statePath })).accounts[1].isPreferred, true, "status identifies the preferred account");
 
 		await assert.rejects(() => setDefaultAccount({ authPath, statePath, accountId: "account-unknown" }), AccountQueryError);
 		assert.equal(await readPreferredAccountId(statePath), ACCOUNT_B, "a rejected pick leaves the default alone");
