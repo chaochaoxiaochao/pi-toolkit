@@ -174,7 +174,7 @@ export interface PoolStateFile {
 	schemaVersion: number;
 	policy: "sticky";
 	accounts: Record<string, AccountStateRecord>;
-	/** Account the user picked by hand. Outranks the per-process sticky choice while usable. */
+	/** Global preference sampled by each new session; changes do not reroute running sessions. */
 	preferredAccountId?: string;
 	/** Account that most recently completed a model request successfully. */
 	currentAccountId?: string;

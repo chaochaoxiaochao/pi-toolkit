@@ -26,8 +26,8 @@ Update it with `pi update npm:@maxiaochao/pi-openai-account-pool`. Installing al
 
 ```text
 /codex_pool                 添加账号：反复确认「继续 / 删除 / 结束」，继续一次就登录一个账号
-/codex_pool status          输入框上方立即显示彩色临时面板并在后台查询官网 5 小时/周额度；最近成功使用的账号在行末标 ●当前
-/codex_pool use             下拉选择默认从哪个账号开始（`use auto` 恢复自动）
+/codex_pool status          输入框上方立即显示彩色临时面板并在后台查询官网 5 小时/周额度；标出 ★下次 与 ●当前
+/codex_pool use             下拉选择新会话默认从哪个账号开始（`use auto` 恢复自动）
 /codex_pool remove          下拉选择要删除的账号（也可写 `remove 2` 或 `remove 邮箱`）
 /codex_pool off             恢复原生单账号登录
 ```
@@ -53,7 +53,7 @@ Update it with `pi update npm:@maxiaochao/pi-openai-account-pool`. Installing al
 
 - 凭据的权威来源仍是 `~/.pi/agent/auth.json`：每个账号一条独立条目，主 `openai-codex` 条目只存非秘密引用，不能当令牌使用。
 - 冷却与探测状态放在 `~/.pi/agent/openai-account-pool/state.json`，同机多个 pi 进程共享：一个进程撞到的额度上限，另一个进程下一次请求就会跳过。
-- 默认 sticky：一直用当前可用的账号，不轮询分摊。`/codex_pool use` 指定下次优先尝试哪个账号，跨进程生效，但 status 不给这个设置加徽标；只有最近成功承接模型请求的账号显示 `●当前`。它额度用完或需要重新授权时仍会自动切走。
+- 默认 sticky：一个会话一直用当前可用的账号，不轮询分摊。`/codex_pool use` 修改全局的新会话首选账号；设置后当前会话和已经运行的 subagent 不变，之后启动的普通会话和 subagent 才读取新值，避免运行中切换账号破坏提示缓存关联。`status` 用 `★下次` 标首选账号，用 `●当前` 标最近成功承接请求的账号。首选账号额度用完或需要重新授权时仍会自动切走。
 - 令牌过期是自动处理的：每次请求前在 `auth.json` 锁下用 refresh token 刷新，多进程只会兑换一次。只有 refresh token 本身被证明失效时才标为需重新授权，此时跑 `/codex_pool` 重新登录该账号即可。
 - 每个逻辑请求里每个账号最多作为一次切换候选；全部不可用时立即返回每个账号的脱敏状态，不会后台等待几小时。
 - 服务器给出恢复时间就显示恢复时间；没有给出就显示「未知」，只做短时本地探测退避。

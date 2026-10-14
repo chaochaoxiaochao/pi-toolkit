@@ -20,7 +20,7 @@ import {
 	type PoolAccount,
 	type PoolSnapshot,
 } from "./auth.ts";
-import { claimProbeLease, readAvailability, readPreferredAccountId, readSelectionState, recordFailure, recordSuccess, releaseProbeLease } from "./availability.ts";
+import { claimProbeLease, readAvailability, recordFailure, recordSuccess, releaseProbeLease } from "./availability.ts";
 import {
 	classifyFailure,
 	decideFailover,
@@ -49,6 +49,8 @@ export interface PoolRuntime {
 	lazyStream: (model: Model<Api>, setup: () => Promise<AsyncIterable<AssistantMessageEvent>>) => AssistantMessageEventStream;
 	authPath: string;
 	statePath: string;
+	/** Global preference sampled when this session started. Later writes apply to later sessions. */
+	preferredAccountId?: string;
 	now?: () => number;
 	/** Identifies this process while probing a recovered account. */
 	probeOwner?: string;
@@ -176,8 +178,8 @@ export function createPoolProvider(base: Provider, runtime: PoolRuntime): Provid
 	const now = runtime.now ?? (() => Date.now());
 	const probeOwner = runtime.probeOwner ?? `pid-${process.pid}`;
 	const oauth = base.auth.oauth;
-	/** Sticky account of this process: keep using what works until it stops working. */
-	let sticky: string | undefined;
+	/** Sticky account of this session: start from its sampled preference, then keep what works. */
+	let sticky = runtime.preferredAccountId;
 
 	const refreshWith = async (credential: AuthEntry, signal: AbortSignal | undefined): Promise<AuthEntry> => {
 		if (!oauth) throw new Error("openai-codex provider has no OAuth support.");
@@ -292,7 +294,7 @@ export function createPoolProvider(base: Provider, runtime: PoolRuntime): Provid
 
 		while (true) {
 			if (options?.signal?.aborted) throw new Error("Request was aborted");
-			const { availability, preferredAccountId } = await readSelectionState({
+			const availability = await readAvailability({
 				statePath: runtime.statePath,
 				accounts: snapshot.accounts,
 				now: now(),
@@ -300,8 +302,7 @@ export function createPoolProvider(base: Provider, runtime: PoolRuntime): Provid
 				probeOwner,
 			});
 			lastAvailability = availability;
-			// A hand-picked account outranks this process's sticky one for as long as it is usable.
-			const chosen = selectAccount({ accounts: availability, preferredId: preferredAccountId ?? sticky, attemptedIds: attempted });
+			const chosen = selectAccount({ accounts: availability, preferredId: sticky, attemptedIds: attempted });
 			if (!chosen) {
 				// Query live usage only when the request began with no local candidate. Once a
 				// model attempt has failed, a sweep must not erase `attempted` and replay it.
@@ -494,9 +495,8 @@ export function createPoolProvider(base: Provider, runtime: PoolRuntime): Provid
 	): Promise<TOptions | undefined> {
 		if (!usesPool(model, options as StreamOptions | undefined)) return options;
 		const snapshot = await loadPoolSnapshot(runtime.authPath);
-		const preferredAccountId = await readPreferredAccountId(runtime.statePath);
 		const byId = (wanted: string | undefined) => (wanted ? snapshot.accounts.find((candidate) => candidate.id === wanted) : undefined);
-		const account = byId(preferredAccountId) ?? byId(sticky) ?? snapshot.accounts[0];
+		const account = byId(sticky) ?? snapshot.accounts[0];
 		if (!account) throw new Error("ChatGPT 账号池没有可用账号，请运行 /codex_pool 添加账号。");
 		const fresh = await ensureFreshAccountCredential({
 			authPath: runtime.authPath,

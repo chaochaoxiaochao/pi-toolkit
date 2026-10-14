@@ -40,7 +40,7 @@ const CONTINUE = "继续：登录并添加一个账号";
 const REMOVE = "删除：从账号池里移除一个账号";
 const END = "结束：保留账号池和自动切换";
 const BACK = "返回：什么都不做";
-const AUTOMATIC = "自动：按编号顺序，用着哪个顺手就留在哪个";
+const AUTOMATIC = "自动：新会话按编号顺序，用着哪个顺手就留在哪个";
 const DIALOG_TITLE = "添加 Codex 账号";
 const STATUS_WIDGET_KEY = "openai-account-pool-status";
 const STATUS_VISIBLE_MS = 15_000;
@@ -191,23 +191,23 @@ async function handleCommand(
 			const query = rest.join(" ");
 			if (query === "auto") {
 				await setDefaultAccount({ authPath, statePath, accountId: undefined });
-				ctx.ui.notify("已恢复自动选号。");
+				ctx.ui.notify("已恢复自动选号，将从下一个新会话开始生效；当前会话不变。");
 				return;
 			}
 			const accounts = [...snapshot.accounts].sort((left, right) => left.ordinal - right.ordinal);
 			const current = await readPreferredAccountId(statePath);
 			const chosen = query
 				? resolveAccount(snapshot, query)
-				: await pickAccount(ctx, `默认用哪个账号？当前：${current ? accountLabel(accounts.find((account) => account.id === current) ?? accounts[0]) : "自动"}`, accounts, [AUTOMATIC]);
+				: await pickAccount(ctx, `新会话默认用哪个账号？当前设置：${current ? accountLabel(accounts.find((account) => account.id === current) ?? accounts[0]) : "自动"}`, accounts, [AUTOMATIC]);
 			if (chosen === undefined) return;
 			if (chosen === AUTOMATIC) {
 				await setDefaultAccount({ authPath, statePath, accountId: undefined });
-				ctx.ui.notify("已恢复自动选号。");
+				ctx.ui.notify("已恢复自动选号，将从下一个新会话开始生效；当前会话不变。");
 				return;
 			}
 			const account = chosen as PoolAccount;
 			await setDefaultAccount({ authPath, statePath, accountId: account.id });
-			ctx.ui.notify(`以后从 ${accountLabel(account)} 开始。它额度用完或需要重新授权时，仍会自动切到其他账号。`);
+			ctx.ui.notify(`新会话将从 ${accountLabel(account)} 开始；当前会话不变。它额度用完或需要重新授权时，仍会自动切到其他账号。`);
 			return;
 		}
 
@@ -272,6 +272,7 @@ async function handleCommand(
 export default function openaiAccountPool(pi: ExtensionAPI) {
 	let base: Provider | undefined;
 	let latest: ExtensionContext | undefined;
+	let installedFor: ExtensionContext | undefined;
 	let statusPanel: { component: CodexPoolStatusWidget; tui: { requestRender(): void } } | undefined;
 	let statusController: AbortController | undefined;
 	let statusTimer: ReturnType<typeof setTimeout> | undefined;
@@ -327,41 +328,52 @@ export default function openaiAccountPool(pi: ExtensionAPI) {
 		})();
 	};
 
-	const install = (ctx: ExtensionContext) => {
+	const install = async (ctx: ExtensionContext) => {
 		latest = ctx;
+		if (installedFor === ctx) return;
 		const current = ctx.modelRegistry.getProvider(PROVIDER_ID);
-		if (!current || (current as Record<symbol, unknown>)[POOL_WRAPPER]) {
-			base ??= current;
-			return;
+		if (!current) return;
+		const wrappedBase = (current as Record<symbol, unknown>)[POOL_WRAPPER];
+		if (!base) {
+			if (wrappedBase && wrappedBase !== true) base = wrappedBase as Provider;
+			else if (wrappedBase === true) {
+				// Wrappers from older package versions do not retain their base provider.
+				// Keep them intact until the process restarts instead of wrapping twice.
+				installedFor = ctx;
+				return;
+			} else base = current;
 		}
-		base = current;
 		const { authPath, statePath } = agentPaths();
-		const wrapped = createPoolProvider(current, {
+		const preferredAccountId = await readPreferredAccountId(statePath);
+		const wrapped = createPoolProvider(base, {
 			lazyStream,
 			authPath,
 			statePath,
+			preferredAccountId,
 			// Switch notes go to whichever context is current when the request runs.
 			notify: (message) => latest?.ui.notify(message, "warning"),
 		});
-		Object.defineProperty(wrapped, POOL_WRAPPER, { value: true, enumerable: false });
+		Object.defineProperty(wrapped, POOL_WRAPPER, { value: base, enumerable: false });
 		ctx.modelRegistry.registerProvider(wrapped);
+		installedFor = ctx;
 	};
 
-	pi.on("session_start", (_event, ctx) => {
-		install(ctx);
+	pi.on("session_start", async (_event, ctx) => {
+		await install(ctx);
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
 		statusGeneration += 1;
 		if (ctx.mode === "tui") clearStatusPanel(ctx);
-		latest = undefined;
+		if (latest === ctx) latest = undefined;
+		if (installedFor === ctx) installedFor = undefined;
 	});
 
 	pi.registerCommand("codex_pool", {
 		description: "添加并管理多个 ChatGPT 账号，额度耗尽时自动切换",
 		getArgumentCompletions: codexPoolArgumentCompletions,
 		handler: async (args, ctx) => {
-			install(ctx);
+			await install(ctx);
 			await handleCommand(args, ctx, () => base, showTuiStatus);
 		},
 	});

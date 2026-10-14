@@ -1,3 +1,7 @@
+## Unreleased
+
+- OpenAI Account Pool: apply `/codex_pool use` only to new sessions and subagents, preserving the current session's account for prompt-cache stability and labeling the global choice as `★下次` in status.
+
 ## 2026-10-14 - v0.11.10
 
 - openai-account-pool v0.1.2: document that toolkit 0.11.9 was the last version to embed this package

@@ -128,7 +128,7 @@ export interface AccountAvailability {
 
 export interface SelectionInput {
 	accounts: AccountAvailability[];
-	/** Sticky preference of this process: keep using the account that currently works. */
+	/** Sticky preference of this session: keep using the account that currently works. */
 	preferredId?: string;
 	/** Accounts this logical request already tried, so no account is tried twice. */
 	attemptedIds: readonly string[];

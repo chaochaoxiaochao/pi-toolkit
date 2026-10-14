@@ -87,23 +87,11 @@ export async function readAvailability(input: {
 	return availabilityFor({ ...input, state: await readPoolState(input.statePath) });
 }
 
-/** Availability and the manual preference from one read, so a request sees one consistent state. */
-export async function readSelectionState(input: {
-	statePath: string;
-	accounts: readonly PoolAccount[];
-	now: number;
-	modelId?: string;
-	probeOwner?: string;
-}): Promise<{ availability: AccountAvailability[]; preferredAccountId?: string }> {
-	const state = await readPoolState(input.statePath);
-	return { availability: availabilityFor({ ...input, state }), preferredAccountId: state.preferredAccountId };
-}
-
 export async function readPreferredAccountId(statePath: string): Promise<string | undefined> {
 	return (await readPoolState(statePath)).preferredAccountId;
 }
 
-/** Pins the account every process starts from, or clears the pin when given `undefined`. */
+/** Sets the account future sessions start from, or clears the preference with `undefined`. */
 export async function setPreferredAccountId(input: { statePath: string; accountId: string | undefined }): Promise<void> {
 	await withPoolStateTransaction(input.statePath, (state) => {
 		if (state.preferredAccountId === input.accountId) return { result: undefined };

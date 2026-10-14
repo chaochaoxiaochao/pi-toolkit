@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 import { commitAccount, loadPoolSnapshot } from "../src/auth.ts";
-import { availabilityFor, claimProbeLease, recordFailure, recordSuccess } from "../src/availability.ts";
+import { availabilityFor, claimProbeLease, recordFailure, recordSuccess, setPreferredAccountId } from "../src/availability.ts";
 import { poolStatus } from "../src/enrollment.ts";
 import { CodexPoolStatusWidget, formatAccountStatusLine } from "../src/status-widget.ts";
 import { poolStatePathFor, readPoolState } from "../src/store.ts";
@@ -358,11 +358,12 @@ async function setupPool(credentials = [
 	assert.equal(accountReadyAtMs({ account, record, now: NOW, modelId: "wanted" }), undefined);
 }
 
-// Status queries all accounts, shows email and usage, and marks only the last successful account.
+// Status queries all accounts, shows email and usage, and distinguishes current from next-session preference.
 {
 	const { agent, statePath, snapshot } = await setupPool();
 	try {
 		await recordSuccess({ statePath, account: snapshot.accounts[1], requestStartedAtMs: NOW });
+		await setPreferredAccountId({ statePath, accountId: ACCOUNT_A });
 		const queried = [];
 		const status = await poolStatus({
 			authPath: agent.authPath,
@@ -377,7 +378,10 @@ async function setupPool(credentials = [
 		assert.doesNotMatch(status.accounts[0].label, /当前|默认/);
 		assert.match(status.accounts[1].label, /b@example\.com/);
 		assert.equal(status.accounts[0].isCurrent, false);
+		assert.equal(status.accounts[0].isPreferredForNextSession, true);
 		assert.equal(status.accounts[1].isCurrent, true);
+		assert.equal(status.accounts[1].isPreferredForNextSession, false);
+		assert.match(formatAccountStatusLine(status.accounts[0]), /★下次$/);
 		assert.match(formatAccountStatusLine(status.accounts[1]), /●当前$/);
 		assert.doesNotMatch(status.accounts[1].label, /★默认/);
 		const theme = { fg: (_color, text) => text };
@@ -387,7 +391,9 @@ async function setupPool(credentials = [
 		const rendered = widget.render(160);
 		assert.match(rendered.join("\n"), /正在更新官网额度/);
 		const currentLine = rendered.find((line) => line.includes("●当前"));
+		const nextLine = rendered.find((line) => line.includes("★下次"));
 		assert.ok(currentLine, JSON.stringify(rendered));
+		assert.ok(nextLine, JSON.stringify(rendered));
 		assert.match(currentLine, /●当前$/);
 		for (const line of status.accounts) {
 			assert.match(line.detail, /5 小时已用 20%/);

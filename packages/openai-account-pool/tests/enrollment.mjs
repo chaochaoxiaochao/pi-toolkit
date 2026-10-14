@@ -286,7 +286,7 @@ const paths = (agent) => ({ authPath: agent.authPath, statePath: poolStatePathFo
 }
 
 // ---------------------------------------------------------------------------
-// The hand-picked default is shared across processes and dropped with its account.
+// The next-session default is shared globally and dropped with its account.
 // ---------------------------------------------------------------------------
 {
 	const agent = makeAgentDir();
@@ -303,7 +303,7 @@ const paths = (agent) => ({ authPath: agent.authPath, statePath: poolStatePathFo
 		const chosen = await setDefaultAccount({ authPath, statePath, accountId: ACCOUNT_B });
 		assert.equal(chosen.ordinal, 2);
 		assert.equal(await readPreferredAccountId(statePath), ACCOUNT_B, "the default lives in the shared state file");
-		assert.doesNotMatch((await poolStatus({ authPath, statePath })).accounts[1].label, /★默认/, "manual preference is not a user-facing status badge");
+		assert.equal((await poolStatus({ authPath, statePath })).accounts[1].isPreferredForNextSession, true, "status identifies the next-session preference");
 
 		await assert.rejects(() => setDefaultAccount({ authPath, statePath, accountId: "account-unknown" }), AccountQueryError);
 		assert.equal(await readPreferredAccountId(statePath), ACCOUNT_B, "a rejected pick leaves the default alone");

@@ -132,8 +132,8 @@ function exhaustedUsageResponse() {
 	});
 }
 
-function poolRuntime(agent, statePath, notes, usageFetch = async () => exhaustedUsageResponse()) {
-	return { lazyStream, authPath: agent.authPath, statePath, probeOwner: "test-owner", notify: (message) => notes.push(message), usageFetch };
+function poolRuntime(agent, statePath, notes, usageFetch = async () => exhaustedUsageResponse(), preferredAccountId) {
+	return { lazyStream, authPath: agent.authPath, statePath, probeOwner: "test-owner", notify: (message) => notes.push(message), usageFetch, preferredAccountId };
 }
 
 // ---------------------------------------------------------------------------
@@ -518,7 +518,7 @@ function poolRuntime(agent, statePath, notes, usageFetch = async () => exhausted
 }
 
 // ---------------------------------------------------------------------------
-// A hand-picked default decides where a request starts, and still fails over.
+// A hand-picked default is sampled for a new session, then stays stable for that session.
 // ---------------------------------------------------------------------------
 {
 	const { agent, statePath } = await setupPool();
@@ -526,13 +526,29 @@ function poolRuntime(agent, statePath, notes, usageFetch = async () => exhausted
 		await setPreferredAccountId({ statePath, accountId: ACCOUNT_B });
 		const log = { attempts: [], refreshes: [], fetches: [] };
 		const notes = [];
-		const provider = createPoolProvider(scriptedProvider([{ kind: "ok", text: "from b" }], log), poolRuntime(agent, statePath, notes));
+		const provider = createPoolProvider(
+			scriptedProvider([{ kind: "ok", text: "from b" }], log),
+			poolRuntime(agent, statePath, notes, undefined, ACCOUNT_B),
+		);
+		await setPreferredAccountId({ statePath, accountId: ACCOUNT_A });
 		await collect(provider.stream(MODEL, CONTEXT, { apiKey: POOL_UNRESOLVED_API_KEY, fetch: scriptedFetch([], log) }));
-		assert.equal(accountIdOf({ access: log.attempts[0].apiKey }), ACCOUNT_B, "the pinned account is used even though it is not the first one");
+		assert.equal(accountIdOf({ access: log.attempts[0].apiKey }), ACCOUNT_B, "changing the global default does not change an existing session");
+
+		const nextSessionLog = { attempts: [], refreshes: [], fetches: [] };
+		const nextSession = createPoolProvider(
+			scriptedProvider([{ kind: "ok", text: "from a" }], nextSessionLog),
+			poolRuntime(agent, statePath, notes, undefined, ACCOUNT_A),
+		);
+		await collect(nextSession.stream(MODEL, CONTEXT, { apiKey: POOL_UNRESOLVED_API_KEY, fetch: scriptedFetch([], nextSessionLog) }));
+		assert.equal(accountIdOf({ access: nextSessionLog.attempts[0].apiKey }), ACCOUNT_A, "a new session uses the new global default");
 
 		// Pinning is a starting point, not a cage: a used-up default still hands the request on.
+		await setPreferredAccountId({ statePath, accountId: ACCOUNT_B });
 		const failover = { attempts: [], refreshes: [], fetches: [] };
-		const second = createPoolProvider(scriptedProvider([{ kind: "quota" }, { kind: "ok", text: "from a" }], failover), poolRuntime(agent, statePath, notes));
+		const second = createPoolProvider(
+			scriptedProvider([{ kind: "quota" }, { kind: "ok", text: "from a" }], failover),
+			poolRuntime(agent, statePath, notes, undefined, ACCOUNT_B),
+		);
 		const events = await collect(
 			second.stream(MODEL, CONTEXT, {
 				apiKey: POOL_UNRESOLVED_API_KEY,
