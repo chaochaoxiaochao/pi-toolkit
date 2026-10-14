@@ -36,6 +36,8 @@ The reproducible source recording is retained as [`docs/demo.webm`](docs/demo.we
 
 Each task starts a single-task interactive Pi process in its own Herdr pane. Herdr first confirms the interactive Pi is ready, then the prompt is delivered exactly once. Prompt acknowledgement never decides task completion. Panes remain ordinary Herdr panes: they can be focused and inspected while work is running or after it settles. An early-finishing child stays at the Pi UI while sibling tasks continue. After the whole run settles, cleanup closes an unfocused run tab immediately or waits for the user to leave a focused run tab.
 
+Cleanup belongs to the Pi session that created the run. Starting a new Pi session never scans historical runs or closes their recorded Herdr tabs. If Pi terminates before shutdown cleanup runs, any surviving Subagent tab remains visible for explicit inspection or cleanup.
+
 ## Result protocol
 
 The child must call `subagent_report` once with a terminal status:

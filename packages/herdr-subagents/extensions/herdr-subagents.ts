@@ -6,8 +6,7 @@ import { loadSubagentConfiguration } from "../src/config.ts";
 import { CliHerdrAutomation, type HerdrAutomation } from "../src/herdr.ts";
 import { activeRunText } from "../src/monitor.ts";
 import { historyText, listSubagentHistory } from "../src/history.ts";
-import { cancelQueuedRuns, loadQueuedRuns } from "../src/queued-runs.ts";
-import { cancelActiveSubagentRuns, reconcileSubagentRuns } from "../src/reconcile.ts";
+import { cancelActiveSubagentRuns } from "../src/reconcile.ts";
 import { executeHerdrSubagents, executeHerdrSubagentsControl, type HerdrSubagentsBatchDetails, type HerdrSubagentsControlToolParams, type HerdrSubagentsRunParams } from "../src/tool.ts";
 import { HerdrSubagentsControlParams, HerdrSubagentsParams } from "../src/parameters.ts";
 import { HERDR_ACTIONS } from "../src/validation.ts";
@@ -108,19 +107,6 @@ export interface HerdrSubagentsExtensionDependencies {
 	fleetWidgetRuntime?: FleetWidgetRuntime;
 }
 
-async function recoverParentSession(cwd: string, herdr: HerdrAutomation, owner: { sessionId?: string; processId: number }, notify: (message: string) => void): Promise<void> {
-	try {
-		const queued = await loadQueuedRuns(cwd, notify);
-		await cancelQueuedRuns(cwd, queued.map((run) => run.runId), { reason: "Owning parent Pi session is no longer active.", owner, onlyOrphaned: true, onError: notify });
-	}
-	catch (error) { notify(`Subagent queue recovery failed: ${error instanceof Error ? error.message : String(error)}`); }
-	try {
-		const reconciliation = await reconcileSubagentRuns(cwd, herdr, owner);
-		for (const message of reconciliation.cleanupErrors) notify(message);
-	}
-	catch (error) { notify(`Subagent recovery could not inspect active runs: ${error instanceof Error ? error.message : String(error)}`); }
-}
-
 async function shutdownParentSession(options: { cwd: string; herdr: HerdrAutomation; owner: { sessionId?: string; processId: number }; fleet: FleetController; sessionController: AbortController; runControllers: Map<string, AbortController>; inFlight: Set<Promise<unknown>>; notify: (message: string) => void }): Promise<void> {
 	options.sessionController.abort(new Error("Parent Pi session closed."));
 	for (const controller of options.runControllers.values()) controller.abort(new Error("Parent Pi session closed."));
@@ -146,12 +132,11 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 	pi.on("session_shutdown", async (_event, ctx) => {
 		await shutdownParentSession({ cwd: ctx.cwd, herdr, owner: { sessionId: ownerSessionId, processId: process.pid }, fleet, sessionController, runControllers, inFlight, notify: (message) => ctx.ui.notify(message, "error") });
 	});
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", (_event, ctx) => {
 		sessionController.abort(new Error("Parent Pi session changed."));
 		sessionController = new AbortController();
 		ownerSessionId = `${ctx.sessionManager.getSessionId()}:${randomUUID()}`;
 		fleet.bind(ctx.ui, ctx.mode === "tui");
-		await recoverParentSession(ctx.cwd, herdr, { sessionId: ownerSessionId, processId: process.pid }, (message) => ctx.ui.notify(message, "error"));
 	});
 
 	pi.registerTool({

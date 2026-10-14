@@ -107,6 +107,6 @@ There is no fixed drain delay and no transcript parsing. Pi retries are internal
 
 Writing the same report again is idempotent. A conflicting replacement is rejected.
 
-## Cancellation and recovery
+## Cancellation and shutdown
 
-Caller or parent-session cancellation aborts active waits, marks nonterminal tasks cancelled, and closes the owned Herdr tab. Startup recovery is scoped by recorded parent ownership and retains readers for prior record formats. Recovery never resumes or mutates an already terminal task.
+Caller or parent-session cancellation aborts active waits, marks nonterminal tasks cancelled, and closes the Herdr tab owned by that session. A new Pi session never scans, mutates, resumes, or closes historical runs during startup. If Pi is terminated before its shutdown handlers run, its visible Subagent tabs remain for explicit user inspection or cleanup.

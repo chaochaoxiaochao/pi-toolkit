@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { runHerdrSubagentsBatch } from "../src/batch-runner.ts";
 import registerSubagentReport from "../extensions/subagent-report.ts";
+import { registerHerdrSubagents } from "../extensions/herdr-subagents.ts";
 import { applyTaskStatus } from "../src/records.ts";
 
 process.env.HERDR_ENV = "1";
@@ -149,6 +150,37 @@ await assert.rejects(() => run([task("writer", "edit", "write"), task("reader", 
 
 const terminal = { id: "task", runId: "run", order: 1, status: "completed" };
 assert.throws(() => applyTaskStatus(terminal, "running"), /terminal tasks are immutable/);
+
+{
+	const lifecycleRoot = join(root, "startup-history-isolation");
+	const runDirectory = join(lifecycleRoot, ".pi", "herdr-subagents", "runs", "historical-run");
+	const taskDirectory = join(runDirectory, "tasks", "01-task");
+	mkdirSync(taskDirectory, { recursive: true });
+	const historicalRun = { id: "historical-run", label: "historical", status: "completed", ownerSessionId: "old-session", ownerProcessId: 99999999, tabId: "w1:t-reused", taskIds: ["historical-task"], completedAt: "2026-10-01T00:00:00.000Z" };
+	writeFileSync(join(runDirectory, "run.json"), JSON.stringify(historicalRun));
+	writeFileSync(join(taskDirectory, "task.json"), JSON.stringify({ id: "historical-task", runId: "historical-run", order: 1, status: "completed", completedAt: historicalRun.completedAt }));
+	const events = new Map();
+	const herdrCalls = [];
+	registerHerdrSubagents({
+		on(name, handler) { events.set(name, handler); },
+		registerTool() {},
+		registerCommand() {},
+	}, {
+		herdr: {
+			async isTabFocused(tabId) { herdrCalls.push(["isTabFocused", tabId]); return false; },
+			async closeTab(tabId) { herdrCalls.push(["closeTab", tabId]); },
+		},
+		isEditor: () => false,
+	});
+	await events.get("session_start")?.({}, {
+		cwd: lifecycleRoot,
+		mode: "rpc",
+		sessionManager: { getSessionId: () => "new-session" },
+		ui: { notify() {} },
+	});
+	assert.deepEqual(herdrCalls, [], "Pi startup must not inspect or close historical Subagent tabs");
+	assert.deepEqual(JSON.parse(readFileSync(join(runDirectory, "run.json"), "utf8")), historicalRun, "Pi startup must not mutate historical Subagent records");
+}
 
 {
 	const directory = join(root, "report-idempotency");

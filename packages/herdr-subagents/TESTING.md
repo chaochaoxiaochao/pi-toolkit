@@ -16,6 +16,7 @@ It verifies:
 - waiting through a delayed authoritative report after a prompt transport error while the Pi process is alive;
 - explicit failure when the process exits without a report;
 - parent cancellation of running and queued tasks;
+- startup isolation: a new Pi session neither mutates historical records nor closes their recorded Herdr tabs;
 - immutable terminal task records;
 - idempotent duplicate reports and rejection of conflicting replacements;
 - keeping a settled child alive for focus-aware cleanup instead of force-exiting its TUI.
