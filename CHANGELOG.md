@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-14 - v0.11.13
 
+- openai-account-pool v0.1.4: hide the redundant next-session marker when it matches the current account
 - hide the redundant OpenAI Account Pool `★下次` marker when it matches `●当前`
 
 ## 2026-10-14 - v0.11.12

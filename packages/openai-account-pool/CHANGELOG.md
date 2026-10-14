@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-14 - v0.1.4
 
+- hide the redundant next-session marker when it matches the current account
 - Hide the redundant `★下次` status marker when the next-session preference is already the current account.
 
 ## 2026-10-14 - v0.1.3
