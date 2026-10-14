@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-14 - v0.5.1
 
+- fix focus-safe run cleanup and compact report output
 - keep settled child Pi TUIs alive until focus-aware tab cleanup, preventing abrupt exits and leaked ANSI control sequences in focused panes
 - render report submission compactly and return only each task's complete-result path to the parent model
 

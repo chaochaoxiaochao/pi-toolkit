@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-14 - v0.11.14
 
+- herdr-subagents v0.5.1: fix focus-safe run cleanup and compact report output
 - fix Herdr Subagents so completed child Pi panes remain inspectable while focused and close cleanly after focus leaves, without raw ANSI fragments from forced TUI exits
 - keep large Subagent results on disk while showing compact report calls and one result path per task to the parent model
 
