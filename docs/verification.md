@@ -7,9 +7,9 @@
 - `npm --prefix packages/herdr-subagents run load-test`, `npm run load-test`, and an isolated real-Pi startup probe: passed. The probe inspected the actual registered tool and confirmed `tasks[].agent` is required.
 - `HERDR_SUBAGENTS_E2E_FOCUS_CLEANUP=1 npm --prefix packages/herdr-subagents run test:real-herdr`: passed for one real child and two concurrent children, including deferred cleanup while focused, restored workspace/tab focus, and automatic tab cleanup.
 - Child and root `npm pack --dry-run`: passed (54 and 164 files). `node tests/package-layout.mjs` and `git diff --check`: passed.
-- Root `npm test` did not pass: `tests/release-check.mjs:18` assumes the account-pool routing fixture sees no Herdr changes, while the release planner intentionally detects this uncommitted Herdr modification. Retrying without Herdr environment variables produced the same failure. The release scripts were left unchanged.
-- All remaining root-suite commands were run separately and passed: Todo, Cache Export (18 browser E2E checks, zero skipped), Codex Edit, OpenAI Account Pool, Scheduler, Worktree, and BTW; the Herdr suite also passed as noted above. This does not turn the failed aggregate root command into a passing result.
-- Reviewed root AGENTS and both manifests; no instruction, dependency, version, or packaging changes were needed. Role prompts and skills remain unchanged. No media regeneration, installation, or publication was performed; installed/running sessions are unchanged.
+- Root `npm test` initially failed at `tests/release-check.mjs:18`: the routing fixture assumes no uncommitted Herdr changes. After committing the implementation, the full root `npm test` passed without changing the release scripts.
+- All package suites and BTW passed, both separately and in the full root run. Cache Export browser E2E completed 18 checks with zero skipped; Codex Edit regenerated its reports without leaving changes.
+- Reviewed root AGENTS and both manifests; no instruction, dependency, or packaging changes were needed. Role prompts and skills remain unchanged. No media regeneration or local installation was performed; installed/running sessions are unchanged. The required task parameter is an interface change, so the coordinated release uses minor version bumps for both 0.x packages.
 
 ## OpenAI Account Pool: missing session marker (2026-10-14)
 
