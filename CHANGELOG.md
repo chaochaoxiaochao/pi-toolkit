@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-15 - v0.12.0
 
+- herdr-subagents v0.6.0: require explicit task Personas and clarify concise tool descriptions
 - Require an explicit Herdr Subagents Persona for every new task, clarify concise tool descriptions, and identify tasks with conflicting write access in parallel requests.
 
 ## 2026-10-15 - v0.11.22
