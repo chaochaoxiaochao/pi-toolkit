@@ -159,6 +159,7 @@ assert.throws(() => applyTaskStatus(terminal, "running"), /terminal tasks are im
 	const historicalRun = { id: "historical-run", label: "historical", status: "completed", ownerSessionId: "old-session", ownerProcessId: 99999999, tabId: "w1:t-reused", taskIds: ["historical-task"], completedAt: "2026-10-01T00:00:00.000Z" };
 	writeFileSync(join(runDirectory, "run.json"), JSON.stringify(historicalRun));
 	writeFileSync(join(taskDirectory, "task.json"), JSON.stringify({ id: "historical-task", runId: "historical-run", order: 1, status: "completed", completedAt: historicalRun.completedAt }));
+	const configurationPaths = { globalConfig: join(lifecycleRoot, "global-config.json") };
 	const events = new Map();
 	const registeredTools = new Map();
 	const herdrCalls = [];
@@ -172,6 +173,8 @@ assert.throws(() => applyTaskStatus(terminal, "running"), /terminal tasks are im
 			async closeTab(tabId) { herdrCalls.push(["closeTab", tabId]); },
 		},
 		isEditor: () => false,
+		configurationCwd: lifecycleRoot,
+		configurationPaths,
 	});
 	await events.get("session_start")?.({}, {
 		cwd: lifecycleRoot,
@@ -190,7 +193,7 @@ assert.throws(() => applyTaskStatus(terminal, "running"), /terminal tasks are im
 		on() {},
 		registerTool(tool) { configuredTools.set(tool.name, tool); },
 		registerCommand() {},
-	}, { herdr: {}, isEditor: () => false, configurationCwd: lifecycleRoot });
+	}, { herdr: {}, isEditor: () => false, configurationCwd: lifecycleRoot, configurationPaths });
 	assert.equal(configuredTools.get("herdr_subagents")?.exposure, "model-only", "Project configuration can exclude Subagent execution from Codemode");
 	assert.equal(configuredTools.get("herdr_subagents_control")?.exposure, "model-only", "Project configuration applies consistently to both Subagent tools");
 }

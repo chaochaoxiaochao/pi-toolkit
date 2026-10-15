@@ -1,3 +1,8 @@
+## Unreleased
+
+- Preserve the configured analyst model, thinking level, and explicit authentication extensions in isolated real-Herdr smoke tests; append the concurrent package probe without replacing those extensions.
+- Add deterministic smoke-configuration coverage and isolate exposure test fixtures from personal settings.
+
 ## 2026-10-14 - v0.5.3
 
 - allow optional Pi-native tool exposure while inheriting Pi defaults when unset

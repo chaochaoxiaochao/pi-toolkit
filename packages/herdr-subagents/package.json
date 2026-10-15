@@ -37,7 +37,7 @@
     "typebox": "*"
   },
   "scripts": {
-    "test": "node --experimental-strip-types tests/core-state-machine.mjs",
+    "test": "node --experimental-strip-types tests/core-state-machine.mjs && node --experimental-strip-types tests/real-herdr-config.test.mjs",
     "test:real-herdr": "node --experimental-strip-types tests/real-herdr-smoke.mjs",
     "load-test": "env -u PI_HERDR_SUBAGENTS_CHILD \"${PI_TEST_BINARY:-pi}\" -ne -ns --no-session -e ./tests/extension-contract.ts && env -u PI_HERDR_SUBAGENTS_CHILD \"${PI_TEST_BINARY:-pi}\" -ne -ns --no-session -e ./extensions/herdr-subagents.ts && node --experimental-strip-types tests/extension-sources-load.mjs",
     "test:legacy": "node --experimental-strip-types tests/run-tests.mjs && node --experimental-strip-types tests/cleanup-timing.mjs"

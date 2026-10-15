@@ -39,7 +39,7 @@ Restart Pi after updating. `pi update --extensions` has the same effect when upd
 
 Each child README owns its feature description, motivation or upstream alignment, examples, screenshots/demos, configuration, and test documentation.
 
-Herdr Subagents personas can opt into local extension files or npm/git Pi packages through `extensions`. This uses native Pi package semantics: package-provided skills, prompt templates, and themes may also load, and `--no-skills` does not exclude explicitly selected package skills. See the [extension-source contract](packages/herdr-subagents/README.md#explicit-extension-sources-and-pi-packages) for precedence, isolation, and examples.
+Herdr Subagents personas can opt into local extension files or npm/git Pi packages through `extensions`. This uses native Pi package semantics: package-provided skills, prompt templates, and themes may also load, and `--no-skills` does not exclude explicitly selected package skills. See the [extension-source contract](packages/herdr-subagents/README.md#explicit-extension-sources-and-pi-packages) for precedence, isolation, and examples. The [real Herdr smoke test](packages/herdr-subagents/TESTING.md) preserves the configured analyst model and explicit authentication extensions while isolating unrelated settings.
 
 Multiple standalone children may be installed together. `pi-openai-account-pool` may also be installed alongside the complete toolkit because the toolkit does not embed it. Every other child in the table above is embedded, so a second install exposes the same resource twice.
 

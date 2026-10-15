@@ -321,4 +321,4 @@ Use `/herdr-subagents agents`, `/herdr-subagents models`, and `/herdr-subagents 
 
 ## Development and tests
 
-See [TESTING.md](TESTING.md) for deterministic tests, extension loading, packaging, and real Herdr smoke requirements.
+See [TESTING.md](TESTING.md) for deterministic tests, extension loading, packaging, and real Herdr smoke requirements. The real smoke preserves your configured `analyst` model, thinking level, and explicit extensions (including authentication providers) inside its isolated fixture; unrelated Persona settings remain isolated.

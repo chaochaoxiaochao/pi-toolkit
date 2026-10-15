@@ -7,12 +7,14 @@ import { fileURLToPath } from "node:url";
 import { executeHerdrSubagents } from "../src/tool.ts";
 import { CliHerdrAutomation } from "../src/herdr.ts";
 import { waitFor } from "./wait-for.mjs";
+import { smokePersona } from "./real-herdr-config.mjs";
 
 if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_WORKSPACE_ID) {
 	throw new Error("The real Herdr smoke test must run from a Pi session inside Herdr.");
 }
 
 const packageDirectory = dirname(dirname(fileURLToPath(import.meta.url)));
+const runtimePersona = smokePersona(process.env.INIT_CWD || process.cwd(), join(packageDirectory, "agents"), process.env.HERDR_SUBAGENTS_E2E_MODEL);
 const root = mkdtempSync(join(tmpdir(), "pi-herdr-subagents-real-"));
 const herdr = new CliHerdrAutomation();
 const tabIds = new Set();
@@ -47,7 +49,6 @@ for (const method of ["createTab", "splitPane", "startAgent", "isTabFocused", "w
 		}
 	};
 }
-const model = process.env.HERDR_SUBAGENTS_E2E_MODEL?.trim();
 const configurationPaths = {
 	globalConfig: join(root, "global-config.json"),
 	projectConfig: join(root, "project-config.json"),
@@ -94,7 +95,9 @@ async function waitForCleanup(result) {
 	}, `cleanup of ${result.tabId}`, 5_000);
 }
 
-async function runCase(label, names, concurrency, extensions = []) {
+async function runCase(label, names, concurrency, extraExtensions = []) {
+	const extensions = [...runtimePersona.extensions, ...extraExtensions];
+	writeFileSync(configurationPaths.globalConfig, JSON.stringify({ personas: { analyst: { ...runtimePersona, extensions } } }));
 	if (concurrency > 1 && process.env.HERDR_SUBAGENTS_E2E_FOCUS_CLEANUP === "1") {
 		const workspaces = spawnSync(process.env.PI_HERDR_SUBAGENTS_HERDR_BINARY?.trim() || "herdr", ["workspace", "list"], { encoding: "utf8", timeout: 10_000 });
 		assert.equal(workspaces.status, 0, workspaces.stderr);
@@ -108,7 +111,6 @@ async function runCase(label, names, concurrency, extensions = []) {
 		tasks: names.map((name) => ({
 			name,
 			agent: "analyst",
-			...(model ? { model } : {}),
 			prompt: `Do not inspect files. Call subagent_report with status completed, summary '${name} completed', and result 'hello'.`,
 		})),
 	}, timeout, (update) => {
@@ -145,7 +147,8 @@ async function runCase(label, names, concurrency, extensions = []) {
 		const report = JSON.parse(readFileSync(join(taskResult.recordDirectory, "report.json"), "utf8"));
 		assert.equal(task.status, "completed");
 		assert.deepEqual(task.extensions, extensions);
-		if (extensions.length) {
+		if (runtimePersona.model) assert.equal(task.model, runtimePersona.model);
+		if (extraExtensions.length) {
 			const commands = JSON.parse(readFileSync(join(taskResult.recordDirectory, "extension-loaded.json"), "utf8"));
 			assert.ok(commands.includes("skill:smoke-package-skill"), "Explicit package skill did not load in the real child");
 		}
@@ -168,7 +171,6 @@ try {
 		export default function (pi) {
 			pi.on("session_start", () => writeFileSync(join(process.env.PI_HERDR_SUBAGENTS_TASK_DIR, "extension-loaded.json"), JSON.stringify(pi.getCommands().map((command) => command.name))));
 		}`);
-	writeFileSync(configurationPaths.globalConfig, JSON.stringify({ personas: { analyst: { extensions: [packageSource] } } }));
 	await runCase("real-concurrent", ["hello-one", "hello-two"], 2, [packageSource]);
 } catch (error) {
 	failed = true;

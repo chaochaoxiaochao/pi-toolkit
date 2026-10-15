@@ -1,3 +1,7 @@
+## Unreleased
+
+- Herdr Subagents: preserve configured models and explicit authentication extensions in isolated real-Herdr E2E tests instead of losing account-pool setup.
+
 ## 2026-10-15 - v0.11.21
 
 - simplify Agent Team to config-driven orchestration with persistent investigation records and optional extra review
