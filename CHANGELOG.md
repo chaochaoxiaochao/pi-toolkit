@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-15 - v0.11.22
 
+- herdr-subagents v0.5.4: preserve configured model and authentication extensions in isolated real-Herdr smoke tests
 - Herdr Subagents: preserve configured models and explicit authentication extensions in isolated real-Herdr E2E tests instead of losing account-pool setup.
 
 ## 2026-10-15 - v0.11.21

@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-15 - v0.5.4
 
+- preserve configured model and authentication extensions in isolated real-Herdr smoke tests
 - Preserve the configured analyst model, thinking level, and explicit authentication extensions in isolated real-Herdr smoke tests; append the concurrent package probe without replacing those extensions.
 - Add deterministic smoke-configuration coverage and isolate exposure test fixtures from personal settings.
 
