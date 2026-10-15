@@ -1,3 +1,7 @@
+## 2026-10-15 - v0.11.21
+
+- simplify Agent Team to config-driven orchestration with persistent investigation records and optional extra review
+
 ## 2026-10-14 - v0.11.20
 
 - herdr-subagents v0.5.3: allow optional Pi-native tool exposure while inheriting Pi defaults when unset
