@@ -4,7 +4,8 @@ import { execFileSync } from "node:child_process";
 function plan(slug, extraEnv = {}) {
 	return execFileSync("bash", ["scripts/release-check.sh", ...(slug ? [slug] : [])], {
 		encoding: "utf8",
-		env: { ...process.env, RELEASE_CHECK_DRY_RUN: "1", ...extraEnv },
+		// Keep routing fixtures independent of changes since the latest release tag.
+		env: { ...process.env, RELEASE_CHECK_DRY_RUN: "1", RELEASE_CHECK_BASE_TAG: "HEAD", ...extraEnv },
 	});
 }
 
