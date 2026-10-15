@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { runHerdrSubagentsBatch } from "../src/batch-runner.ts";
 import registerSubagentReport from "../extensions/subagent-report.ts";
-import { registerHerdrSubagents } from "../extensions/herdr-subagents.ts";
+import { normalizeHerdrSubagentsArguments, registerHerdrSubagents } from "../extensions/herdr-subagents.ts";
 import { applyTaskStatus } from "../src/records.ts";
+import { executeHerdrSubagents } from "../src/tool.ts";
 
 process.env.HERDR_ENV = "1";
 process.env.HERDR_WORKSPACE_ID = "test-workspace";
@@ -93,6 +95,45 @@ async function run(tasks, concurrency, herdr = fakeHerdr(), signal) {
 }
 
 {
+	const herdr = fakeHerdr();
+	const execute = (params) => executeHerdrSubagents(params, undefined, undefined, { cwd: root }, {
+		agentsDirectory: fileURLToPath(new URL("../agents/", import.meta.url)),
+		configurationPaths: { globalConfig: join(root, "global-config.json") },
+		herdr,
+	});
+	const missing = { name: "review", prompt: "Read-only review" };
+	for (const params of [
+		{ tasks: [missing] },
+		...["", " \t", null, 42].map((agent) => ({ tasks: [{ ...missing, agent }] })),
+		normalizeHerdrSubagentsArguments({ prompt: "Read-only review" }),
+		normalizeHerdrSubagentsArguments({ prompt: "Read-only review", agent: 42 }),
+	]) {
+		const response = await execute(params);
+		assert.equal(response.isError, true, "Missing or invalid agent must not silently select worker");
+		assert.match(response.content[0].text, /tasks\[0\]\.agent.*required/);
+	}
+	const laterMissing = await execute({ tasks: [{ ...missing, agent: "analyst" }, missing], concurrency: 2 });
+	assert.match(laterMissing.content[0].text, /tasks\[1\]\.agent.*required/);
+	const unknown = await execute({ tasks: [{ ...missing, agent: "unknown-persona" }] });
+	assert.equal(unknown.isError, true);
+	assert.match(unknown.content[0].text, /Unknown persona 'unknown-persona'/);
+	assert.deepEqual(herdr.starts, [], "Invalid requests must not start an Agent");
+	assert.equal(existsSync(join(root, ".pi", "herdr-subagents", "runs")), false, "Invalid requests must not create run records");
+
+	const serial = await execute(normalizeHerdrSubagentsArguments({ prompt: "make change", agent: "worker" }));
+	assert.equal(serial.details.status, "completed", "Explicit worker must still run serially through legacy argument normalization");
+	const parallel = await execute({ tasks: ["analyst", "reviewer", "explorer"].map((agent) => ({ ...missing, agent })), concurrency: 2 });
+	assert.equal(parallel.details.status, "completed");
+	assert.equal(parallel.details.effectiveConcurrency, 2);
+
+	const projectAgents = join(root, ".pi", "herdr-subagents", "agents");
+	mkdirSync(projectAgents, { recursive: true });
+	writeFileSync(join(projectAgents, "auditor.md"), "---\nname: auditor\ndescription: Custom read-only reviewer\naccess: read\n---\nReview the task.\n");
+	const custom = await execute({ tasks: [{ ...missing, agent: " auditor " }], concurrency: 2 });
+	assert.equal(custom.details.status, "completed", "Custom Persona names must remain valid and trim whitespace");
+}
+
+{
 	const { result, herdr } = await run([task("one", "first slow"), task("two", "second")], 1);
 	assert.equal(result.status, "completed");
 	assert.equal(herdr.maxActive, 1);
@@ -146,7 +187,12 @@ async function run(tasks, concurrency, herdr = fakeHerdr(), signal) {
 	assert.deepEqual(result.activity.map((entry) => entry.status), ["cancelled", "cancelled"]);
 }
 
-await assert.rejects(() => run([task("writer", "edit", "write"), task("reader", "read")], 2), /require concurrency 1/);
+await assert.rejects(() => run([task("writer", "edit", "write"), task("reader", "read")], 2), (error) => {
+	assert.match(error.message, /writer.*worker/);
+	assert.match(error.message, /concurrency: 1/);
+	assert.match(error.message, /read-only Persona/);
+	return true;
+});
 
 const terminal = { id: "task", runId: "run", order: 1, status: "completed" };
 assert.throws(() => applyTaskStatus(terminal, "running"), /terminal tasks are immutable/);
@@ -184,6 +230,9 @@ assert.throws(() => applyTaskStatus(terminal, "running"), /terminal tasks are im
 	});
 	assert.deepEqual(herdrCalls, [], "Pi startup must not inspect or close historical Subagent tabs");
 	assert.deepEqual(JSON.parse(readFileSync(join(runDirectory, "run.json"), "utf8")), historicalRun, "Pi startup must not mutate historical Subagent records");
+	const taskSchema = registeredTools.get("herdr_subagents").parameters.properties.tasks.items;
+	assert.ok(taskSchema.required.includes("agent"), "The model-facing schema must require agent");
+	assert.equal(taskSchema.properties.agent.enum, undefined, "Custom Persona names must remain valid");
 	assert.equal(registeredTools.get("herdr_subagents")?.exposure, undefined, "Unconfigured Subagent execution must inherit Pi's exposure default");
 	assert.equal(registeredTools.get("herdr_subagents_control")?.exposure, undefined, "Unconfigured Subagent control must inherit Pi's exposure default");
 	mkdirSync(join(lifecycleRoot, ".pi"), { recursive: true });

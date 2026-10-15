@@ -10,6 +10,9 @@ export const HERDR_ACTIONS = {
 
 export function validateRunParams(params: HerdrSubagentsRunParams): string | undefined {
 	if (!params.tasks?.length) return "Provide a non-empty tasks list.";
+	for (const [index, task] of params.tasks.entries()) {
+		if (typeof task.agent !== "string" || !task.agent.trim()) return `tasks[${index}].agent is required; select a Persona explicitly (use herdr_subagents_control action=list).`;
+	}
 	return undefined;
 }
 

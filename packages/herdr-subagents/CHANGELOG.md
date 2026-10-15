@@ -1,3 +1,7 @@
+## Unreleased
+
+- Require an explicit Herdr Subagents Persona for every new task, clarify concise tool descriptions, and identify tasks with conflicting write access in parallel requests.
+
 ## 2026-10-15 - v0.5.4
 
 - preserve configured model and authentication extensions in isolated real-Herdr smoke tests

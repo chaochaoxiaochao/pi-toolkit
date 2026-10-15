@@ -12,7 +12,9 @@ It verifies:
 - bounded read-only parallelism;
 - ordered results despite concurrent completion;
 - sibling continuation after failure and all-failed aggregation;
-- explicit rejection of parallel write-capable tasks;
+- required explicit Personas in the tool schema and execution, including legacy single-task argument normalization;
+- rejection of missing, blank, invalid, and unknown Personas before creating runs, while custom Personas remain supported;
+- explicit rejection of parallel write-capable tasks with the conflicting task, Persona, and corrective action;
 - waiting through a delayed authoritative report after a prompt transport error while the Pi process is alive;
 - explicit failure when the process exits without a report;
 - parent cancellation of running and queued tasks;

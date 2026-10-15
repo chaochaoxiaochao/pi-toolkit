@@ -42,7 +42,7 @@ export function normalizeHerdrSubagentsArguments(args: unknown): HerdrSubagentsR
 		tasks: [{
 			name: label || "task",
 			prompt: legacy.prompt,
-			...(typeof legacy.agent === "string" ? { agent: legacy.agent } : {}),
+			agent: legacy.agent as string,
 			...(typeof legacy.model === "string" ? { model: legacy.model } : {}),
 		}],
 		...(label ? { label } : {}),
@@ -148,7 +148,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 		name: "herdr_subagents",
 		...(exposure ? { exposure } : {}),
 		label: "Herdr Subagents",
-		description: "Run one or more ordered tasks in visible, focusable Herdr Pi panes. concurrency 1 is strict serial execution; higher values form a bounded pool for read-only tasks. Write-capable tasks require concurrency 1. The call returns only after every task has one terminal completed, failed, or cancelled result. Complete results and Pi sessions stay in project-local records.",
+		description: "Run ordered tasks in visible Herdr Pi panes, with an explicit agent for each task. concurrency 1 is serial; higher values require read-only Personas. Returns after all tasks complete, fail, or cancel; full results and sessions remain in project-local records.",
 		promptSnippet: "Run focused work in visible Herdr subagents",
 		parameters: HerdrSubagentsParams,
 		prepareArguments: normalizeHerdrSubagentsArguments,

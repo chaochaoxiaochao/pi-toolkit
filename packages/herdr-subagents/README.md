@@ -26,7 +26,7 @@ The tools and command are registered only when Pi is running inside Herdr with a
 
 ## Execution contract
 
-`herdr_subagents` accepts an ordered, non-empty `tasks` array.
+`herdr_subagents` accepts an ordered, non-empty `tasks` array. Every task must explicitly set `agent`; there is no default Persona.
 
 - `concurrency: 1` runs tasks strictly in input order.
 - `concurrency: N` runs at most N read-only tasks at once.
@@ -110,7 +110,7 @@ Starts one ordered batch and waits until every task reaches a terminal state. It
 | `concurrency` | No | `defaultConcurrency` | Maximum number of simultaneously active read-only tasks. It is capped by `maxConcurrency`. |
 | `tasks[].name` | Yes | — | Short pane/task name, at most 48 characters. |
 | `tasks[].prompt` | Yes | — | Self-contained task instructions. |
-| `tasks[].agent` | No | `"worker"` | Effective Persona name. |
+| `tasks[].agent` | Yes | — | Effective Persona name; use control `list` to inspect available Personas. |
 | `tasks[].model` | No | Persona/default model | Model override for this task. |
 
 A batch containing a write-capable Persona must explicitly or effectively use `concurrency: 1`; an unsafe parallel request is rejected.

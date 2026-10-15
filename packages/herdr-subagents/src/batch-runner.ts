@@ -92,7 +92,8 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 	const runId = options.runId ?? randomUUID();
 	const requestedConcurrency = Math.max(1, Math.floor(options.concurrency));
 	if (requestedConcurrency > 1 && tasks.some((task) => task.access === "write")) {
-		throw new Error("Write-capable tasks require concurrency 1; parallel writes are not safe.");
+		const writers = tasks.filter((task) => task.access === "write").map((task) => `${JSON.stringify(task.name)} (agent=${task.agent})`).join(", ");
+		throw new Error(`Write-capable tasks require concurrency 1: ${writers}. Use concurrency: 1, or select a read-only Persona for read-only work.`);
 	}
 	const effectiveConcurrency = Math.min(requestedConcurrency, options.maxConcurrency, tasks.length);
 	const runDirectory = join(options.cwd, ".pi", "herdr-subagents", "runs", `${timestamp().replace(/[-:.]/g, "").replace("Z", "Z-")}${runId.slice(0, 8)}`);
