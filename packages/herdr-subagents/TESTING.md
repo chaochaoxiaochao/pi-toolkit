@@ -8,6 +8,8 @@ npm test --workspace @maxiaochao/pi-herdr-subagents
 
 It verifies:
 
+- global/project `defaultExtensions` replacement, trimming, source attribution, Persona JSON/Markdown precedence, explicit empty-list clearing, invalid-value diagnostics, and per-call reloads;
+- resolved defaults in control listings, settings output, and child CLI arguments while preserving mandatory extensions;
 - strict serial start order at concurrency one;
 - bounded read-only parallelism;
 - ordered results despite concurrent completion;
@@ -28,7 +30,7 @@ It verifies:
 
 The previous broad lifecycle suite remains available temporarily as `npm run test:legacy --workspace @maxiaochao/pi-herdr-subagents` for migration auditing. Scenarios for background queues, blocked/respond, and historical resume intentionally no longer describe the public contract.
 
-Run extension source loading. The direct-Pi fixture validates explicit file/package sources; Herdr's `builtin:codemode` alias is validated by the real-Herdr smoke because the alias is translated by `herdr agent start`:
+Run extension source loading. The direct-Pi fixture resolves global `defaultExtensions` and validates real file/package loading; Herdr's `builtin:codemode` alias is validated by the real-Herdr smoke because the alias is translated by `herdr agent start`:
 
 ```sh
 npm run load-test --workspace @maxiaochao/pi-herdr-subagents
@@ -40,7 +42,7 @@ Run the real Herdr smoke test from a Herdr session:
 npm run test:real-herdr --workspace @maxiaochao/pi-herdr-subagents
 ```
 
-The smoke reads the effective `analyst` model, thinking level, and explicit `extensions` from the invoking project's normal Herdr configuration (npm's `INIT_CWD`, or the current directory when run directly). It copies only those fields into its temporary configuration. It keeps the bundled read-only Persona, tool allowlist, and test concurrency; user skills, prompts, and unrelated settings are not copied. Local extension paths remain relative to the invoking project. The concurrent package-loading probe appends its test package rather than replacing the configured extensions.
+The smoke reads the effective `analyst` model, thinking level, and explicit `extensions` from the invoking project's normal Herdr configuration (npm's `INIT_CWD`, or the current directory when run directly). It copies only those fields into its temporary configuration. It keeps the bundled read-only Persona, tool allowlist, and test concurrency; user skills, prompts, and unrelated settings are not copied. Local extension paths remain relative to the invoking project. The concurrent package-loading probe appends its test package rather than replacing the configured extensions. The isolated smoke supplies these sources through global `defaultExtensions`, so both single and concurrent runs exercise default resolution, actual child loading, durable task records, and tab cleanup.
 
 This preserves authentication extensions such as `npm:@maxiaochao/pi-openai-account-pool` in both the single and concurrent cases. Children still use `--no-extensions`: only the mandatory child extensions, configured explicit sources, and test probe load. The smoke does not copy or edit credentials. If no Herdr model is configured, Pi's normal startup model selection still applies.
 

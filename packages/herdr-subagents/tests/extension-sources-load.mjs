@@ -4,6 +4,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { childPiArgs } from "../src/live-agent.ts";
+import { loadSubagentConfiguration } from "../src/config.ts";
+import { fileURLToPath } from "node:url";
 
 // Exercise native Pi package semantics without provider calls or network installs.
 const root = mkdtempSync(join(tmpdir(), "pi-herdr-extension-sources-"));
@@ -36,7 +38,12 @@ try {
 				ctx.shutdown();
 			});
 		}`);
-	const args = childPiArgs({ id: "probe", sessionFile: join(root, "session.jsonl"), tools: ["read"], extensions: [fileExtension, "./local package", probe] }, join(root, "system.md"));
+	const globalConfig = join(root, "global.json");
+	writeFileSync(globalConfig, JSON.stringify({ defaultExtensions: [fileExtension, "./local package", probe] }));
+	const configuration = loadSubagentConfiguration(root, fileURLToPath(new URL("../agents", import.meta.url)), undefined, { globalConfig, globalAgents: join(root, "global-agents") });
+	const analyst = configuration.personas.find(({ name }) => name === "analyst");
+	assert.equal(analyst.extensionsSource, "global");
+	const args = childPiArgs({ id: "probe", sessionFile: join(root, "session.jsonl"), tools: ["read"], extensions: analyst.extensions }, join(root, "system.md"));
 	// `builtin:codemode` is translated by `herdr agent start` and is covered by
 	// the real-Herdr smoke test. Direct Pi has no portable form of that alias.
 	const codemode = args.indexOf("builtin:codemode");
@@ -50,7 +57,7 @@ try {
 	const loaded = JSON.parse(readFileSync(resultPath, "utf8"));
 	for (const command of ["file-extension", "package-extension", "skill:package-skill", "package-prompt", "parent"]) assert.ok(loaded.commands.includes(command), `Missing ${command}: ${JSON.stringify(loaded)}`);
 	assert.deepEqual([...loaded.tools].sort(), ["read", "subagent_report"]);
-	console.log("PASS real Pi loads explicit file and package sources, including package skills/prompts despite discovery flags, without broadening the direct-Pi tool allowlist");
+	console.log("PASS real Pi loads defaultExtensions file and package sources, including package skills/prompts despite discovery flags, without broadening the direct-Pi tool allowlist");
 } finally {
 	rmSync(root, { recursive: true, force: true });
 }

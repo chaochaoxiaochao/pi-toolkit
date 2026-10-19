@@ -170,6 +170,7 @@ These are all supported top-level fields in `herdr-subagents.json`:
 | `stalledWarningSeconds` | Positive integer | `300` | Emit a warning after a child runs this long. This is not a timeout and does not stop it. |
 | `defaultModel` | Non-empty Pi model ID, normally `provider/model` | Unset | Fallback child model. If unset, the parent model is inherited. |
 | `defaultThinking` | Non-empty Pi thinking value | Unset | Fallback thinking level below Persona-specific settings. Typical Pi values are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`; model support varies. |
+| `defaultExtensions` | Array of non-empty Pi source strings | Unset (no optional extensions) | Fallback extension sources for Personas without an explicit `extensions` list. Project replaces global; `[]` clears inherited defaults. |
 | `personas` | Object keyed by an existing Persona name | `{}` | Per-Persona overrides. It cannot create a Persona without a matching Markdown definition. |
 
 Each `personas.<name>` object supports:
@@ -213,12 +214,12 @@ Save this as `~/.pi/agent/herdr-subagents.json`. Model IDs, skills, and extensio
   "stalledWarningSeconds": 300,
   "defaultModel": "anthropic/claude-sonnet-4-5",
   "defaultThinking": "medium",
+  "defaultExtensions": ["~/.pi/agent/extensions/provider-routing.ts"],
   "personas": {
     "explorer": {
       "model": "anthropic/claude-haiku-4-5",
       "thinking": "low",
-      "skills": ["code-search"],
-      "extensions": ["~/.pi/agent/extensions/provider-routing.ts"]
+      "skills": ["code-search"]
     },
     "reviewer": {
       "thinking": "high",
@@ -247,7 +248,7 @@ A project can override only what differs in `.pi/herdr-subagents.json`:
 }
 ```
 
-Here the project keeps global `maxConcurrency`, `defaultModel`, and `defaultThinking`; replaces the explorer model and skill list; and replaces the reviewer extension list. It does not append arrays.
+Here the project keeps global `maxConcurrency`, `defaultModel`, `defaultThinking`, and `defaultExtensions`; replaces the explorer model and skill list; and replaces the reviewer extension list. It does not append arrays.
 
 ### Built-in Personas
 
@@ -294,7 +295,11 @@ The Markdown body is the child system prompt. Frontmatter is intentionally a sma
 | `skills` | Comma-separated list, optionally `[bracketed]` | None | Explicit child skills; normal automatic skill discovery is disabled. |
 | `extensions` | One source or a comma-separated list; `[]` clears | None | Additional Pi extension/package sources loaded into the child. |
 
-Relative extension paths resolve from the project root. `~` resolves to the home directory. Pi-native local, `npm:`, `git:`, and `builtin:` sources are accepted. Children always load the required report extension and Codemode; configured sources are additional. Pi packages may provide resources beyond extensions, so load only trusted code and pin versions/refs when reproducibility matters.
+### Explicit extension sources and Pi packages
+
+Use top-level `defaultExtensions` in `~/.pi/agent/herdr-subagents.json` to share trusted extension sources across Personas. Set the same field in `<project>/.pi/herdr-subagents.json` to replace the global default list for that project. Defaults are a fallback, not an appended list: any Persona-specific `extensions`, including Markdown frontmatter and explicit `[]`, takes precedence. An empty default list clears inherited defaults but does not remove Persona-specific sources or the mandatory child extensions.
+
+Relative extension paths resolve from the project root, including paths in global `defaultExtensions`. `~` resolves to the home directory. Pi-native local, `npm:`, `git:`, and `builtin:` sources are accepted. Children always load the required report extension and Codemode; configured sources are additional. Pi packages may provide resources beyond extensions, so load only trusted code and pin versions/refs when reproducibility matters.
 
 ### Effective option precedence
 
@@ -315,7 +320,18 @@ Thinking is selected in this order:
 4. effective `defaultThinking` (project, then global)
 5. parent thinking when the child also inherits the parent model
 
-There is no task-level thinking override. `skills` and `extensions` use project Persona JSON, then global Persona JSON, then effective Persona Markdown. Each winning list replaces the whole lower-precedence list.
+There is no task-level thinking override. `skills` uses project Persona JSON, then global Persona JSON, then effective Persona Markdown.
+
+Extension sources are selected in this order:
+
+1. project `personas.<name>.extensions`
+2. global `personas.<name>.extensions`
+3. effective Persona Markdown `extensions`
+4. project `defaultExtensions`
+5. global `defaultExtensions`
+6. no optional extensions
+
+Each winning list replaces the whole lower-precedence list, including when it is `[]`. The required report extension and Codemode always remain loaded. `/herdr-subagents settings` shows the effective defaults and their source; the agents listing shows each resolved extension list and its source.
 
 Use `/herdr-subagents agents`, `/herdr-subagents models`, and `/herdr-subagents settings` to inspect the result before starting work.
 

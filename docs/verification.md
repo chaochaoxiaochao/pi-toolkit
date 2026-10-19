@@ -1,5 +1,14 @@
 # Package split verification
 
+## Herdr Subagents: default extension sources (2026-10-15)
+
+- Added `tests/config.mjs` and observed it fail before implementation because `defaultExtensions` was ignored. The active package test command now includes it.
+- `npm --prefix packages/herdr-subagents test`: passed. Covers global/project defaults, whole-array replacement, trimming, JSON/Markdown precedence, explicit empty lists, invalid-value diagnostics, source attribution, per-call reloads, control listings, settings output, and preservation of mandatory child extensions.
+- `npm --prefix packages/herdr-subagents run load-test`: passed. Real Pi loaded a local file and package resolved through global `defaultExtensions`, including package skills/prompts, without broadening the tool allowlist.
+- `HERDR_SUBAGENTS_E2E_FOCUS_CLEANUP=1 npm --prefix packages/herdr-subagents run test:real-herdr`: passed for one real child and two concurrent read-only children using global defaults. Verified durable extension lists, package resources, deferred cleanup while focused, restored focus, and tab cleanup.
+- Child and root `npm pack --dry-run`: passed (55 and 165 files); both include the new configuration test. `node tests/package-layout.mjs` and `git diff --check`: passed.
+- Updated both READMEs, TESTING, and both changelogs. Reviewed root AGENTS and manifests: no instruction, dependency, loadout, or packaging changes needed; only the child test script changed. No root runtime, UI layout, media, installed configuration, or release was changed. The unrelated full root suite and deprecated legacy lifecycle suite were not run.
+
 ## Herdr Subagents: explicit task Personas (2026-10-15)
 
 - Reproduced three failures before fixing them: missing `agent` silently selected `worker`, the registered schema did not require `agent`, and parallel-write errors did not identify the conflicting task/Persona.

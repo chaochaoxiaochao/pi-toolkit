@@ -97,7 +97,7 @@ async function waitForCleanup(result) {
 
 async function runCase(label, names, concurrency, extraExtensions = []) {
 	const extensions = [...runtimePersona.extensions, ...extraExtensions];
-	writeFileSync(configurationPaths.globalConfig, JSON.stringify({ personas: { analyst: { ...runtimePersona, extensions } } }));
+	writeFileSync(configurationPaths.globalConfig, JSON.stringify({ defaultExtensions: extensions, personas: { analyst: { model: runtimePersona.model, thinking: runtimePersona.thinking } } }));
 	if (concurrency > 1 && process.env.HERDR_SUBAGENTS_E2E_FOCUS_CLEANUP === "1") {
 		const workspaces = spawnSync(process.env.PI_HERDR_SUBAGENTS_HERDR_BINARY?.trim() || "herdr", ["workspace", "list"], { encoding: "utf8", timeout: 10_000 });
 		assert.equal(workspaces.status, 0, workspaces.stderr);

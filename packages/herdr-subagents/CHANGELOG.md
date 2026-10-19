@@ -1,3 +1,7 @@
+## Unreleased
+
+- Add Herdr Subagents `defaultExtensions` in global/project settings as a fallback below Persona-specific extension lists, with replacement semantics, explicit `[]` clearing, source diagnostics, and real child-loading coverage.
+
 ## 2026-10-15 - v0.6.0
 
 - require explicit task Personas and clarify concise tool descriptions

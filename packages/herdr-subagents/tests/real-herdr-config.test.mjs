@@ -21,8 +21,8 @@ try {
 		maxConcurrency: 1,
 		defaultModel: "openai-codex/test-model",
 		defaultThinking: "high",
+		defaultExtensions: ["npm:@maxiaochao/pi-openai-account-pool"],
 		personas: { analyst: {
-			extensions: ["npm:@maxiaochao/pi-openai-account-pool"],
 			skills: ["unrelated-skill"],
 		} },
 	});

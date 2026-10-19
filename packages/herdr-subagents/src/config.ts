@@ -13,6 +13,7 @@ export interface SubagentConfig {
 	stalledWarningSeconds: number;
 	defaultModel?: string;
 	defaultThinking?: string;
+	defaultExtensions?: string[];
 	personas: Record<string, PersonaConfig>;
 }
 export interface EffectivePersona extends AgentDefinition {
@@ -40,6 +41,7 @@ interface ConfigFile {
 	stalledWarningSeconds?: number;
 	defaultModel?: string;
 	defaultThinking?: string;
+	defaultExtensions?: string[];
 	personas?: Record<string, PersonaConfig>;
 }
 export interface ConfigurationPaths {
@@ -80,6 +82,13 @@ function mergeConfig(base: SubagentConfig, input: ConfigFile, source: string, so
 		if (value === undefined) continue;
 		if (typeof value === "string" && value.trim()) { result[key] = value.trim(); sources[key] = source; }
 		else diagnostics.push(`${source} ${key} must be a non-empty string`);
+	}
+	if (input.defaultExtensions !== undefined) {
+		const value = input.defaultExtensions;
+		if (Array.isArray(value) && value.every((item) => typeof item === "string" && item.trim())) {
+			result.defaultExtensions = value.map((item) => item.trim());
+			sources.defaultExtensions = source;
+		} else diagnostics.push(`${source} defaultExtensions must be an array of non-empty strings`);
 	}
 	if (input.personas !== undefined) {
 		if (!input.personas || typeof input.personas !== "object" || Array.isArray(input.personas)) diagnostics.push(`${source} personas must be an object`);
@@ -134,8 +143,8 @@ export function loadSubagentConfiguration(cwd: string, packageAgentsDirectory: s
 		const thinkingSource = projectPersona.thinking ? "project persona" : globalPersona.thinking ? "global persona" : definition.thinking ? `${source} persona` : settings.defaultThinking ? settingSources.defaultThinking : "default";
 		const skills = projectPersona.skills ?? globalPersona.skills ?? definition.skills ?? [];
 		const skillsSource = projectPersona.skills ? "project persona" : globalPersona.skills ? "global persona" : definition.skills ? `${source} persona` : "none";
-		const extensions = projectPersona.extensions ?? globalPersona.extensions ?? definition.extensions ?? [];
-		const extensionsSource = projectPersona.extensions ? "project persona" : globalPersona.extensions ? "global persona" : definition.extensions ? `${source} persona` : "none";
+		const extensions = projectPersona.extensions ?? globalPersona.extensions ?? definition.extensions ?? settings.defaultExtensions ?? [];
+		const extensionsSource = projectPersona.extensions ? "project persona" : globalPersona.extensions ? "global persona" : definition.extensions ? `${source} persona` : settings.defaultExtensions ? settingSources.defaultExtensions : "none";
 		return { ...definition, source, access: definition.access ?? "write", model, modelSource, thinking, thinkingSource, skills, skillsSource, extensions, extensionsSource };
 	}).sort((left, right) => left.name.localeCompare(right.name));
 	return { settings, settingSources, personas, diagnostics };

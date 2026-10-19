@@ -236,15 +236,19 @@ assert.throws(() => applyTaskStatus(terminal, "running"), /terminal tasks are im
 	assert.equal(registeredTools.get("herdr_subagents")?.exposure, undefined, "Unconfigured Subagent execution must inherit Pi's exposure default");
 	assert.equal(registeredTools.get("herdr_subagents_control")?.exposure, undefined, "Unconfigured Subagent control must inherit Pi's exposure default");
 	mkdirSync(join(lifecycleRoot, ".pi"), { recursive: true });
-	writeFileSync(join(lifecycleRoot, ".pi", "herdr-subagents.json"), JSON.stringify({ exposure: "model-only" }));
+	writeFileSync(join(lifecycleRoot, ".pi", "herdr-subagents.json"), JSON.stringify({ exposure: "model-only", defaultExtensions: [] }));
 	const configuredTools = new Map();
+	const configuredCommands = new Map();
 	registerHerdrSubagents({
 		on() {},
 		registerTool(tool) { configuredTools.set(tool.name, tool); },
-		registerCommand() {},
+		registerCommand(name, command) { configuredCommands.set(name, command); },
 	}, { herdr: {}, isEditor: () => false, configurationCwd: lifecycleRoot, configurationPaths });
 	assert.equal(configuredTools.get("herdr_subagents")?.exposure, "model-only", "Project configuration can exclude Subagent execution from Codemode");
 	assert.equal(configuredTools.get("herdr_subagents_control")?.exposure, "model-only", "Project configuration applies consistently to both Subagent tools");
+	const notifications = [];
+	await configuredCommands.get("herdr-subagents").handler("settings", { cwd: lifecycleRoot, ui: { notify(message) { notifications.push(message); } } });
+	assert.match(notifications[0], /defaultExtensions=\[\] \(project\)/, "Settings must show empty defaults and their source");
 }
 
 {
