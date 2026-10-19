@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-19 - v0.12.1
 
+- herdr-subagents v0.7.0: add global and project default extension sources with Persona overrides
 - Add Herdr Subagents `defaultExtensions` in global/project settings as a fallback below Persona-specific extension lists, with replacement semantics, explicit `[]` clearing, source diagnostics, and real child-loading coverage.
 
 ## 2026-10-15 - v0.12.0
