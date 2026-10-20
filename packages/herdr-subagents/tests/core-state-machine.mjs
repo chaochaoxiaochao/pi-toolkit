@@ -7,7 +7,7 @@ import { runHerdrSubagentsBatch } from "../src/batch-runner.ts";
 import registerSubagentReport from "../extensions/subagent-report.ts";
 import { normalizeHerdrSubagentsArguments, registerHerdrSubagents } from "../extensions/herdr-subagents.ts";
 import { applyTaskStatus } from "../src/records.ts";
-import { executeHerdrSubagents } from "../src/tool.ts";
+import { executeHerdrSubagents, executeHerdrSubagentsControl } from "../src/tool.ts";
 
 process.env.HERDR_ENV = "1";
 process.env.HERDR_WORKSPACE_ID = "test-workspace";
@@ -101,6 +101,32 @@ async function run(tasks, concurrency, herdr = fakeHerdr(), signal) {
 		configurationPaths: { globalConfig: join(root, "global-config.json") },
 		herdr,
 	});
+	const listed = await executeHerdrSubagentsControl({ action: "list" }, undefined, undefined, { cwd: root }, {
+		agentsDirectory: fileURLToPath(new URL("../agents/", import.meta.url)),
+		configurationPaths: { globalConfig: join(root, "global-config.json") },
+	});
+	const personas = new Map(listed.details.agents.map((persona) => [persona.name, persona]));
+	const analyst = personas.get("analyst");
+	assert.match(analyst.description, /agent-team.*roles defined by each task/);
+	assert.match(analyst.systemPrompt, /role charter and evaluation method/);
+	const reviewer = personas.get("reviewer");
+	assert.match(reviewer.description, /proposals, designs, documents, implementations, and analysis/);
+	assert.match(reviewer.systemPrompt, /goals and constraints/);
+	assert.match(reviewer.systemPrompt, /assumptions, logic, evidence, trade-offs, and risks/);
+	const explorer = personas.get("explorer");
+	assert.match(explorer.description, /codebase structure, behavior, and dependencies/);
+	assert.match(explorer.systemPrompt, /Locate relevant files, trace behavior and dependencies/);
+	const readTools = ["read", "bash", "grep", "find", "ls", "codemode"];
+	for (const name of ["analyst", "reviewer", "explorer"]) {
+		const persona = personas.get(name);
+		assert.equal(persona.access, "read");
+		assert.deepEqual(persona.tools, readTools);
+		assert.ok(listed.content[0].text.includes(`${name}: ${persona.description}`), "The parent must see role selection guidance in Persona listings");
+		assert.ok(!listed.content[0].text.includes(persona.systemPrompt), "Persona listings must not embed the child instructions");
+	}
+	assert.equal(personas.get("worker").access, "write");
+	assert.equal(personas.get("worker").description, "General-purpose worker for one focused task");
+	assert.match(personas.get("worker").systemPrompt, /Do not delegate to another agent/);
 	const missing = { name: "review", prompt: "Read-only review" };
 	for (const params of [
 		{ tasks: [missing] },
@@ -125,6 +151,12 @@ async function run(tasks, concurrency, herdr = fakeHerdr(), signal) {
 	const parallel = await execute({ tasks: ["analyst", "reviewer", "explorer"].map((agent) => ({ ...missing, agent })), concurrency: 2 });
 	assert.equal(parallel.details.status, "completed");
 	assert.equal(parallel.details.effectiveConcurrency, 2);
+	for (const [index, name] of ["analyst", "reviewer", "explorer"].entries()) {
+		const directory = parallel.details.tasks[index].recordDirectory;
+		const instructions = readFileSync(join(directory, "system-prompt.md"), "utf8");
+		assert.ok(instructions.startsWith(personas.get(name).systemPrompt), "Each child must receive its selected Persona body");
+		assert.match(instructions, /call subagent_report exactly once/);
+	}
 
 	const projectAgents = join(root, ".pi", "herdr-subagents", "agents");
 	mkdirSync(projectAgents, { recursive: true });
@@ -231,6 +263,11 @@ assert.throws(() => applyTaskStatus(terminal, "running"), /terminal tasks are im
 	assert.deepEqual(herdrCalls, [], "Pi startup must not inspect or close historical Subagent tabs");
 	assert.deepEqual(JSON.parse(readFileSync(join(runDirectory, "run.json"), "utf8")), historicalRun, "Pi startup must not mutate historical Subagent records");
 	const taskSchema = registeredTools.get("herdr_subagents").parameters.properties.tasks.items;
+	const description = registeredTools.get("herdr_subagents").description;
+	assert.match(description, /reviewer for independent reviews/);
+	assert.match(description, /explorer for codebase investigation/);
+	assert.match(description, /worker for file changes/);
+	assert.match(description, /analyst for agent-team/);
 	assert.ok(taskSchema.required.includes("agent"), "The model-facing schema must require agent");
 	assert.equal(taskSchema.properties.agent.enum, undefined, "Custom Persona names must remain valid");
 	assert.equal(registeredTools.get("herdr_subagents")?.exposure, undefined, "Unconfigured Subagent execution must inherit Pi's exposure default");

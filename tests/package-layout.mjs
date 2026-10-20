@@ -63,6 +63,7 @@ assert.match(agentTeamSkill, /主 Agent.*负责核心调度/);
 assert.match(agentTeamSkill, /\[models\.json\]\(models\.json\)/);
 assert.match(agentTeamSkill, /按配置成员数并发启动子代理/);
 assert.match(agentTeamSkill, /对应角色的 `charter` 放入任务/);
+assert.match(agentTeamSkill, /使用 Persona 派发时，成员统一选择 `agent: "analyst"`/);
 assert.match(agentTeamSkill, /配置为空或数量不匹配时，报告配置问题后再启动/);
 assert.match(agentTeamSkill, /不是每次分析的必经步骤/);
 assert.match(agentTeamSkill, /未决项写明缺失证据/);

@@ -15,6 +15,8 @@ It verifies:
 - ordered results despite concurrent completion;
 - sibling continuation after failure and all-failed aggregation;
 - required explicit Personas in the tool schema and execution, including legacy single-task argument normalization;
+- model-facing role selection guidance for broad independent review, codebase investigation, file-changing work, and charter-driven agent-team execution;
+- effective Persona descriptions in parent listings, corresponding bodies in child system prompts, and unchanged read/write tool boundaries;
 - rejection of missing, blank, invalid, and unknown Personas before creating runs, while custom Personas remain supported;
 - explicit rejection of parallel write-capable tasks with the conflicting task, Persona, and corrective action;
 - waiting through a delayed authoritative report after a prompt transport error while the Pi process is alive;

@@ -1,3 +1,7 @@
+## Unreleased
+
+- Clarify parent-facing Persona selection and child instructions: reviewer independently reviews proposals, designs, documents, implementations, and analysis; analyst is the neutral agent-team execution persona with task-defined roles; explorer investigates codebase structure, behavior, and dependencies. Preserve worker instructions and all tool/access boundaries.
+
 ## 2026-10-19 - v0.7.0
 
 - add global and project default extension sources with Persona overrides

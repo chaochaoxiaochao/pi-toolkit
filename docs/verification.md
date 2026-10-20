@@ -1,5 +1,17 @@
 # Package split verification
 
+## Herdr Subagents: Persona responsibilities (2026-10-20)
+
+- Observed new checks fail before changing the definitions: the parent-facing analyst description did not identify agent-team, and the Agent Team skill did not explicitly select analyst for Persona dispatch.
+- Updated the English descriptions and bodies for analyst, reviewer, and explorer; kept worker, tool allowlists, access declarations, scheduling, and Persona resolution unchanged. Updated the model-facing tool description and the Chinese Agent Team skill's Persona selection guidance. Reviewed root AGENTS and both manifests; no changes were needed.
+- `npm --prefix packages/herdr-subagents test`: passed. New checks cover effective parent-facing descriptions, broad reviewer scope, charter-driven analyst instructions, explorer investigation, body delivery in actual child system-prompt files, and unchanged access/tool boundaries. `node tests/package-layout.mjs`: passed, including the new Agent Team Persona selection check.
+- An actual `reviewer` subagent independently reviewed the working-tree changes and found one stale analyst wording assertion in the deprecated migration suite. Updated that assertion and ran it in isolation; it passed. The complete deprecated legacy lifecycle suite was not run because it tests retired workflows.
+- `npm --prefix packages/herdr-subagents run load-test` with the installed Pi selected through `PI_TEST_BINARY`, and `npm run load-test`: passed.
+- `HERDR_SUBAGENTS_E2E_FOCUS_CLEANUP=1 npm --prefix packages/herdr-subagents run test:real-herdr`: passed for one real child and two concurrent read-only children, including deferred cleanup while focused, restored focus, and automatic tab cleanup. This verifies execution and cleanup, not a guarantee that every future model will select the intended Persona.
+- Root `npm test` initially failed at the existing `tests/release-check.mjs:18` assumption that an account-pool release check cannot include a Herdr smoke when Herdr has uncommitted changes. The same limitation was recorded in the earlier explicit-Persona verification below. Left release tooling unchanged. After committing the implementation, the full root `npm test` passed, including release-routing checks, all child suites, BTW history, and 18 Cache Export browser E2E checks with zero skips. Before the commit, those subsequent suites also passed when run separately.
+- Child/root `npm pack --dry-run` and `git diff --check`: passed. Raw logs are under `.cache/verification/persona-*.log`.
+- No media regeneration or local installation was performed. There is no UI layout change. Version bumps and tags use the coordinated release script; installed/running package definitions remain unchanged until the updated package is installed and loaded.
+
 ## Herdr Subagents: default extension sources (2026-10-15)
 
 - Added `tests/config.mjs` and observed it fail before implementation because `defaultExtensions` was ignored. The active package test command now includes it.

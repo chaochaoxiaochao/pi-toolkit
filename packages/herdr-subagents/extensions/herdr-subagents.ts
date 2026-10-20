@@ -148,7 +148,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 		name: "herdr_subagents",
 		...(exposure ? { exposure } : {}),
 		label: "Herdr Subagents",
-		description: "Run ordered tasks in visible Herdr Pi panes, with an explicit agent for each task. concurrency 1 is serial; higher values require read-only Personas. Returns after all tasks complete, fail, or cancel; full results and sessions remain in project-local records.",
+		description: "Run ordered tasks in visible Herdr Pi panes, with an explicit agent for each task. Choose reviewer for independent reviews, explorer for codebase investigation, worker for file changes, or analyst for agent-team tasks with a supplied role charter; use control list to inspect effective and custom Personas. concurrency 1 is serial; higher values require read-only Personas. Returns after all tasks complete, fail, or cancel; full results and sessions remain in project-local records.",
 		promptSnippet: "Run focused work in visible Herdr subagents",
 		parameters: HerdrSubagentsParams,
 		prepareArguments: normalizeHerdrSubagentsArguments,

@@ -257,9 +257,13 @@ None of the bundled Personas pins a model, thinking level, skill, or optional ex
 | Persona | Access | Built-in tools | Intended use |
 | --- | --- | --- | --- |
 | `worker` | `write` | `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `codemode` | One focused implementation or other file-changing task. |
-| `explorer` | `read` | `read`, `bash`, `grep`, `find`, `ls`, `codemode` | Fast codebase investigation without file changes. |
-| `analyst` | `read` | `read`, `bash`, `grep`, `find`, `ls`, `codemode` | Neutral analysis where the task prompt supplies the role and evaluation method. |
-| `reviewer` | `read` | `read`, `bash`, `grep`, `find`, `ls`, `codemode` | Correctness and maintainability review with actionable evidence. |
+| `explorer` | `read` | `read`, `bash`, `grep`, `find`, `ls`, `codemode` | Codebase structure, behavior, and dependency investigation without file changes. |
+| `analyst` | `read` | `read`, `bash`, `grep`, `find`, `ls`, `codemode` | Neutral agent-team execution where each task supplies the role charter and evaluation method. |
+| `reviewer` | `read` | `read`, `bash`, `grep`, `find`, `ls`, `codemode` | Independent review of proposals, designs, documents, implementations, and analysis against goals and constraints. |
+
+Choose `reviewer` for an independent assessment of existing work, `explorer` to investigate how the codebase works, `worker` for file-changing work, and `analyst` for agent-team members whose role is supplied by the task charter. An analyst may perform a review when its charter calls for one; its neutral execution role does not replace the reviewer selection for ordinary review requests.
+
+The control tool's `list` action exposes each effective `description` to help the parent choose a Persona. The Markdown body instead becomes the selected child's appended system prompt. Put selection guidance in `description` and execution instructions in the body; bundled definitions keep both in English.
 
 `access` is a scheduling declaration: any `write` Persona requires serial execution. It is not by itself a sandbox. For a custom read-only Persona, also omit write-capable tools and load only trusted extensions.
 

@@ -598,7 +598,7 @@ try {
 	check("persona discovery and diagnostics", discovery.agents.length === 1 && discovery.agents[0].name === "worker" && discovery.diagnostics.length === 1);
 	const packageDiscovery = discoverPackageAgents(join(process.cwd(), "agents"));
 	const analystPersona = packageDiscovery.agents.find((persona) => persona.name === "analyst");
-	check("built-in analyst is neutral and read-only", packageDiscovery.diagnostics.length === 0 && analystPersona?.access === "read" && analystPersona.model === undefined && analystPersona.tools?.join(",") === "read,bash,grep,find,ls,codemode" && /independent analyst/.test(analystPersona.systemPrompt) && /direct evidence, inference, and unknowns/.test(analystPersona.systemPrompt) && !/auditor|replicator|adversary/.test(analystPersona.systemPrompt));
+	check("built-in analyst is neutral and read-only", packageDiscovery.diagnostics.length === 0 && analystPersona?.access === "read" && analystPersona.model === undefined && analystPersona.tools?.join(",") === "read,bash,grep,find,ls,codemode" && /neutral execution persona for agent-team/.test(analystPersona.systemPrompt) && /role charter and evaluation method/.test(analystPersona.systemPrompt) && /direct evidence, inference, and unknowns/.test(analystPersona.systemPrompt) && !/auditor|replicator|adversary/.test(analystPersona.systemPrompt));
 
 	const configRoot = join(root, "configuration");
 	const packageAgents = join(configRoot, "package-agents");
