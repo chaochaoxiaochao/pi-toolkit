@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-20 - v0.13.0
 
+- background-tasks v0.1.0: bundle background shell tasks with runtime limits, bounded logs, completion notifications and /bg controls
 - Bundle and enable `@maxiaochao/pi-background-tasks` by default: managed shell jobs, Bash-aligned bounded output, completion followUps, `/bg` controls and an above-editor status widget. Keep the standalone package available as an alternative installation. The toolkit now requires Pi 1.3.0 or later.
 
 ## 2026-10-20 - v0.12.2
