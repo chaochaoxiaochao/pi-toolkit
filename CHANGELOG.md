@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-20 - v0.12.2
 
+- herdr-subagents v0.7.1: clarify Persona responsibilities and dispatch guidance
 - Clarify Herdr Persona selection and instructions: broad independent reviewer, codebase explorer, file-changing worker, and neutral charter-driven agent-team analyst. Make the Agent Team skill explicitly select analyst when dispatching through Personas.
 
 ## 2026-10-19 - v0.12.1
