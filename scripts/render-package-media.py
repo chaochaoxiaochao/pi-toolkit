@@ -108,6 +108,17 @@ def render_cache_export():
                    loop=0, optimize=True)
 
 
+def render_background_tasks():
+    source = CAPTURE / "background-live"
+    frames = [Image.open(source / f"{name}.png").convert("RGB")
+              for name in ("running", "completed", "history")]
+    docs = ROOT / "packages" / "background-tasks" / "docs"
+    docs.mkdir(parents=True, exist_ok=True)
+    frames[0].save(docs / "screenshot.png", optimize=True)
+    frames[0].save(docs / "demo.gif", save_all=True, append_images=frames[1:],
+                   duration=[3000, 2000, 2000], loop=0, optimize=True)
+
+
 def render_herdr_subagents():
     source = CAPTURE / "herdr-live"
     paths = sorted(source.glob("frame-*.png"))
@@ -131,6 +142,8 @@ selected = set(sys.argv[2:])
 for package_slug, metadata in PACKAGES.items():
     if not selected or package_slug in selected:
         render_terminal_package(package_slug, *metadata)
+if not selected or "background-tasks" in selected:
+    render_background_tasks()
 if not selected or "herdr-subagents" in selected:
     render_herdr_subagents()
 if not selected or "cache-export" in selected:

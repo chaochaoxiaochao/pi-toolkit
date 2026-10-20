@@ -18,6 +18,12 @@ assert.doesNotMatch(accountPool, /npm test/);
 assert.doesNotMatch(accountPool, /packages\/herdr-subagents (?:test|run test:real-herdr)/);
 assert.match(accountPool, /real Herdr child Agent smoke skipped \(Herdr is unchanged\)/);
 
+const backgroundTasks = plan("background-tasks");
+assert.match(backgroundTasks, /npm --prefix packages\/background-tasks test/);
+assert.match(backgroundTasks, /npm --prefix packages\/background-tasks run load-test/);
+assert.match(backgroundTasks, /npm pack \.\/packages\/background-tasks --dry-run/);
+assert.doesNotMatch(backgroundTasks, /packages\/herdr-subagents (?:test|run test:real-herdr)/);
+
 const herdr = plan("herdr-subagents");
 assert.match(herdr, /npm --prefix packages\/herdr-subagents test/);
 assert.match(herdr, /npm --prefix packages\/herdr-subagents run load-test/);

@@ -12,6 +12,7 @@ const children = [
   ["herdr-subagents", "@maxiaochao/pi-herdr-subagents", "extensions/herdr-subagents.ts", true],
   ["openai-account-pool", "@maxiaochao/pi-openai-account-pool", "extensions/openai-account-pool.ts", false],
   ["scheduler", "@maxiaochao/pi-scheduler", "extensions/scheduler.ts", true],
+  ["background-tasks", "@maxiaochao/pi-background-tasks", "extensions/background-tasks.ts", true],
   ["worktree", "@maxiaochao/pi-worktree", "extensions/worktree.ts", true],
 ];
 
@@ -52,8 +53,11 @@ assert.deepEqual(root.pi.extensions, [
   "./packages/codex-edit/extensions/codex-edit.ts",
   "./packages/herdr-subagents/extensions/herdr-subagents.ts",
   "./packages/scheduler/extensions/scheduler.ts",
+  "./packages/background-tasks/extensions/background-tasks.ts",
   "./packages/worktree/extensions/worktree.ts",
 ]);
+assert.equal(root.scripts["load-test"].includes("./packages/background-tasks/extensions/background-tasks.ts"), true);
+assert.equal(root.peerDependencies["@earendil-works/pi-coding-agent"], ">=1.3.0");
 assert.equal(root.pi.skills.includes("./packages/worktree/skills"), true);
 assert.equal(root.bin["pi-worktree"], "packages/worktree/bin/pi-worktree");
 

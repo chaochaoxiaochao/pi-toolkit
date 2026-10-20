@@ -4,15 +4,15 @@ Personal Pi distribution that bundles focused extensions, agent skills, the Nigh
 
 ## Install
 
-Install the complete toolkit:
+Requires Pi **1.3.0 or later**. Install the complete toolkit:
 
 ```bash
 pi install npm:@maxiaochao/pi-toolkit
 ```
 
-That one install enables five child packages by default, because their source is embedded in the toolkit tarball: `pi-cache-export`, `pi-codex-edit`, `pi-herdr-subagents`, `pi-scheduler`, and `pi-worktree`.
+That one install enables six child packages by default, because their source is embedded in the toolkit tarball: `pi-cache-export`, `pi-codex-edit`, `pi-herdr-subagents`, `pi-scheduler`, `pi-background-tasks`, and `pi-worktree`.
 
-`pi-openai-account-pool` is not enabled and stays a separate install:
+`pi-openai-account-pool` is optional and stays a separate install:
 
 ```bash
 pi install npm:@maxiaochao/pi-openai-account-pool
@@ -34,6 +34,7 @@ Restart Pi after updating. `pi update --extensions` has the same effect when upd
 | [pi-codex-edit](packages/codex-edit/README.md) | Codex-harness `apply_patch` routing for selected GPT models | Yes | `pi install npm:@maxiaochao/pi-codex-edit` | `pi update npm:@maxiaochao/pi-codex-edit` | The core lies in the fact that the Codex model is naturally good at apply_patch, and the model is trained on this during training. However, hash-based in-context patch schemes have high token costs and complexity |
 | [pi-herdr-subagents](packages/herdr-subagents/README.md) | Visible Herdr Pi Agents coordinated by a small task state machine | Yes | `pi install npm:@maxiaochao/pi-herdr-subagents` | `pi update npm:@maxiaochao/pi-herdr-subagents` | I wanted simple serial or bounded-parallel dispatch while each task stays a real interactive Pi session in its own Herdr pane, and the main conversation only receives short summaries instead of every child's full transcript |
 | [pi-openai-account-pool](packages/openai-account-pool/README.md) | Several ChatGPT Plus/Pro logins behind `openai-codex`, switching accounts on a proven quota limit | No | `pi install npm:@maxiaochao/pi-openai-account-pool` | `pi update npm:@maxiaochao/pi-openai-account-pool` | One `/login openai-codex` credential overwrites the previous one, so hitting the subscription limit meant logging in again by hand mid-task; this keeps the accounts I authorized side by side and continues the same request on the next usable one |
+| [pi-background-tasks](packages/background-tasks/README.md) | Background shell jobs, bounded logs, completion notifications and a fixed status widget | Yes | `pi install npm:@maxiaochao/pi-background-tasks` | `pi update npm:@maxiaochao/pi-background-tasks` | Long builds and delayed log checks should keep running while the main agent does other work; these are local processes, not subagents |
 | [pi-scheduler](packages/scheduler/README.md) | Session-scoped interval prompts with Agent and `/schedule` controls | Yes | `pi install npm:@maxiaochao/pi-scheduler` | `pi update npm:@maxiaochao/pi-scheduler` | I don't recommend this, it's just that it sends messages to the main session at loop intervals |
 | [pi-worktree](packages/worktree/README.md) | Worktree CLI, current-session switching Extension, and agent skill | Yes | `pi install npm:@maxiaochao/pi-worktree` | `pi update npm:@maxiaochao/pi-worktree` | In addition to the basic worktree CLI + skill, what can be achieved is to directly switch to the worktree path in the main conversation to continue the task conversation after communicating the requirements in the main conversation |
 
@@ -41,7 +42,7 @@ Each child README owns its feature description, motivation or upstream alignment
 
 Herdr Subagents tasks require an explicit `agent` Persona; no default `worker` is selected. Choose `reviewer` for independent reviews of proposals, designs, documents, implementations, or analysis; `explorer` for codebase investigation; `worker` for file-changing work; and `analyst` for charter-defined agent-team roles. See [built-in Personas](packages/herdr-subagents/README.md#built-in-personas) for selection guidance and the distinction between parent-facing descriptions and child instructions. Personas can opt into local extension files or npm/git Pi packages through `extensions`. Set top-level `defaultExtensions` in `~/.pi/agent/herdr-subagents.json` (or project `.pi/herdr-subagents.json`) to share a fallback list; Persona-specific lists take precedence, and `[]` clears inherited sources. This uses native Pi package semantics: package-provided skills, prompt templates, and themes may also load, and `--no-skills` does not exclude explicitly selected package skills. See the [extension-source contract](packages/herdr-subagents/README.md#explicit-extension-sources-and-pi-packages) for precedence, isolation, and examples. The [real Herdr smoke test](packages/herdr-subagents/TESTING.md) preserves the configured analyst model and explicit authentication extensions while isolating unrelated settings.
 
-Multiple standalone children may be installed together. `pi-openai-account-pool` may also be installed alongside the complete toolkit because the toolkit does not embed it. Every other child in the table above is embedded, so a second install exposes the same resource twice.
+Multiple standalone children may be installed together. `pi-openai-account-pool` may also be installed alongside the complete toolkit because the toolkit does not embed it. Every other child in the table above, including `pi-background-tasks`, is embedded, so a second install exposes the same resource twice.
 
 Use `--local` with install or remove when the package declaration belongs to a project's `.pi/settings.json` rather than personal settings.
 

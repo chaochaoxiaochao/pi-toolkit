@@ -18,6 +18,7 @@ pi-toolkit/
 │   ├── herdr-subagents/         # @maxiaochao/pi-herdr-subagents 权威源码
 │   ├── openai-account-pool/     # @maxiaochao/pi-openai-account-pool 权威源码
 │   ├── scheduler/               # @maxiaochao/pi-scheduler 权威源码
+│   ├── background-tasks/        # @maxiaochao/pi-background-tasks 权威源码
 │   └── worktree/                # @maxiaochao/pi-worktree：bin + completion + skill
 ├── skills/                      # 主包独有的通用 skills
 ├── themes/nightowl.json
@@ -31,7 +32,7 @@ pi-toolkit/
 ## 组织原则
 
 - `packages/*` 是子包功能实现的单一源码；根 manifest 直接加载默认启用子包的路径，不设置 wrapper。`extensions/` 只放主包独有的 BTW。
-- 主包 tarball 直接包含默认启用子包的运行源码，不依赖 npm 上的子包版本，因此主包与子包可以独立发版。默认启用 cache-export、codex-edit、herdr-subagents、scheduler、worktree；Todo 与 OpenAI Account Pool 不在根 tarball 或默认 loadout 中。
+- 主包 tarball 直接包含默认启用子包的运行源码，不依赖 npm 上的子包版本，因此主包与子包可以独立发版。默认启用 cache-export、codex-edit、herdr-subagents、scheduler、background-tasks、worktree；Todo 与 OpenAI Account Pool 不在根 tarball 或默认 loadout 中。
 - 用户在完整工具包和已内嵌的独立子包之间二选一；同时安装可能重复注册 extension、skill 或 bin。Todo 与 OpenAI Account Pool 是例外，两者都不内嵌，可以与完整工具包一起安装。
 - BTW 保留在主包，不发布子包。
 - 每个子包必须包含 `package.json`、`README.md`、`TESTING.md`、`CHANGELOG.md`、确定性测试，以及适合该包的加载或集成检查。
@@ -47,6 +48,7 @@ pi-toolkit/
 - Herdr Subagents 必须运行全部确定性测试、加载 `packages/herdr-subagents/extensions/herdr-subagents.ts`，并在真实 Herdr 中验证只读并发批次和 tab 清理；媒体必须通过 `HERDR_MEDIA_WINDOW_ID=<window-id> node scripts/capture-package-media.mjs` 录制父 Pi 对话、逐一聚焦三个真实 Agent pane 和最终父会话结果，同时保留截图和完整 WebM 视频。
 - OpenAI Account Pool 必须运行全部确定性测试，并通过 `npm --prefix packages/openai-account-pool run load-test` 加载 `packages/openai-account-pool/extensions/openai-account-pool.ts`（该子包不在主包默认 loadout 和根 load-test 中），并验证：只有结构化 `usage_limit_reached` 或明确授权失效才切账号、向外输出后不重放、auth.json 仍是凭据权威来源且主条目只存非秘密引用。测试夹具凭据只限隔离临时目录，仓库、媒体和 tarball 不得包含真实令牌或授权 callback URL。
 - Scheduler 必须运行确定性 fake-clock 与 extension 集成测试、加载 `packages/scheduler/extensions/scheduler.ts`，并验证定时/手动触发统一使用 followUp、同一 schedule 最多积压一次、取消与 session shutdown 清理 timer；媒体展示真实核心状态机输出。
+- Background Tasks 验收见 `packages/background-tasks/TESTING.md`：覆盖原生 Bash 双层输出对照、超时/进程树清理与真实 Pi TUI；主包默认内嵌并启用，根 load-test 验证完整组合包只注册一次；不向全局 promptGuidelines 添加工具规则。
 - Cache Export 的发布验收要求确定性测试通过，并在有 Chrome 的环境中跑浏览器 E2E；skip 不算发布验收通过。
 - `packages/cache-export/src/tau-assets.ts` 来自 `huggingface/tau` 的 `session_usage.py`，只能重生成，不能手改。
 - Herdr Subagents 的实现可能存在并行工作；重构 package 接线时保留其未提交实现改动。
@@ -78,7 +80,7 @@ pi-toolkit/
 pi install npm:@maxiaochao/pi-toolkit
 ```
 
-完整工具包默认启用 cache-export、codex-edit、herdr-subagents、scheduler、worktree；默认不启用 Todo 和 OpenAI Account Pool，两者都需要单独安装。
+完整工具包默认启用 cache-export、codex-edit、herdr-subagents、scheduler、background-tasks、worktree；要求 Pi 1.3.0 或更新版本。默认不启用 Todo 和 OpenAI Account Pool，两者需单独安装。
 
 按需单独安装：
 
@@ -89,6 +91,7 @@ pi install npm:@maxiaochao/pi-codex-edit
 pi install npm:@maxiaochao/pi-herdr-subagents
 pi install npm:@maxiaochao/pi-openai-account-pool
 pi install npm:@maxiaochao/pi-scheduler
+pi install npm:@maxiaochao/pi-background-tasks
 pi install npm:@maxiaochao/pi-worktree
 ```
 
@@ -103,7 +106,7 @@ pi install npm:@maxiaochao/pi-worktree
 子包修改统一使用联动发布：
 
 ```bash
-./scripts/release-package.sh <todo|cache-export|codex-edit|herdr-subagents|openai-account-pool|scheduler|worktree> <initial|patch|minor|major> "<note>" [主包 patch|minor|major]
+./scripts/release-package.sh <todo|cache-export|codex-edit|herdr-subagents|openai-account-pool|scheduler|background-tasks|worktree> <initial|patch|minor|major> "<note>" [主包 patch|minor|major]
 ```
 
 - 主包 tag 为 `vX.Y.Z`，是唯一发布触发器；`.github/workflows/publish.yml` 从同一 commit 解析可选子包并依次发布子包和主包。子包 tag `<slug>-vX.Y.Z` 只记录版本，不单独触发 workflow。
@@ -125,6 +128,7 @@ pi update npm:@maxiaochao/pi-codex-edit
 pi update npm:@maxiaochao/pi-herdr-subagents
 pi update npm:@maxiaochao/pi-openai-account-pool
 pi update npm:@maxiaochao/pi-scheduler
+pi update npm:@maxiaochao/pi-background-tasks
 pi update npm:@maxiaochao/pi-worktree
 ```
 

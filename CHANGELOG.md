@@ -1,3 +1,7 @@
+## Unreleased
+
+- Bundle and enable `@maxiaochao/pi-background-tasks` by default: managed shell jobs, Bash-aligned bounded output, completion followUps, `/bg` controls and an above-editor status widget. Keep the standalone package available as an alternative installation. The toolkit now requires Pi 1.3.0 or later.
+
 ## 2026-10-20 - v0.12.2
 
 - herdr-subagents v0.7.1: clarify Persona responsibilities and dispatch guidance
