@@ -9,7 +9,7 @@
 ## 执行摘要
 
 - Agent Benchmark：**通过（有共同例外）** — 已完成 300/300 条 chain；本地版 First Exact 92/100、Final Exact 92/100，全部正式门槛通过。
-- 协议/包回归：**通过** — 4/4 项检查通过。
+- 协议/包回归：**通过** — 5/5 项检查通过。
 - 安全回归：**5/5 正确拒绝且零写入**，包括工作区外路径。
 - 下文提供 Agent、协议、安全、效率、版本、integrity 和任务来源的完整证据。
 
@@ -114,14 +114,15 @@ Score v2 = `覆盖率 ×（0.75 × 首次精确率 + 0.25 × 最终精确率）`
 
 | 检查项 | 结果 | 命令 |
 |---|---|---|
-| Node 回归测试 | 通过 | `node --experimental-strip-types --test tests/package.test.mjs tests/parser.test.mjs tests/released-vs-local.test.mjs tests/benchmark.test.mjs` |
+| Node 回归测试 | 通过 | `node --experimental-strip-types --test tests/package.test.mjs tests/config.test.mjs tests/parser.test.mjs tests/released-vs-local.test.mjs tests/benchmark.test.mjs` |
 | 原生 edit 与本地 Codex Edit 对比 | 通过 | `pi -ne -e ./tests/native-vs-codex.ts` |
 | 扩展加载 | 通过 | `pi -ne -e ./extensions/codex-edit.ts` |
+| 用户配置与父子会话编辑器集成 | 通过 | `pi -ne -e ./tests/config-integration.ts` |
 | 独立包 tarball | 通过 | `npm pack --dry-run --json` |
 
 ## 确定性回归基线
 
-- Node 测试：预期 22 个，覆盖 parser、matcher、路由、包契约、resolved-path 防护、发布版对比、分层调度和生产事故语料。
+- Node 测试：预期 29 个，覆盖用户配置覆盖与校验、parser、matcher、路由、包契约、resolved-path 防护、发布版对比、分层调度和生产事故语料。
 - 共享对比 corpus：12 个 case。
 - 原生 edit：5 通过 / 2 失败或正确拒绝 / 5 不适用。
 - Codex Edit 发布版 v0.1.7：6 通过 / 6 失败或正确拒绝。

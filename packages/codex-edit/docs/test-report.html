@@ -18,7 +18,7 @@
 <p>被测包：<code>@maxiaochao/pi-codex-edit</code>（当前工作区）</p>
 <p>本报告严格区分真实模型基准、确定性协议回归和安全回归，三类成功率不会混算。</p>
 <h2 id="summary">执行摘要</h2>
-<ul><li>Agent Benchmark：<strong>通过（有共同例外）</strong> — 已完成 300/300 条 chain；本地版 First Exact 92/100、Final Exact 92/100，全部正式门槛通过。</li><li>协议/包回归：<strong>通过</strong> — 4/4 项检查通过。</li><li>安全回归：<strong>5/5 正确拒绝且零写入</strong>，包括工作区外路径。</li><li>下文提供 Agent、协议、安全、效率、版本、integrity 和任务来源的完整证据。</li></ul>
+<ul><li>Agent Benchmark：<strong>通过（有共同例外）</strong> — 已完成 300/300 条 chain；本地版 First Exact 92/100、Final Exact 92/100，全部正式门槛通过。</li><li>协议/包回归：<strong>通过</strong> — 5/5 项检查通过。</li><li>安全回归：<strong>5/5 正确拒绝且零写入</strong>，包括工作区外路径。</li><li>下文提供 Agent、协议、安全、效率、版本、integrity 和任务来源的完整证据。</li></ul>
 <h2 id="benchmark">Agent Benchmark：真实模型基准</h2>
 <p><strong>状态：通过（有共同例外）</strong></p>
 <p>三个测试臂均完成全部 100 个配对任务（共 300 条 chain），实际成本为 $12.388。本地版满足全部正式验收门槛；8 个最终失败均为三臂共同失败，不是本地版独有回归。</p>
@@ -88,13 +88,14 @@
 <ul><li>数据源：<a href="https://github.com/alexshpunt/explicit-edit-benchmark">https://github.com/alexshpunt/explicit-edit-benchmark</a>，commit <code>5827e3fb65845f4b76adb06e5919d94ec4ffd5cf</code>。</li><li>冻结任务：80 Neutral + 20 Challenge；seed 为 <code>pi-toolkit-codex-edit-100-v1</code>。</li><li>模型：<code>openai-codex/gpt-5.6-sol</code>；reasoning：<code>low</code>；Pi：<code>0.85.1</code>；最多 5 次 Oracle recovery。</li><li>发布版：<code>@maxiaochao/pi-codex-edit@0.1.7 (sha512-hfNfx20h51FLCueXaMqBUAVYnxoCakuI306rzuFPI/lS0HT1jE/wQ8xkKl9PwEXboVVD6ZzS/YB0VVrd67V7cw==)</code>。</li><li>本地版：<code>@maxiaochao/pi-codex-edit@0.1.7+local (sha512-Mf21ZfSwOOgaH2lSiF/DpoA8Jk5jH84MaZUX1abkMop3HST3xt2YtCw2NKwrRJpvmJB02bl9wwYyFlAVI68Qwg==)</code>。</li><li>Run ID：<code>explicit-edit-100-sol-low-v3-complete</code>；运行完整性：300/300。</li><li>Identity：task manifest <code>cab0278f530271c7bb3de3e4dba6ab252fa2b748d00164e749ecdbd8f9f7f431</code>；config <code>739bb323275fdcead7709f19a894b0dee57062f40064c04d182d96474535328c</code>；verifier <code>8bd4be15c886bba84e8a6fa46576c43f2ca0f02d2536d98403f97361914a166d</code>。</li><li>Provider 失败：0；失败工具调用：0。</li></ul>
 <h2 id="protocol">协议与包验证摘要</h2>
 <div class="table-wrap"><table><thead><tr><th>检查项</th><th>结果</th><th>命令</th></tr></thead><tbody>
-<tr><td>Node 回归测试</td><td>通过</td><td><code>node --experimental-strip-types --test tests/package.test.mjs tests/parser.test.mjs tests/released-vs-local.test.mjs tests/benchmark.test.mjs</code></td></tr>
+<tr><td>Node 回归测试</td><td>通过</td><td><code>node --experimental-strip-types --test tests/package.test.mjs tests/config.test.mjs tests/parser.test.mjs tests/released-vs-local.test.mjs tests/benchmark.test.mjs</code></td></tr>
 <tr><td>原生 edit 与本地 Codex Edit 对比</td><td>通过</td><td><code>pi -ne -e ./tests/native-vs-codex.ts</code></td></tr>
 <tr><td>扩展加载</td><td>通过</td><td><code>pi -ne -e ./extensions/codex-edit.ts</code></td></tr>
+<tr><td>用户配置与父子会话编辑器集成</td><td>通过</td><td><code>pi -ne -e ./tests/config-integration.ts</code></td></tr>
 <tr><td>独立包 tarball</td><td>通过</td><td><code>npm pack --dry-run --json</code></td></tr>
 </tbody></table></div>
 <h2 id="section-4">确定性回归基线</h2>
-<ul><li>Node 测试：预期 22 个，覆盖 parser、matcher、路由、包契约、resolved-path 防护、发布版对比、分层调度和生产事故语料。</li><li>共享对比 corpus：12 个 case。</li><li>原生 edit：5 通过 / 2 失败或正确拒绝 / 5 不适用。</li><li>Codex Edit 发布版 v0.1.7：6 通过 / 6 失败或正确拒绝。</li><li>Codex Edit 本地版：7 通过 / 5 正确安全拒绝。</li></ul>
+<ul><li>Node 测试：预期 29 个，覆盖用户配置覆盖与校验、parser、matcher、路由、包契约、resolved-path 防护、发布版对比、分层调度和生产事故语料。</li><li>共享对比 corpus：12 个 case。</li><li>原生 edit：5 通过 / 2 失败或正确拒绝 / 5 不适用。</li><li>Codex Edit 发布版 v0.1.7：6 通过 / 6 失败或正确拒绝。</li><li>Codex Edit 本地版：7 通过 / 5 正确安全拒绝。</li></ul>
 <p>“正确拒绝”表示无效或陈旧操作被拒绝，且工作区没有变化。“不适用”表示 Pi 原生 <code>edit</code> 无法用一次编辑协议调用表达该操作，不计为工具缺陷。</p>
 <h2 id="safety">安全回归</h2>
 <p>本地版 5/5 个安全 case 均正确拒绝，且工作区零写入。特别是 <code>outside-workspace-absolute-path</code> 的结果为 <strong>工作区外路径 — 正确拒绝</strong>；放行该操作会允许任意写入 benchmark sandbox 之外。安全拒绝不计入编辑失败率。</p>

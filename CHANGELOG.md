@@ -1,3 +1,7 @@
+## Unreleased
+
+- Codex Edit: read persistent personal routing overrides from `~/.pi/agent/codex-edit.json` (respecting `PI_CODING_AGENT_DIR`), shared by parent sessions and explicitly configured subagents; validate user settings and preserve the bundled defaults.
+
 ## 2026-10-21 - v0.13.2
 
 - make agent-team user-invoked only and add post-release workflow/npm/tarball verification

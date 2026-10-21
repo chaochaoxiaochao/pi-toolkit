@@ -2,13 +2,19 @@
 
 ## 流程
 
-1. `npm --prefix packages/codex-edit test`：运行 parser、matcher、路由、工具契约、包结构、下面两组强制对比、入口加载和 tarball 检查；随后生成 `docs/test-report.md` 并从该 Markdown 转换为自包含 `docs/test-report.html`。这是秒级反馈环，修改 parser 前必须先让对应回归用例变红。
+1. `npm --prefix packages/codex-edit test`：运行用户配置、parser、matcher、路由、工具契约、包结构、下面两组强制对比、入口加载、配置集成和 tarball 检查；随后生成 `docs/test-report.md` 并从该 Markdown 转换为自包含 `docs/test-report.html`。这是秒级反馈环，修改 parser 前必须先让对应回归用例变红。
 2. `pi -ne -e ./packages/codex-edit/extensions/codex-edit.ts`：加载权威入口；独立子包与根包 manifest 都指向该实现。
 3. `npm pack ./packages/codex-edit --dry-run`：检查独立 tarball。
 4. 在根目录运行 `npm test`、`npm run load-test` 和 `npm pack --dry-run`，确认主包内嵌的同一份实现没有退化。
 5. 确认 README 的协议示例、真实 parser 运行输出 `docs/screenshot.png` 和 `docs/demo.gif` 随两个 tarball 发布。
 
 `docs/test-report.md` 是报告内容的权威中间产物，HTML 是每次测试生成的交付视图。提交或发布 Codex Edit 改动时必须包含两者，且 HTML 顶部 Overall 必须为 PASS。
+
+## 用户配置验证
+
+- `node --experimental-strip-types --test packages/codex-edit/tests/config.test.mjs`：隔离临时 agent 目录，覆盖缺少用户文件、按字段覆盖、模型列表替换、显式 false/空列表、非法 JSON/字段类型、读取失败、重新读取和不修改配置文件。包内默认模型规则保持不变。
+- `npm --prefix packages/codex-edit run load-test`：加载权威入口，再用 Pi 加载 `tests/config-integration.ts`。配置集成使用真实扩展 factory 和隔离的 `PI_CODING_AGENT_DIR`，通过模拟的事件/工具选择接口验证不同 cwd 的父子会话共享规则、模型/API 切换、只读工具列表、重载后的禁用和非法配置报错，并执行真实 `apply_patch` 写入临时文件。不修改个人配置、不调用模型、不启动真实 Herdr pane。
+- 用户文件固定为 agent 目录内的 `codex-edit.json`；不读取项目配置。修改后需要 `/reload`，已有子代理需要重新启动。此配置能力不等于验证新增模型的编辑质量；默认模型路由和历史 benchmark 不变，新增模型仍需独立验证。
 
 ## 两组强制对比
 
@@ -35,12 +41,14 @@
 | 项目级多文件重构、重复 SKILL 分隔符、重复 tiny/release 文件块 | 解析为唯一文件操作并得到确定性结果 | `parser.test.mjs` |
 | workspace escape | 拒绝 | `parser.test.mjs` |
 | `gpt-5.6-*`、Responses API、disabled、自定义 glob | 仅允许规则内模型使用 `apply_patch`，其余回退 `edit` | `package.test.mjs` |
+| 用户配置缺失、覆盖、空列表、错误输入、重新读取 | 用户字段覆盖默认值，失败带配置路径，不重写文件 | `config.test.mjs` |
+| 父子会话、API 切换、只读工具、重载 | 共享 agent 目录配置，保留编辑权限与 API 限制 | `config-integration.ts` |
 
 空参数是模型/提供方生成的无效工具调用，Pi 会在扩展 `execute` 之前拦截；parser 无法也不应为缺失 patch 猜内容。`Failed to find expected lines` 表示 patch 基于旧文件内容，安全行为是失败后重新读取并生成新 patch，而不是放宽到可能改错位置。
 
 ## 最近验证结果
 
-当前基线为 22 个 Node 确定性测试及 12 个共享对比 case 全部通过。原生 edit 为 5 pass / 2 fail / 5 unsupported，本地 Codex Edit 为 7 pass / 5 正确安全拒绝；发布版 v0.1.7 为 6 pass / 6 fail，其中 5 个是正确安全拒绝，另 1 个是本地版已修复的同路径顺序 update。另有 5 个生产事故条目冻结真实问题来源，其中 4 个可进入 Agent Benchmark，1 个仅验证指定协议形态。真实触发过的 runner 类型重命名 ambiguous、重复同路径、空 chunk、stale context、解析路径别名冲突、工作区外绝对路径和项目级多文件形态均已进入回归集。发布前必须验证子包 tarball 和根包 tarball 都包含并成功加载该入口。
+当前基线为 29 个 Node 确定性测试及 12 个共享对比 case 全部通过。原生 edit 为 5 pass / 2 fail / 5 unsupported，本地 Codex Edit 为 7 pass / 5 正确安全拒绝；发布版 v0.1.7 为 6 pass / 6 fail，其中 5 个是正确安全拒绝，另 1 个是本地版已修复的同路径顺序 update。另有 5 个生产事故条目冻结真实问题来源，其中 4 个可进入 Agent Benchmark，1 个仅验证指定协议形态。真实触发过的 runner 类型重命名 ambiguous、重复同路径、空 chunk、stale context、解析路径别名冲突、工作区外绝对路径和项目级多文件形态均已进入回归集。发布前必须验证子包 tarball 和根包 tarball 都包含并成功加载该入口。
 
 正式 Agent Benchmark 的预算门禁使用仓库内 `benchmark/run-with-budget.mjs` 包装上游 runner。不要修改 `/tmp` 中的 benchmark clone，也不要允许 `apply_patch` 写出当前工作区；工作区外路径必须作为 Safety Regression 正确拒绝。包装器在 `--stop-cost` 停止调度，并以 `--max-cost` 检查最终硬上限。
 

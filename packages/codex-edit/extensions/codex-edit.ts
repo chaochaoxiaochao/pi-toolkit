@@ -5,6 +5,7 @@ import { Text } from "@earendil-works/pi-tui";
 import {
   generateDiffString,
   generateUnifiedPatch,
+  getAgentDir,
   withFileMutationQueue,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -15,17 +16,9 @@ import {
   resolveWorkspacePath,
 } from "../src/parser.ts";
 import { modelIsAllowed } from "../src/model-routing.ts";
+import { loadSettings } from "../src/config.ts";
 
 const editorToolNames = new Set(["edit", "apply_patch"]);
-const settingsUrl = new URL("../config.json", import.meta.url);
-
-async function loadSettings() {
-  try {
-    return JSON.parse(await readFile(settingsUrl, "utf8"));
-  } catch {
-    return { enabled: true, models: [] };
-  }
-}
 
 function syncEditorTools(pi, ctx, model, settings) {
   const active = pi.getActiveTools();
@@ -96,7 +89,7 @@ function buildFileDetail(path, action, before, after, moveTo) {
 }
 
 export default async function (pi) {
-  const settings = await loadSettings();
+  const settings = await loadSettings(getAgentDir());
 
   pi.registerTool({
     name: "apply_patch",

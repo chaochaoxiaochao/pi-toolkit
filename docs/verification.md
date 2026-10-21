@@ -1,5 +1,14 @@
 # Package split verification
 
+## Codex Edit: persistent user configuration
+
+- Added `src/config.ts`: read bundled defaults, then field-level overrides from `<agent-dir>/codex-edit.json` using Pi's `getAgentDir()` (`~/.pi/agent` by default, honoring `PI_CODING_AGENT_DIR`). Model arrays replace defaults; false and empty arrays remain explicit. Missing user files are allowed; malformed, invalid or unreadable files report their path. No project config, file watcher, automatic migration, package-default change or model/API routing change was added.
+- Observed the new isolated config test fail before implementation. Child tests now include seven config checks (29 Node tests total), with a Pi-loaded integration harness that calls the production extension factory through mocked event/tool-selection interfaces for parent/child cwd independence, API/model switching, read-only tools, reload and malformed input. The registered production patch tool writes and verifies a real temporary file. This is not a real Herdr child or model-quality benchmark.
+- `npm --prefix packages/codex-edit test`: passed all five report checks, including native/local and frozen released/local comparisons, entrypoint loading, config integration and packing. Regenerated `docs/test-report.md`, `docs/test-report.html` and `docs/test-summary.md`; historical 300-chain benchmark evidence and parser corpus are unchanged.
+- `npm --prefix packages/codex-edit run load-test`, full root `npm test`, root `npm run load-test`, child/root `npm pack --dry-run`, and `git diff --check`: passed. Root tests included Cache Export's 18 browser E2E checks with zero skips. Both tarballs include the new config loader and tests. Root AGENTS and manifests were reviewed; runtime loadout and dependencies need no change, and only the child test/load scripts changed.
+- Created the requested personal `~/.pi/agent/codex-edit.json` outside the repository with the unchanged `gpt-5.6-*` rule plus the exact `gpt-6.1-sol` opt-in, and verified the new loader routes it on the supported API. No wildcard expansion to other model families or new paid model-quality benchmark was performed.
+- No installed npm files, Herdr settings, media, versions, commits, tags or publications were changed. The running installed extension remains unchanged; `/reload` only gains this capability after the new implementation is installed or explicitly loaded. Existing child processes retain their previous loadout/configuration.
+
 ## Manual Agent Team and post-release verification
 
 - Agent Team now sets `disable-model-invocation: true`; its description and body no longer authorize automatic activation. README and AGENTS document `/skill:agent-team` as the explicit entrypoint. Package-layout regression checks pin the flag and command.

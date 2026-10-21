@@ -13,7 +13,7 @@ const defaultEvidencePath = join(packageDir, "benchmark/results/explicit-edit-10
 const checks = [
   {
     name: "Node 回归测试",
-    command: ["node", "--experimental-strip-types", "--test", "tests/package.test.mjs", "tests/parser.test.mjs", "tests/released-vs-local.test.mjs", "tests/benchmark.test.mjs"],
+    command: ["node", "--experimental-strip-types", "--test", "tests/package.test.mjs", "tests/config.test.mjs", "tests/parser.test.mjs", "tests/released-vs-local.test.mjs", "tests/benchmark.test.mjs"],
   },
   {
     name: "原生 edit 与本地 Codex Edit 对比",
@@ -22,6 +22,10 @@ const checks = [
   {
     name: "扩展加载",
     command: ["pi", "-ne", "-e", "./extensions/codex-edit.ts"],
+  },
+  {
+    name: "用户配置与父子会话编辑器集成",
+    command: ["pi", "-ne", "-e", "./tests/config-integration.ts"],
   },
   {
     name: "独立包 tarball",
@@ -345,7 +349,7 @@ function buildMarkdown(results, benchmark) {
     "",
     "## 确定性回归基线",
     "",
-    `- Node 测试：预期 22 个，覆盖 parser、matcher、路由、包契约、resolved-path 防护、发布版对比、分层调度和生产事故语料。`,
+    `- Node 测试：预期 29 个，覆盖用户配置覆盖与校验、parser、matcher、路由、包契约、resolved-path 防护、发布版对比、分层调度和生产事故语料。`,
     `- 共享对比 corpus：${comparisonCases.length} 个 case。`,
     `- 原生 edit：${count("pass", "native")} 通过 / ${count("fail", "native")} 失败或正确拒绝 / ${count("unsupported", "native")} 不适用。`,
     `- Codex Edit 发布版 v0.1.7：${count("pass", "released")} 通过 / ${count("fail", "released")} 失败或正确拒绝。`,

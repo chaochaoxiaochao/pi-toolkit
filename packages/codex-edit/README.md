@@ -50,7 +50,7 @@ The extension registers `apply_patch` and selects the editing tool from the reso
 - Model ID outside the allowlist: Pi's native `edit`
 - Model on another API, even if its ID matches: Pi's native `edit`
 
-The default allowlist enables all `gpt-5.6-*` models regardless of provider. Other model families can be added after separate validation by editing `config.json`.
+The default allowlist enables all `gpt-5.6-*` models regardless of provider. Other model families can be added after separate validation in `~/.pi/agent/codex-edit.json`.
 
 The extension does not add a permanent AGENTS rule telling models not to use `apply_patch`. Only the selected editor tool is active, so the model receives one editing protocol.
 
@@ -74,7 +74,11 @@ This repeated-header tolerance is a deliberate Pi-side extension: current Codex 
 
 ## Configuration
 
-The extension defaults to a model-ID allowlist in `config.json`: `"gpt-5.6-*"`. Provider does not affect routing. Each entry is a `*` glob, so this matches every `gpt-5.6-` variant. The route additionally requires:
+The extension reads package defaults from its bundled `config.json`, then applies user overrides from `~/.pi/agent/codex-edit.json`. The user file is outside the installed package, so package updates do not replace your rules. When `PI_CODING_AGENT_DIR` is set, the user file is `<PI_CODING_AGENT_DIR>/codex-edit.json` instead.
+
+Each user field overrides the corresponding package default. `models` replaces the entire default list, rather than appending; `[]` clears it. Omitted fields inherit defaults. A missing user file is allowed. Invalid JSON, invalid known field types, or unreadable files fail extension loading with the file path instead of silently ignoring your rules. Unknown fields are ignored. There is no project-level Codex Edit configuration.
+
+The package default model-ID allowlist is `"gpt-5.6-*"`. Provider does not affect routing. Each entry is a `*` glob, so this matches every `gpt-5.6-` variant. The route additionally requires:
 
 ```text
 model.api = openai-responses or openai-codex-responses
@@ -92,7 +96,7 @@ Patterns are case-sensitive, match the complete model ID, and support `*` as the
 
 ### Add model rules
 
-Edit `config.json` and add validated model-ID patterns:
+Create `~/.pi/agent/codex-edit.json` and add validated model-ID patterns:
 
 ```json
 {
@@ -117,7 +121,11 @@ Adding a pattern only changes routing; it does not prove that a model handles th
 
 Grammar support is not part of the route. When a provider does not emit Lark grammar tools, Pi falls back to a normal function tool, so `apply_patch` still runs there — only the grammar-enforced output shape is lost.
 
-Edit `config.json` in the standalone installed package, or `packages/codex-edit/config.json` inside an installed full toolkit, only if you need to change the default allowlist. Package updates can replace local edits. Set `"enabled": false` to disable all `apply_patch` routing. The implementation keeps both tools registered for session replay and changes only the active tool set on `session_start` and `model_select`.
+Use a boolean for `enabled` and an array of non-empty strings for `models`. Set `"enabled": false` in the user file to disable all `apply_patch` routing. Do not edit the installed package's `config.json` for personal rules; move any existing personal rules into the user file.
+
+Configuration is read when the extension loads. After changing it, use `/reload` or restart Pi. Already running subagents retain their loaded configuration; start a new child to read changes. Parent sessions and subagents that load Codex Edit use the same user file when they share the same agent directory, regardless of working directory or toolkit/standalone distribution. The implementation keeps both tools registered for session replay and changes only the active tool set on `session_start` and `model_select`.
+
+Herdr Subagents does not automatically inherit the parent's extensions. To enable Codex Edit for a writing Persona, include the installed Codex Edit extension file in that Persona's `extensions` array in `~/.pi/agent/herdr-subagents.json`. You may instead use top-level `defaultExtensions` when the Persona has no explicit extension list; Persona-specific lists replace defaults, not merge with them. Preserve any authentication-provider extensions already configured. Read-only Personas should not gain editing tools.
 
 ## Documentation
 

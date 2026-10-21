@@ -10,7 +10,10 @@ test("package points Pi at the extension and config is reachable from it", async
   const manifest = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8"));
   assert.deepEqual(manifest.pi.extensions, ["./extensions/codex-edit.ts"]);
   const source = await readFile(join(packageDir, "extensions/codex-edit.ts"), "utf8");
-  assert.match(source, /new URL\("\.\.\/config\.json", import\.meta\.url\)/);
+  assert.match(source, /loadSettings\(getAgentDir\(\)\)/);
+  const settingsSource = await readFile(join(packageDir, "src/config.ts"), "utf8");
+  assert.match(settingsSource, /new URL\("\.\.\/config\.json", import\.meta\.url\)/);
+  assert.match(settingsSource, /join\(agentDir, "codex-edit\.json"\)/);
   assert.match(source, /model-routing\.ts/);
   assert.match(source, /parameters: Type\.Object\(\{\s*patch: Type\.String/);
   assert.match(source, /applyUpdateGroups\(before, operation\.chunkGroups, operation\.path\)/);
