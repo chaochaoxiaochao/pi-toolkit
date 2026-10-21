@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-21 - v0.13.1
 
+- herdr-subagents v0.7.2: clarify final answer submission through subagent_report
 - Herdr Subagents: clarify that child tasks must finish through `subagent_report`, not a normal text reply; remove the process-exit condition from the report instructions.
 
 ## 2026-10-20 - v0.13.0

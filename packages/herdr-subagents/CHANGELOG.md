@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-21 - v0.7.2
 
+- clarify final answer submission through subagent_report
 - Clarify child report instructions: submit the final result through `subagent_report` when work finishes or cannot be completed, rather than tying submission to process exit or ending with a normal text reply.
 
 ## 2026-10-20 - v0.7.1
