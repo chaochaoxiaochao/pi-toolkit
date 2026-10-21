@@ -1,3 +1,7 @@
+## 2026-10-21 - v0.13.2
+
+- make agent-team user-invoked only and add post-release workflow/npm/tarball verification
+
 ## Unreleased
 
 - Make Agent Team user-invoked only through `/skill:agent-team`, hidden from automatic model selection.
