@@ -17,6 +17,7 @@ It verifies:
 - required explicit Personas in the tool schema and execution, including legacy single-task argument normalization;
 - model-facing role selection guidance for broad independent review, codebase investigation, file-changing work, and charter-driven agent-team execution;
 - effective Persona descriptions in parent listings, corresponding bodies in child system prompts, and unchanged read/write tool boundaries;
+- child system prompts require a terminal `subagent_report` when work finishes or cannot be completed, not a normal text reply or a process-exit condition;
 - rejection of missing, blank, invalid, and unknown Personas before creating runs, while custom Personas remain supported;
 - explicit rejection of parallel write-capable tasks with the conflicting task, Persona, and corrective action;
 - waiting through a delayed authoritative report after a prompt transport error while the Pi process is alive;

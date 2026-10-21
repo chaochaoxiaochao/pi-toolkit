@@ -11,7 +11,7 @@ export function reportProtocolPrompt(systemPrompt: string, kind: ReportPromptKin
 		TURN_INTRO[kind],
 		systemPrompt.trim(),
 		"",
-		"Before this process exits, call subagent_report exactly once with a terminal result.",
+		"Submit your final answer by calling the subagent_report tool.",
 		"Put the complete final answer in result, a concise parent-facing paragraph in summary, and list any useful document paths.",
 		"Use status=completed when the task is finished, or status=failed with error when it cannot be completed.",
 		"Do not pause for parent input; make a reasonable assumption or report failed with the missing requirement.",

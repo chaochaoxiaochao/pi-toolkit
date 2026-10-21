@@ -1,3 +1,7 @@
+## Unreleased
+
+- Herdr Subagents: clarify that child tasks must finish through `subagent_report`, not a normal text reply; remove the process-exit condition from the report instructions.
+
 ## 2026-10-20 - v0.13.0
 
 - background-tasks v0.1.0: bundle background shell tasks with runtime limits, bounded logs, completion notifications and /bg controls

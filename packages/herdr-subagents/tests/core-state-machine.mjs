@@ -155,7 +155,8 @@ async function run(tasks, concurrency, herdr = fakeHerdr(), signal) {
 		const directory = parallel.details.tasks[index].recordDirectory;
 		const instructions = readFileSync(join(directory, "system-prompt.md"), "utf8");
 		assert.ok(instructions.startsWith(personas.get(name).systemPrompt), "Each child must receive its selected Persona body");
-		assert.match(instructions, /call subagent_report exactly once/);
+		assert.ok(instructions.includes("Submit your final answer by calling the subagent_report tool."));
+		assert.doesNotMatch(instructions, /process exits/);
 	}
 
 	const projectAgents = join(root, ".pi", "herdr-subagents", "agents");

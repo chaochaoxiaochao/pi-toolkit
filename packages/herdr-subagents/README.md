@@ -52,7 +52,7 @@ Cleanup belongs to the Pi session that created the run. Starting a new Pi sessio
 
 ## Result protocol
 
-The child must call `subagent_report` once with a terminal status:
+When the task finishes or cannot be completed, the child must call `subagent_report` once instead of ending with a normal text reply. The terminal status is:
 
 - `completed`: the requested work finished.
 - `failed`: it cannot be completed; include `error`.
