@@ -1,5 +1,13 @@
 # Package split verification
 
+## Manual Agent Team and post-release verification
+
+- Agent Team now sets `disable-model-invocation: true`; its description and body no longer authorize automatic activation. README and AGENTS document `/skill:agent-team` as the explicit entrypoint. Package-layout regression checks pin the flag and command.
+- Added `scripts/post-release-check.mjs` / `npm run release:check`, with offline fixtures for root-only and coordinated initial-child releases, workflow discovery/wait/failure, shared timeout, npm propagation/auth/version/commit/integrity failures, missing or modified tarball files, dirty-checkout isolation, and CLI validation. Both release scripts print the exact follow-up command.
+- `npm test` and `npm run load-test`: passed. Post-release fixtures: 22 assertions. Root `npm pack --dry-run`: passed; 185 files, including the updated Agent Team skill. `git diff --check`: passed.
+- Live read-only check: `npm run release:check -- v0.13.1 --timeout 120 --interval 5` passed against commit `8f2b97782eca519a0f09324539a985e7375674d2` and [publish run 39535496464](https://github.com/chaochaoxiaochao/pi-toolkit/actions/runs/39535496464). Verified remote tags, npm metadata/integrity, 55 child files for `@maxiaochao/pi-herdr-subagents@0.7.2` and 185 root files for `@maxiaochao/pi-toolkit@0.13.1`, including bytes and modes, against isolated tag snapshots despite the dirty checkout.
+- No version bump, commit, installation, publication, media regeneration or change to the running Pi loadout was performed. The new check is repository tooling, not a bundled runtime entrypoint. Local packing deliberately ignores scripts; packages that introduce generated prepack output need the verifier updated.
+
 ## Background Tasks bundled by default (2026-10-20)
 
 - Follow-up requirement supersedes the initial optional-install decision below: the toolkit now embeds and enables Background Tasks by default, alongside the five previously bundled children. The standalone child remains available as an alternative; documentation warns against installing both.

@@ -58,6 +58,8 @@ pi-toolkit/
 
 ## Skill 与文档约束
 
+- `agent-team` 仅由用户通过 `/skill:agent-team` 显式加载，保持 `disable-model-invocation: true`；高代价决策不授权 Agent 自行加载或启动。
+
 - 用户可见行为变化必须同步检查根 `README.md`、本文件、根 `CHANGELOG.md`、相关子包 README/TESTING/CHANGELOG 和 manifest。
 - `skills/herdr/SKILL.md` 只在同步上游稳定 tag 时整体替换；唯一允许的本地差异是 description 与 H1 中的名称小写化，来源见 NOTICE。
 - `skills/tapd/` 由本仓库独立维护，不使用 `tapd skill init` 的生成结果覆盖；主文件保留工作流与跨版本契约，附件等分支细节放在 `references/`，具体命令语法由运行时 `tapd --help` 及逐层子命令帮助提供。
@@ -112,6 +114,7 @@ pi install npm:@maxiaochao/pi-worktree
 - 主包 tag 为 `vX.Y.Z`，是唯一发布触发器；`.github/workflows/publish.yml` 从同一 commit 解析可选子包并依次发布子包和主包。子包 tag `<slug>-vX.Y.Z` 只记录版本，不单独触发 workflow。
 - 本地发布脚本在版本与 CHANGELOG 更新后调用 `scripts/release-check.sh`，对最终待发布内容完成全部测试、加载检查和 tarball 检查；通过后才创建 commit 和 tag。
 - 子包联动发布在同一个 commit 更新子包和主包的版本及 CHANGELOG，创建两个 tag，再通过 `git push --atomic` 一次推送；主包版本级别默认为 `patch`。
+- 发布后运行 `npm run release:check -- vX.Y.Z`（省略 tag 时使用当前主包版本）；脚本等待对应 `publish.yml` 成功，校验远端 tag、主包及可选联动子包的 npm 精确版本、integrity 与 tag 快照的全部打包文件。需要已认证的 `gh` 和本地 tag；失败返回非零，不安装或发布。`--timeout 600 --interval 10` 控制共用等待时限和轮询间隔。
 - CI 只校验 tag、版本和联动目标后发布，不重复运行测试。npm 发布是幂等的：workflow 重跑时跳过已存在的精确版本，再继续未完成的目标。一次联动发布只允许修改一个子包版本。
 - 发布只通过根 tag 触发 CI；不要在本地执行 `npm publish`。
 - 不要只发布子包 tag：完整工具包内嵌子包源码，必须由上述联动脚本同时发布新的主包版本；`pi update npm:@maxiaochao/pi-toolkit` 只会获取已发布的新根包。

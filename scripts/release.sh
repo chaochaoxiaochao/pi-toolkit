@@ -55,6 +55,7 @@ git tag "v${VERSION}"
 echo "==> 5/5 atomic push"
 git push --atomic origin main "v${VERSION}"
 echo "tag v${VERSION} pushed; .github/workflows/publish.yml will publish it to npm"
+echo "post-release check: npm run release:check -- v${VERSION}"
 
 echo
 echo "next: pi update npm:@maxiaochao/pi-toolkit  (or on other machines: pi install npm:@maxiaochao/pi-toolkit)"

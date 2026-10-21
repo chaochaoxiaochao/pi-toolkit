@@ -61,10 +61,11 @@
     "ws": "^8.19.0"
   },
   "scripts": {
-    "test": "node tests/package-layout.mjs && node tests/release-check.mjs && npm --prefix packages/todo test && npm --prefix packages/cache-export test && npm --prefix packages/codex-edit test && npm --prefix packages/herdr-subagents test && npm --prefix packages/openai-account-pool test && npm --prefix packages/scheduler test && npm --prefix packages/background-tasks test && npm --prefix packages/worktree test && node --experimental-strip-types extensions/btw/tests/history.mjs",
-    "test:root": "node tests/package-layout.mjs && node tests/release-check.mjs && node --experimental-strip-types extensions/btw/tests/history.mjs",
+    "test": "node tests/package-layout.mjs && node tests/release-check.mjs && node tests/post-release-check.mjs && npm --prefix packages/todo test && npm --prefix packages/cache-export test && npm --prefix packages/codex-edit test && npm --prefix packages/herdr-subagents test && npm --prefix packages/openai-account-pool test && npm --prefix packages/scheduler test && npm --prefix packages/background-tasks test && npm --prefix packages/worktree test && node --experimental-strip-types extensions/btw/tests/history.mjs",
+    "test:root": "node tests/package-layout.mjs && node tests/release-check.mjs && node tests/post-release-check.mjs && node --experimental-strip-types extensions/btw/tests/history.mjs",
     "load-test": "pi -ne -e ./packages/cache-export/extensions/cache-export.ts && pi -ne -e ./extensions/btw/index.ts && pi -ne -e ./packages/codex-edit/extensions/codex-edit.ts && pi -ne -e ./packages/herdr-subagents/extensions/herdr-subagents.ts && pi -ne -e ./packages/scheduler/extensions/scheduler.ts && pi -ne -e ./packages/background-tasks/extensions/background-tasks.ts && pi -ne -e ./packages/worktree/extensions/worktree.ts && npm --prefix packages/background-tasks run load-test -- --toolkit",
     "load-test:root": "pi -ne -e ./extensions/btw/index.ts",
+    "release:check": "node scripts/post-release-check.mjs",
     "eval:agents": "node evaluations/agents-md/run.mjs",
     "eval:agents:test": "node evaluations/agents-md/tests/run-tests.mjs",
     "postinstall": "node scripts/install-agents.mjs"

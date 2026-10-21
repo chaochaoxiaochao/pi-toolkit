@@ -63,6 +63,9 @@ assert.equal(root.bin["pi-worktree"], "packages/worktree/bin/pi-worktree");
 
 const agentTeamSkill = readFileSync("skills/agent-team/SKILL.md", "utf8");
 const agentTeamModels = JSON.parse(readFileSync("skills/agent-team/models.json", "utf8"));
+assert.match(agentTeamSkill, /^disable-model-invocation: true$/m);
+assert.match(agentTeamSkill, /`\/skill:agent-team` 显式加载后开启/);
+assert.doesNotMatch(agentTeamSkill, /主 Agent 也可.*主动开启|高代价决策需要独立复核时/);
 assert.match(agentTeamSkill, /主 Agent.*负责核心调度/);
 assert.match(agentTeamSkill, /\[models\.json\]\(models\.json\)/);
 assert.match(agentTeamSkill, /按配置成员数并发启动子代理/);
@@ -167,6 +170,7 @@ assert.ok(releaseScript.indexOf("npm version") < releaseScript.indexOf('./script
 assert.match(releaseScript, /trap rollback_release_metadata ERR/);
 assert.match(releaseScript, /release checks changed unexpected file/);
 assert.match(releaseScript, /update-release-changelog\.mjs/);
+assert.match(releaseScript, /npm run release:check -- \$ROOT_TAG/);
 assert.match(releaseScript, /CHANGELOG\.md "\$ROOT_VERSION" "\$SLUG v\$CHILD_VERSION: \$NOTE"/, "the root release note must not claim every child is bundled");
 const rootReleaseScript = readFileSync("scripts/release.sh", "utf8");
 const releaseCheckScript = readFileSync("scripts/release-check.sh", "utf8");
@@ -178,6 +182,9 @@ assert.match(rootReleaseScript, /git push --atomic origin main "v\$\{VERSION\}"/
 assert.ok(rootReleaseScript.indexOf("npm version") < rootReleaseScript.indexOf("./scripts/release-check.sh"), "root release checks must exercise the final version");
 assert.match(rootReleaseScript, /trap rollback_release_metadata ERR/);
 assert.match(rootReleaseScript, /git add package\.json CHANGELOG\.md/);
+assert.match(rootReleaseScript, /npm run release:check -- v\$\{VERSION\}/);
+assert.equal(root.scripts["release:check"], "node scripts/post-release-check.mjs");
+for (const name of ["test", "test:root"]) assert.match(root.scripts[name], /node tests\/post-release-check\.mjs/);
 assert.match(rootReleaseScript, /release checks changed unexpected file/);
 assert.match(releaseCheckScript, /npm run test:root/);
 assert.match(releaseCheckScript, /npm run load-test:root/);

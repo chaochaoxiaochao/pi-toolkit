@@ -77,7 +77,7 @@ bash scripts/install.sh
 | `html-artifact` | Build self-contained HTML explainers and diagrams |
 | `pdlog` | Decompress and inspect Pudu `.pdlog` files |
 | `herdr` | Control Herdr workspaces, tabs, panes, and agents |
-| `agent-team` | Let the main agent dispatch concurrent analysis using configured models and roles, collect results, and maintain investigation records; run extra review rounds as needed |
+| `agent-team` | Manually invoke `/skill:agent-team` for concurrent analysis with configured models and roles, result collection, and investigation records; hidden from automatic model selection |
 | `tapd` | Investigate and operate on TAPD items with workspace, evidence, and safe-download guardrails |
 
 Package-specific skills, such as `pi-worktree`, are documented by their child package.
@@ -85,3 +85,17 @@ Package-specific skills, such as `pi-worktree`, are documented by their child pa
 ## Repository
 
 This repository is an npm workspace. Child implementations live under `packages/*`; `extensions/` contains only the toolkit-only BTW module. Development, testing, media generation, and release rules are documented in [AGENTS.md](AGENTS.md).
+
+### Post-release verification
+
+After pushing a release, run from this checkout:
+
+```bash
+npm run release:check -- v0.13.1
+# Wait up to 15 minutes, polling every 15 seconds:
+npm run release:check -- v0.13.1 --timeout 900 --interval 15
+```
+
+Omit the tag to use the current root `package.json` version. Requires Node.js, Git, npm, tar, authenticated GitHub CLI (`gh auth login`), and local release tags (`git fetch origin --tags` if needed).
+
+The read-only check verifies remote tag commits, waits for the matching `publish.yml` run to succeed, and checks exact public npm versions and tarball integrity. It compares every packaged file and mode against an isolated snapshot of the release tag, including an optional coordinated child release. It uses the tag rather than uncommitted checkout changes, never installs or publishes, and removes temporary downloads. Failures exit nonzero; only a pending workflow or npm `E404` is retried within the shared timeout (600 seconds by default). Local packing uses `--ignore-scripts`, matching this repository's source-only packages; packages that add generated prepack output will need this check updated.
