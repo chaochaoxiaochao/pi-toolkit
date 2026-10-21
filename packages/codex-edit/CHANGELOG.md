@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-21 - v0.2.0
 
+- persist personal routing rules in the Pi agent directory across package updates
 - Read persistent user overrides from `~/.pi/agent/codex-edit.json`, or the custom `PI_CODING_AGENT_DIR`, so package updates no longer replace personal routing rules.
 - Merge settings by field over package defaults; replace model lists, preserve explicit false/empty values, and report malformed or unreadable configuration with its path.
 - Cover shared parent/child editor routing, reloads, API restrictions, read-only tool selection, and real patch execution through the production extension factory.

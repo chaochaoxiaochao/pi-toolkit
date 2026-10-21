@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-21 - v0.13.3
 
+- codex-edit v0.2.0: persist personal routing rules in the Pi agent directory across package updates
 - Codex Edit: read persistent personal routing overrides from `~/.pi/agent/codex-edit.json` (respecting `PI_CODING_AGENT_DIR`), shared by parent sessions and explicitly configured subagents; validate user settings and preserve the bundled defaults.
 
 ## 2026-10-21 - v0.13.2
