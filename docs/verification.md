@@ -1,5 +1,14 @@
 # Package split verification
 
+## Herdr Subagents: editor permission and quiet child footer
+
+- Reproduced the legacy `alt+p parent` footer in a failing deterministic test, then changed child startup to clear only its own status key. `Alt+P` and `/parent` still focus the exact parent pane; Codex Edit's status key remains untouched.
+- A real Pi startup probe revealed that the existing child `--tools` allowlist filtered out `apply_patch` after Codex Edit selected it. The status text alone looked correct, but the final active editor list was empty. Added failing argument and native-CLI regressions before permitting `apply_patch` only when the Persona already permits `edit`.
+- `npm --prefix packages/herdr-subagents test` and `PI_TEST_BINARY="$(command -v pi)" npm --prefix packages/herdr-subagents run load-test`: passed. Native fixtures assert final active tools for patch selection, native fallback, and read-only/no-editor limits. The deprecated broad lifecycle suite was not run; its obsolete footer assertion was updated without changing retired lifecycle scenarios.
+- A separate real Pi RPC startup used production `childPiArgs`, the installed Codex Edit extension, and `gpt-6-luna`: the only active editor was `apply_patch`, `editor: apply_patch` was emitted, and the legacy parent hint was cleared. A real 160-column Pi PTY also rendered that editor status without the parent hint. Both probes remained idle and made no model request. Local text/ANSI capture: `.cache/verification/herdr-child-footer.*`.
+- `HERDR_SUBAGENTS_E2E_FOCUS_CLEANUP=1 npm --prefix packages/herdr-subagents run test:real-herdr`: passed for one real child, two concurrent read-only children, deferred focused cleanup, restored focus, and automatic tab cleanup.
+- Full root `npm test`, root `npm run load-test`, child/root `npm pack --dry-run`, and `git diff --check`: passed. README, TESTING, changelogs, AGENTS and manifests were reviewed; no dependency or packaging/loadout changes are needed. No existing user task was restarted, no installed npm file was changed, and no media, version, tag or publication was generated for this follow-up.
+
 ## Codex Edit: persistent user configuration
 
 - Added `src/config.ts`: read bundled defaults, then field-level overrides from `<agent-dir>/codex-edit.json` using Pi's `getAgentDir()` (`~/.pi/agent` by default, honoring `PI_CODING_AGENT_DIR`). Model arrays replace defaults; false and empty arrays remain explicit. Missing user files are allowed; malformed, invalid or unreadable files report their path. No project config, file watcher, automatic migration, package-default change or model/API routing change was added.
