@@ -9,7 +9,8 @@ npm test --workspace @maxiaochao/pi-herdr-subagents
 It verifies:
 
 - global/project `defaultExtensions` replacement, trimming, source attribution, Persona JSON/Markdown precedence, explicit empty-list clearing, invalid-value diagnostics, and per-call reloads;
-- resolved defaults in control listings, settings output, and child CLI arguments while preserving mandatory extensions;
+- concise Persona names/descriptions in model-facing listings and unknown-Persona errors, including empty lists and visible configuration diagnostics;
+- resolved defaults in control result metadata, settings output, and child CLI arguments while preserving mandatory extensions;
 - strict serial start order at concurrency one;
 - bounded read-only parallelism;
 - ordered results despite concurrent completion;

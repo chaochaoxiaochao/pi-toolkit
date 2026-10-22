@@ -3,6 +3,10 @@
 - Herdr Subagents: hide the child parent-navigation footer hint while keeping `Alt+P`, `/parent`, and other extensions' editor status.
 - Herdr Subagents: permit `apply_patch` in edit-capable child CLI allowlists so editor switching does not remove the only active editing tool; preserve read-only limits and native fallback.
 
+## 2026-10-22 - v0.13.4
+
+- herdr-subagents v0.7.3: keep Persona selection lists concise
+
 ## 2026-10-21 - v0.13.3
 
 - codex-edit v0.2.0: persist personal routing rules in the Pi agent directory across package updates
@@ -14,6 +18,7 @@
 
 ## Unreleased
 
+- Herdr Subagents: show only Persona names and descriptions in model-facing selection lists, preserving diagnostics and detailed user-facing inspection.
 - Make Agent Team user-invoked only through `/skill:agent-team`, hidden from automatic model selection.
 - Add `npm run release:check -- vX.Y.Z` to wait for GitHub publication and verify exact npm versions, remote tags, integrity, and all tarball contents against the release commit, including coordinated child releases.
 

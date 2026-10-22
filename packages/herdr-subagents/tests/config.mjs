@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadSubagentConfiguration } from "../src/config.ts";
 import { childPiArgs } from "../src/live-agent.ts";
-import { executeHerdrSubagentsControl } from "../src/tool.ts";
+import { executeHerdrSubagentsControl, listText } from "../src/tool.ts";
 
 const root = mkdtempSync(join(tmpdir(), "herdr-default-extensions-"));
 const agents = join(root, "agents");
@@ -88,7 +88,18 @@ try {
 	const response = await executeHerdrSubagentsControl({ action: "list" }, undefined, undefined, { cwd: root }, { agentsDirectory: agents, configurationPaths: paths });
 	assert.deepEqual(response.details.agents.find(({ name }) => name === "plain").extensions, ["./updated.ts"]);
 	assert.deepEqual(response.details.settings.defaultExtensions, ["./updated.ts"]);
-	assert.match(response.content[0].text, /extensions: \.\/updated\.ts \[project\]/);
+	const expectedListing = [
+		"Available Herdr Subagents personas:",
+		"- cleared: Configuration fixture",
+		"- pinned: Configuration fixture",
+		"- plain: Configuration fixture",
+	].join("\n");
+	assert.equal(response.content[0].text, expectedListing, "Model-facing listings must contain only Persona names and descriptions");
+	assert.equal(listText({ ...configuration, personas: [] }), "Available Herdr Subagents personas:\n- (none)");
+	write(paths.projectConfig, { defaultExtensions: "./invalid.ts" });
+	const diagnosed = await executeHerdrSubagentsControl({ action: "list" }, undefined, undefined, { cwd: root }, { agentsDirectory: agents, configurationPaths: paths });
+	assert.equal(diagnosed.content[0].text, `${expectedListing}\n\nPersona diagnostics:\n- project defaultExtensions must be an array of non-empty strings`, "Concise listings must still surface invalid configuration");
+	assert.deepEqual(diagnosed.details.diagnostics, ["project defaultExtensions must be an array of non-empty strings"]);
 	write(paths.projectConfig, { defaultExtensions: [] });
 	const cleared = persona(load());
 	assert.deepEqual(cleared.extensions, []);
@@ -104,6 +115,8 @@ try {
 	const readonlyArgs = childPiArgs({ id: "readonly", sessionFile: join(root, "readonly.jsonl"), tools: ["read", "bash"] }, join(root, "system.md"));
 	assert.ok(!readonlyArgs[readonlyArgs.indexOf("--tools") + 1].split(",").includes("apply_patch"));
 	console.log("PASS edit-capable children allow the patch editor without adding it to read-only tool lists");
+
+	console.log("PASS concise Persona listings preserve diagnostics and detailed metadata; defaults reach child arguments and reload per call");
 } finally {
 	rmSync(root, { recursive: true, force: true });
 }

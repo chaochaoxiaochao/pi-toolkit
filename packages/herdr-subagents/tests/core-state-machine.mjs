@@ -142,7 +142,7 @@ async function run(tasks, concurrency, herdr = fakeHerdr(), signal) {
 	assert.match(laterMissing.content[0].text, /tasks\[1\]\.agent.*required/);
 	const unknown = await execute({ tasks: [{ ...missing, agent: "unknown-persona" }] });
 	assert.equal(unknown.isError, true);
-	assert.match(unknown.content[0].text, /Unknown persona 'unknown-persona'/);
+	assert.equal(unknown.content[0].text, `Unknown persona 'unknown-persona'.\n\n${listed.content[0].text}`, "Unknown-Persona errors must reuse the concise selection list");
 	assert.deepEqual(herdr.starts, [], "Invalid requests must not start an Agent");
 	assert.equal(existsSync(join(root, ".pi", "herdr-subagents", "runs")), false, "Invalid requests must not create run records");
 
@@ -287,6 +287,8 @@ assert.throws(() => applyTaskStatus(terminal, "running"), /terminal tasks are im
 	const notifications = [];
 	await configuredCommands.get("herdr-subagents").handler("settings", { cwd: lifecycleRoot, ui: { notify(message) { notifications.push(message); } } });
 	assert.match(notifications[0], /defaultExtensions=\[\] \(project\)/, "Settings must show empty defaults and their source");
+	await configuredCommands.get("herdr-subagents").handler("agents", { cwd: lifecycleRoot, ui: { notify(message) { notifications.push(message); } } });
+	assert.match(notifications[1], /: (?:package|global|project), (?:read|write), model=.*thinking=.*tools=.*skills=.*extensions=/, "User-facing inspection must retain detailed configuration fields");
 }
 
 {

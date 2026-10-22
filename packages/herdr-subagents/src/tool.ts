@@ -60,10 +60,7 @@ export function listText(discovery: SubagentConfiguration): string {
 	const lines = ["Available Herdr Subagents personas:"];
 	if (discovery.personas.length === 0) lines.push("- (none)");
 	for (const agent of discovery.personas) {
-		const model = agent.model ?? "unresolved";
-		const tools = agent.tools?.join(", ") ?? "Pi default built-in tools";
-		const skills = agent.skills.join(", ") || "none";
-		lines.push(`- ${agent.name}: ${agent.description} (source: ${agent.source}; access: ${agent.access}; model: ${model} [${agent.modelSource}]; thinking: ${agent.thinking ?? "default"}; tools: ${tools}; skills: ${skills}; extensions: ${agent.extensions.join(", ") || "none"} [${agent.extensionsSource}])`);
+		lines.push(`- ${agent.name}: ${agent.description}`);
 	}
 	if (discovery.diagnostics.length > 0) {
 		lines.push("", "Persona diagnostics:", ...discovery.diagnostics.map((diagnostic) => `- ${diagnostic}`));
