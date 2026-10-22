@@ -9,6 +9,10 @@
 
 ## Unreleased
 
+- Background Tasks: expose the approved non-polling startup guidance to direct and Codemode callers. Retain results after a user interrupt without restarting the agent, then hand them to the next user-message run; verify native tool batches, interrupts and compaction cancellation without changing Pi itself.
+- Background Tasks: merge unread completions at the next safe tool boundary, consume pending reminders on terminal-output reads, and show actual completion times. Preserve automatic idle notification without adding a pause switch or changing Herdr execution/global queue settings.
+- Background Tasks: reduce busy-session notification checks with exponential backoff capped at 30 seconds, without expiring unread results or delaying normal tool-boundary delivery.
+
 - Make Agent Team user-invoked only through `/skill:agent-team`, hidden from automatic model selection.
 - Add `npm run release:check -- vX.Y.Z` to wait for GitHub publication and verify exact npm versions, remote tags, integrity, and all tarball contents against the release commit, including coordinated child releases.
 

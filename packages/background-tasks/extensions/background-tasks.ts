@@ -1,5 +1,5 @@
 import { StringEnum } from "@earendil-works/pi-ai";
-import { createLocalBashOperations, type BashOperations, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { createLocalBashOperations, type AgentBeforeSettleEvent, type BashOperations, type ExtensionAPI, type ExtensionContext, type TurnEndEvent } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { stripVTControlCharacters } from "node:util";
 import { Type } from "typebox";
@@ -7,6 +7,7 @@ import { BackgroundTasks, errorText, summary, systemClock, type Clock, type Task
 import { BackgroundWidget, FINISHED_VISIBLE_MS, WIDGET_KEY, duration, visibleTasks } from "../src/widget.ts";
 
 const actions = ["start", "list", "output", "cancel"] as const;
+const startGuidance = "完成会自动通知。现在不要查询等待；继续其他独立工作，没有其他工作就结束当前轮，收到通知后再取结果。";
 type Action = typeof actions[number];
 interface Params {
 	action: Action;
@@ -34,6 +35,7 @@ const OutputSchema = Type.Object({
 	action: Type.Optional(StringEnum(actions)), task: Type.Optional(TaskSchema), tasks: Type.Optional(Type.Array(TaskSchema)),
 	running: Type.Optional(Type.Number()), total: Type.Optional(Type.Number()), omitted: Type.Optional(Type.Number()),
 	output: Type.Optional(Type.String()), truncated: Type.Optional(Type.Boolean()), full_output_path: Type.Optional(Type.String()),
+	guidance: Type.Optional(Type.String()),
 	error: Type.Optional(Type.String()),
 });
 
@@ -62,7 +64,77 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 	let context: ExtensionContext | undefined;
 	let generation = 0;
 	let timer: unknown;
+	let notificationTimer: unknown;
+	let completedNormally = true;
+	let interrupted = false;
+	const pending = new Map<string, TaskSnapshot>();
 	let mounted: { widget: BackgroundWidget; tui: { requestRender(): void } } | undefined;
+
+	const clearNotificationTimer = () => {
+		if (notificationTimer !== undefined) clock.clearTimeout(notificationTimer);
+		notificationTimer = undefined;
+	};
+	const takeNotification = () => {
+		clearNotificationTimer();
+		if (pending.size === 0) return;
+		const tasks = [...pending.values()].sort((a, b) => a.ended_at! - b.ended_at!);
+		pending.clear();
+		return {
+			customType: "background-task-finished", display: true,
+			details: { tasks, ...(tasks.length === 1 ? { task: tasks[0] } : {}) },
+			content: `[Background task finished]\n${tasks.map((task) =>
+				`${formatTask(task)}\nEnded at: ${new Date(task.ended_at!).toISOString()}${task.reason ? `\nReason: ${task.reason}` : ""}\nCaptured log: ${task.log_path}${task.capture_complete ? "" : "\nOutput capture is incomplete."}`
+			).join("\n\n")}`,
+		};
+	};
+	const scheduleNotification = (delay = 0) => {
+		if (interrupted || notificationTimer !== undefined || pending.size === 0) return;
+		const epoch = generation;
+		notificationTimer = clock.setTimeout(() => {
+			notificationTimer = undefined;
+			if (generation !== epoch || !context) return;
+			if (!context.isIdle()) {
+				// Manual compaction has no agent boundary when it finishes.
+				// Keep one wake pending, without expiring unread results or polling every second.
+				scheduleNotification(Math.min(delay === 0 ? 1000 : delay * 2, 30_000));
+				return;
+			}
+			const message = takeNotification();
+			if (!message) return;
+			try { pi.sendMessage(message, { triggerTurn: true, deliverAs: "steer" }); }
+			catch (error) {
+				// Native Pi reports async send/run failures itself; this covers synchronous adapters.
+				for (const task of message.details.tasks) pending.set(task.id, task);
+				console.error(`Background completion notification failed: ${errorText(error)}`);
+			}
+		}, delay);
+	};
+	const deliverAtBoundary = (event: TurnEndEvent | AgentBeforeSettleEvent) => {
+		completedNormally = event.outcome === "completed";
+		if (event.outcome === "aborted") interrupted = true;
+		if (!completedNormally || interrupted) {
+			clearNotificationTimer();
+			return;
+		}
+		const message = takeNotification();
+		if (message) return { entries: [...event.entries, { type: "custom_message" as const, ...message }], continue: true };
+	};
+	pi.on("turn_end", deliverAtBoundary);
+	pi.on("agent_before_settle", deliverAtBoundary);
+	pi.on("before_agent_start", (event) => {
+		if (event.messageType !== "user" || !interrupted) return;
+		// Only a new user prompt releases an interrupt, not another extension's custom wake.
+		interrupted = false;
+		const message = takeNotification();
+		if (message) return { message };
+	});
+	pi.on("agent_settled", (event) => {
+		if (event.aborted) {
+			interrupted = true;
+			clearNotificationTimer();
+		}
+		if (!event.aborted && completedNormally) scheduleNotification();
+	});
 
 	const clearTimer = () => {
 		if (timer !== undefined) clock.clearTimeout(timer);
@@ -107,6 +179,10 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 		manager = undefined;
 		context = undefined;
 		clearTimer();
+		clearNotificationTimer();
+		pending.clear();
+		completedNormally = true;
+		interrupted = false;
 		try {
 			if (previousContext?.hasUI) {
 				previousContext.ui.setStatus(WIDGET_KEY, undefined);
@@ -124,10 +200,8 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 			onChange() { if (generation === epoch) refresh(); },
 			onComplete(task) {
 				if (generation !== epoch || !context) return;
-				pi.sendMessage({
-					customType: "background-task-finished", display: true, details: { task },
-					content: `[Background task finished]\n${formatTask(task)}${task.reason ? `\nReason: ${task.reason}` : ""}\nCaptured log: ${task.log_path}${task.capture_complete ? "" : "\nOutput capture is incomplete."}`,
-				}, { triggerTurn: true, deliverAs: "followUp" });
+				pending.set(task.id, task);
+				scheduleNotification();
 			},
 		});
 	});
@@ -139,8 +213,8 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 		if (params.action === "start") {
 			const task = manager.start({ command: params.command!, description: params.description, cwd: params.cwd, timeout: params.timeout }, cwd);
 			return {
-				text: `Started ${formatTask(task)}\nLog: ${task.log_path}\nAt most 2 tasks run at once. Tasks stop on session changes, reload, or exit; captured logs are then removed.`,
-				data: { action: params.action, task }, details: { action: params.action, task }, isError: false,
+				text: `Started ${formatTask(task)}\n${startGuidance}\nLog: ${task.log_path}\nAt most 2 tasks run at once. Tasks stop on session changes, reload, or exit; captured logs are then removed.`,
+				data: { action: params.action, task, guidance: startGuidance }, details: { action: params.action, task }, isError: false,
 			};
 		}
 		if (params.action === "list") {
@@ -166,13 +240,19 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 
 	pi.registerTool({
 		name: "background_task", label: "Background task",
-		description: "Start shell commands as background tasks and return task IDs immediately. Supports status, output, and cancellation; notifies the main agent on completion.",
+		description: `Start shell commands as background tasks and return task IDs immediately. Supports status, output, and cancellation. After start: ${startGuidance}`,
 		parameters: Parameters, outputSchema: OutputSchema,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
 		async execute(_id, params, signal, _onUpdate, ctx) {
 			try {
 				if (signal?.aborted) throw new Error("Tool call aborted before task acceptance");
 				const result = await perform(params, ctx?.cwd ?? context?.cwd ?? process.cwd());
+				// A terminal result was consumed by this tool's caller (including Codemode).
+				// User /bg inspections and running snapshots do not acknowledge completion.
+				if (params.action === "output" && "task" in result.data && result.data.task.status !== "running") {
+					pending.delete(result.data.task.id);
+					if (pending.size === 0) clearNotificationTimer();
+				}
 				return { content: [{ type: "text" as const, text: result.text }], structuredContent: result.data, details: result.details, isError: result.isError };
 			} catch (error) {
 				const message = errorText(error);

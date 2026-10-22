@@ -138,12 +138,15 @@ try:
     shot('running')
     send('/bg output ' + first['id'])
     send('SMOKE_CANCEL')
-    wait(lambda: bool(finished('cancelled')), 'cancel follow-up')
-    wait(lambda: bool(finished('succeeded')), 'successful background follow-up')
+    wait(lambda: bool(finished('cancelled')), 'cancel notification')
+    wait(lambda: bool(finished('succeeded')), 'successful background notification')
     shot('completed')
     send('SMOKE_OUTPUT')
     wait(lambda: any(e.get('result', {}).get('structuredContent', {}).get('output') == 'BUILD SUCCESSFUL\n' for e in tools()), 'explicit output query')
-    wait(lambda: 'BACKGROUND_FOLLOWUP_RECEIVED' in raw, 'main agent automatic response')
+    wait(lambda: 'BACKGROUND_NOTIFICATION_RECEIVED' in raw, 'main agent automatic response')
+    pump(0.5)
+    notifications = [e for e in events() if e.get('event') == 'custom' and e.get('type') == 'background-task-finished']
+    assert len(notifications) == 2, 'Duplicate persisted busy/idle notifications'
     pump(5.3)
     shot('history')
 
@@ -174,7 +177,8 @@ try:
     (OUT / 'events.jsonl').write_text('\n'.join(json.dumps(e) for e in records) + '\n')
     (OUT / 'result.json').write_text(json.dumps({'passed': True, 'screenshots': screens,
         'checks': ['two jobs', 'third rejected', 'Codemode returns while jobs live', 'Scheduler coexistence', '/bg output',
-                   'cancel notification', 'success notification', 'main agent follow-up', '5-second terminal row', 'reload cleanup', 'new-session cleanup', 'quit cleanup']}, indent=2))
+                   'cancel notification', 'success notification', 'main agent notification', 'no duplicate persisted notifications',
+                   '5-second terminal row', 'reload cleanup', 'new-session cleanup', 'quit cleanup']}, indent=2))
 except Exception:
     (OUT / 'error.txt').write_text(traceback.format_exc())
     raise

@@ -8,6 +8,7 @@ export default function (pi: ExtensionAPI) {
 		if (process.env.BG_SMOKE_EVENTS) appendFileSync(process.env.BG_SMOKE_EVENTS, JSON.stringify(entry) + "\n");
 	};
 	let sequence = 0;
+	const observedNotifications = new Set<string>();
 	pi.registerProvider("bg-fixture", {
 		name: "Offline background-task fixture", baseUrl: "http://127.0.0.1:1", api: "bg-fixture",
 		apiKey: "fixture-not-a-secret",
@@ -17,7 +18,9 @@ export default function (pi: ExtensionAPI) {
 			queueMicrotask(() => {
 				const last = context.messages.at(-1) as any;
 				const text = typeof last?.content === "string" ? last.content : (last?.content ?? []).filter((block: any) => block.type === "text").map((block: any) => block.text).join("\n");
-				record({ event: "request", lastRole: last?.role, text: text.slice(0, 2000), tools: getCurrentTools(context.messages).map((tool) => tool.name) });
+				const tools = getCurrentTools(context.messages);
+				record({ event: "request", lastRole: last?.role, text: text.slice(0, 2000), tools: tools.map((tool) => tool.name),
+					backgroundDescription: tools.find((tool) => tool.name === "background_task")?.description });
 				let code: string | undefined;
 				if (last?.role !== "toolResult") {
 					if (text.includes("SMOKE_START")) code = `const a = await tools.background_task({ action: "start", command: "sleep 9; printf 'BUILD SUCCESSFUL\\\\n'", description: "Release build", timeout: 30 });
@@ -32,6 +35,7 @@ const task = list.tasks.find(t => t.description === "Release build");
 const result = await tools.background_task({ action: "output", id: task.id });
 text({ status: result.task.status, output: result.output });`;
 					else if (text.includes("SMOKE_LONG")) code = `text(await tools.background_task({ action: "start", command: "echo $$ > shell.pid; sleep 300 & echo $! > child.pid; wait", description: "Lifecycle cleanup check", timeout: 300 }));`;
+					else if (text.includes("SMOKE_GUIDANCE")) code = `text(await tools.background_task({ action: "start", command: "sleep 300", description: "Guidance check", timeout: 300 }));`;
 				}
 				const message: any = { role: "assistant", api: model.api, provider: model.provider, model: model.id, timestamp: Date.now(), content: [], stopReason: code ? "toolUse" : "stop",
 					usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
@@ -41,7 +45,7 @@ text({ status: result.task.status, output: result.output });`;
 					stream.push({ type: "toolcall_start", contentIndex: 0, partial: message });
 					stream.push({ type: "toolcall_end", contentIndex: 0, toolCall: message.content[0], partial: message });
 				} else {
-					const reply = text.includes("[Background task finished]") ? "BACKGROUND_FOLLOWUP_RECEIVED" : "Main agent is ready; accepted background tasks keep running.";
+					const reply = text.includes("[Background task finished]") ? "BACKGROUND_NOTIFICATION_RECEIVED" : "Main agent is ready; accepted background tasks keep running.";
 					message.content.push({ type: "text", text: reply });
 					stream.push({ type: "text_start", contentIndex: 0, partial: message });
 					stream.push({ type: "text_delta", contentIndex: 0, delta: reply, partial: message });
@@ -57,7 +61,13 @@ text({ status: result.task.status, output: result.output });`;
 		if (ctx.hasUI) ctx.ui.setTitle("Pi Background Tasks Smoke");
 	});
 	pi.on("tool_execution_end", (event) => record({ event: "tool_end", name: event.toolName, isError: event.isError, result: event.result }));
-	pi.on("message_start", (event) => {
-		if (event.message.role === "custom") record({ event: "custom", type: event.message.customType, details: event.message.details });
+	pi.on("context", (_event, ctx) => {
+		// Both boundary entries and idle messages are persisted before the provider request.
+		// Key by entry ID so two actual notifications for the same tasks remain observable.
+		for (const entry of ctx.sessionManager.getBranch()) {
+			if (entry.type !== "custom_message" || observedNotifications.has(entry.id)) continue;
+			observedNotifications.add(entry.id);
+			record({ event: "custom", entryId: entry.id, type: entry.customType, details: entry.details });
+		}
 	});
 }
