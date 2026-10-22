@@ -1,3 +1,7 @@
+## 2026-10-22 - v0.13.6
+
+- background-tasks v0.1.1: batch unread completions at tool boundaries, preserve interrupted runs, and provide non-polling startup guidance
+
 ## 2026-10-22 - v0.13.5
 
 - herdr-subagents v0.7.4: preserve Codex patch editing in child allowlists and hide the parent shortcut footer hint

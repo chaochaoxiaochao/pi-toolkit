@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2026-10-22 - v0.1.1
 
+- batch unread completions at tool boundaries, preserve interrupted runs, and provide non-polling startup guidance
 - Include the approved non-polling startup guidance in the tool description, model-visible start result and Codemode's structured result. Keep ordinary output reads separate from waiting.
 - Follow OMP's user-interrupt semantics: retain pending and later results without restarting the stopped agent, then hand unread results to the next user-message run. Do not confuse manual-compaction cancellation with an agent interrupt; add no switch or waiting tool.
 - Cover direct native tool batches as well as Codemode, and real user interrupts before/after shell completion. Determine native compaction cancellation from lifecycle state instead of error wording.
