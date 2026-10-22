@@ -1,3 +1,14 @@
+## 2026-10-22 - v0.7.4
+
+- preserve Codex patch editing in child allowlists and hide the parent shortcut footer hint
+- Hide the child parent-navigation footer hint and clear its legacy status on reload, while retaining `Alt+P`, `/parent`, and editor/plugin status.
+- Permit `apply_patch` in the persistent CLI allowlist only for Personas that allow `edit`; test actual Pi startup selection, read-only limits and native fallback instead of relying on mocked tool lists or status labels.
+
+## 2026-10-22 - v0.7.3
+
+- keep Persona selection lists concise
+- Limit model-facing Persona listings and unknown-Persona suggestions to names and descriptions. Preserve configuration diagnostics, detailed result metadata, and the `/herdr-subagents agents` and `settings` inspection commands.
+
 ## 2026-10-21 - v0.7.2
 
 - clarify final answer submission through subagent_report

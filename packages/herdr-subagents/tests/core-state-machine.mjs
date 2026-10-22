@@ -142,7 +142,7 @@ async function run(tasks, concurrency, herdr = fakeHerdr(), signal) {
 	assert.match(laterMissing.content[0].text, /tasks\[1\]\.agent.*required/);
 	const unknown = await execute({ tasks: [{ ...missing, agent: "unknown-persona" }] });
 	assert.equal(unknown.isError, true);
-	assert.match(unknown.content[0].text, /Unknown persona 'unknown-persona'/);
+	assert.equal(unknown.content[0].text, `Unknown persona 'unknown-persona'.\n\n${listed.content[0].text}`, "Unknown-Persona errors must reuse the concise selection list");
 	assert.deepEqual(herdr.starts, [], "Invalid requests must not start an Agent");
 	assert.equal(existsSync(join(root, ".pi", "herdr-subagents", "runs")), false, "Invalid requests must not create run records");
 
@@ -287,6 +287,44 @@ assert.throws(() => applyTaskStatus(terminal, "running"), /terminal tasks are im
 	const notifications = [];
 	await configuredCommands.get("herdr-subagents").handler("settings", { cwd: lifecycleRoot, ui: { notify(message) { notifications.push(message); } } });
 	assert.match(notifications[0], /defaultExtensions=\[\] \(project\)/, "Settings must show empty defaults and their source");
+	await configuredCommands.get("herdr-subagents").handler("agents", { cwd: lifecycleRoot, ui: { notify(message) { notifications.push(message); } } });
+	assert.match(notifications[1], /: (?:package|global|project), (?:read|write), model=.*thinking=.*tools=.*skills=.*extensions=/, "User-facing inspection must retain detailed configuration fields");
+}
+
+{
+	const previousParent = process.env.PI_HERDR_SUBAGENTS_PARENT_PANE_ID;
+	process.env.PI_HERDR_SUBAGENTS_PARENT_PANE_ID = "test-workspace:parent";
+	const handlers = new Map();
+	const commands = new Map();
+	const shortcuts = new Map();
+	const calls = [];
+	const statuses = new Map([
+		["herdr-subagents-parent", "alt+p parent"],
+		["codex-edit", "editor: apply_patch"],
+	]);
+	const ctx = { ui: { notify() {}, setStatus(key, value) { statuses.set(key, value); } } };
+	try {
+		registerSubagentReport({
+			registerTool() {},
+			registerCommand(name, command) { commands.set(name, command); },
+			registerShortcut(key, shortcut) { shortcuts.set(key, shortcut); },
+			on(name, handler) { handlers.set(name, handler); },
+			events: { on() {} },
+			async exec(command, args) { calls.push([command, args]); return { code: 0, stdout: "", stderr: "" }; },
+		});
+		await handlers.get("session_start")({}, ctx);
+		assert.equal(statuses.get("herdr-subagents-parent"), undefined, "child startup clears the old parent shortcut hint");
+		assert.equal(statuses.get("codex-edit"), "editor: apply_patch", "child navigation must not overwrite editor status");
+		await commands.get("parent").handler("", ctx);
+		await shortcuts.get("alt+p").handler(ctx);
+		assert.deepEqual(calls, [
+			["herdr", ["agent", "focus", "test-workspace:parent"]],
+			["herdr", ["agent", "focus", "test-workspace:parent"]],
+		], "the parent command and shortcut must remain functional without a footer hint");
+	} finally {
+		if (previousParent === undefined) delete process.env.PI_HERDR_SUBAGENTS_PARENT_PANE_ID;
+		else process.env.PI_HERDR_SUBAGENTS_PARENT_PANE_ID = previousParent;
+	}
 }
 
 {

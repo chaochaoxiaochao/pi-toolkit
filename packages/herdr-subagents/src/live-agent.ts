@@ -42,8 +42,11 @@ export function childPiArgs(task: LiveTaskRecord, systemPromptFile: string): str
 	for (const extension of task.extensions ?? []) args.push("--extension", extension);
 	if (task.model) args.push("--model", task.model);
 	if (task.thinking) args.push("--thinking", task.thinking);
-	if (task.tools?.length) args.push("--tools", [...new Set([...task.tools, "codemode", "subagent_report"])].join(","));
-	else args.push("--tools", "+codemode");
+	if (task.tools?.length) {
+		// Pi keeps this allowlist after startup, including editor protocol switches.
+		const editorTools = task.tools.includes("edit") ? ["apply_patch"] : [];
+		args.push("--tools", [...new Set([...task.tools, ...editorTools, "codemode", "subagent_report"])].join(","));
+	} else args.push("--tools", "+codemode");
 	for (const skill of task.skills ?? []) args.push("--skill", skill);
 	return args;
 }

@@ -9,7 +9,8 @@ npm test --workspace @maxiaochao/pi-herdr-subagents
 It verifies:
 
 - global/project `defaultExtensions` replacement, trimming, source attribution, Persona JSON/Markdown precedence, explicit empty-list clearing, invalid-value diagnostics, and per-call reloads;
-- resolved defaults in control listings, settings output, and child CLI arguments while preserving mandatory extensions;
+- concise Persona names/descriptions in model-facing listings and unknown-Persona errors, including empty lists and visible configuration diagnostics;
+- resolved defaults in control result metadata, settings output, and child CLI arguments while preserving mandatory extensions;
 - strict serial start order at concurrency one;
 - bounded read-only parallelism;
 - ordered results despite concurrent completion;
@@ -28,6 +29,8 @@ It verifies:
 - immutable terminal task records;
 - idempotent duplicate reports and rejection of conflicting replacements;
 - keeping a settled child alive for focus-aware cleanup instead of force-exiting its TUI;
+- clearing the legacy parent shortcut footer hint while preserving other extension status, with `Alt+P` and `/parent` still focusing the exact parent pane;
+- adding `apply_patch` to the child CLI allowlist only when the Persona permits `edit`;
 - preserving the configured smoke model, thinking level, and authentication extensions while isolating unrelated settings;
 - project-over-global smoke configuration, explicit extension clearing, model overrides, and local-source paths after moving to a temporary directory.
 
@@ -38,6 +41,8 @@ Run extension source loading. The direct-Pi fixture resolves global `defaultExte
 ```sh
 npm run load-test --workspace @maxiaochao/pi-herdr-subagents
 ```
+
+The native CLI fixture also exercises an extension that switches `edit` to `apply_patch`. It checks the final active tools, not just status text: writable children retain the selected patch tool, read-only/no-editor children do not gain it, and children without the patch extension retain native `edit`. This deterministic probe does not call a model or test Codex Edit's parser.
 
 Run the real Herdr smoke test from a Herdr session:
 

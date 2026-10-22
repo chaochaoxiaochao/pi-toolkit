@@ -19,6 +19,15 @@ try {
 	}));
 	writeFileSync(join(packageDirectory, "extension.ts"), `export default function (pi) {
 		pi.registerCommand("package-extension", { description: "Package extension loaded", handler() {} });
+		pi.registerTool({
+			name: "apply_patch", label: "Patch editor probe", description: "Editing protocol selection probe",
+			parameters: { type: "object", properties: {}, additionalProperties: false },
+			async execute() { return { content: [], details: {} }; },
+		});
+		pi.on("session_start", () => {
+			const active = pi.getActiveTools();
+			if (active.includes("edit")) pi.setActiveTools([...active.filter((name) => name !== "edit"), "apply_patch"]);
+		});
 	}`);
 	writeFileSync(join(packageDirectory, "skills", "package-skill", "SKILL.md"), "---\nname: package-skill\ndescription: Package skill loading probe\n---\n# Probe\n");
 	writeFileSync(join(packageDirectory, "prompts", "package-prompt.md"), "Package prompt loading probe.");
@@ -58,6 +67,22 @@ try {
 	for (const command of ["file-extension", "package-extension", "skill:package-skill", "package-prompt", "parent"]) assert.ok(loaded.commands.includes(command), `Missing ${command}: ${JSON.stringify(loaded)}`);
 	assert.deepEqual([...loaded.tools].sort(), ["read", "subagent_report"]);
 	console.log("PASS real Pi loads defaultExtensions file and package sources, including package skills/prompts despite discovery flags, without broadening the direct-Pi tool allowlist");
+
+	for (const [id, tools, extensions, expected] of [
+		["patch-editor", ["read", "edit", "write"], analyst.extensions, ["read", "write", "apply_patch", "subagent_report"]],
+		["no-editor", ["read", "write"], analyst.extensions, ["read", "write", "subagent_report"]],
+		["native-editor", ["read", "edit", "write"], [fileExtension, probe], ["read", "edit", "write", "subagent_report"]],
+	]) {
+		const childArgs = childPiArgs({ id, sessionFile: join(root, `${id}.jsonl`), tools, extensions }, join(root, "system.md"));
+		const builtin = childArgs.indexOf("builtin:codemode");
+		childArgs.splice(builtin - 1, 2);
+		const child = spawnSync(process.env.PI_TEST_BINARY?.trim() || "pi", [...childArgs, "--offline"], { cwd: root, env, encoding: "utf8", timeout: 30_000 });
+		assert.equal(child.error, undefined, String(child.error));
+		assert.equal(child.status, 0, child.stderr || child.stdout);
+		const actual = JSON.parse(readFileSync(resultPath, "utf8"));
+		assert.deepEqual([...actual.tools].sort(), [...expected].sort(), `${id}: the real CLI must preserve the selected editing protocol`);
+	}
+	console.log("PASS real Pi CLI permits apply_patch for edit-capable children, preserves native fallback, and denies it to read-only/no-editor children");
 } finally {
 	rmSync(root, { recursive: true, force: true });
 }

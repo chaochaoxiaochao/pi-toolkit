@@ -430,7 +430,7 @@ try {
 	await childEvents.get("session_start")?.({}, childContext);
 	await childCommands.get("parent")?.handler("", childContext);
 	await childShortcuts.get("alt+p")?.handler(childContext);
-	check("child command and shortcut return to the exact parent Agent pane", childExecCalls.length === 2 && childExecCalls.every(([command, args]) => command === "herdr" && args.join(",") === "agent,focus,w1:p-parent") && childStatuses.some(([, value]) => value.includes("alt+p")));
+	check("child command and shortcut return to the exact parent Agent pane without a footer hint", childExecCalls.length === 2 && childExecCalls.every(([command, args]) => command === "herdr" && args.join(",") === "agent,focus,w1:p-parent") && childStatuses.every(([, value]) => value === undefined));
 	const reportToolDirectory = join(root, "child-report-tool");
 	const reportAttemptId = "11111111-1111-4111-8111-111111111111";
 	mkdirSync(reportToolDirectory, { recursive: true });
@@ -661,7 +661,7 @@ try {
 	const extensionHistory = await listSubagentHistory(extensionRoot);
 	check("history exposes saved extension sources", JSON.stringify(extensionHistory[0]?.tasks[0]?.extensions) === JSON.stringify(extensionSources));
 	const extensionList = await executeHerdrSubagents({ action: "list" }, undefined, undefined, { cwd: extensionRoot }, extensionDependencies);
-	check("persona listing shows extension sources and their precedence", extensionList.content[0].text.includes("npm:@example/pi-tools@1.0.0") && extensionList.content[0].text.includes("project persona"));
+	check("persona listing keeps extension configuration in metadata only", !extensionList.content[0].text.includes("npm:@example/pi-tools@1.0.0") && extensionList.details.agents[0].extensionsSource === "project persona" && JSON.stringify(extensionList.details.agents[0].extensions) === JSON.stringify(extensionSources));
 	writeFileSync(extensionPaths.projectConfig, JSON.stringify({ personas: { routed: { extensions: [] } } }));
 	check("empty project extension list clears lower-precedence sources", extensionPersona()?.extensions?.length === 0 && extensionPersona()?.extensionsSource === "project persona");
 	const extensionResumeHerdr = fakeHerdr();
