@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-22 - v0.13.5
 
+- herdr-subagents v0.7.4: preserve Codex patch editing in child allowlists and hide the parent shortcut footer hint
 - Herdr Subagents: hide the child parent-navigation footer hint while keeping `Alt+P`, `/parent`, and other extensions' editor status.
 - Herdr Subagents: permit `apply_patch` in edit-capable child CLI allowlists so editor switching does not remove the only active editing tool; preserve read-only limits and native fallback.
 
