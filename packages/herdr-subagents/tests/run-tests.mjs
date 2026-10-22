@@ -661,7 +661,7 @@ try {
 	const extensionHistory = await listSubagentHistory(extensionRoot);
 	check("history exposes saved extension sources", JSON.stringify(extensionHistory[0]?.tasks[0]?.extensions) === JSON.stringify(extensionSources));
 	const extensionList = await executeHerdrSubagents({ action: "list" }, undefined, undefined, { cwd: extensionRoot }, extensionDependencies);
-	check("persona listing shows extension sources and their precedence", extensionList.content[0].text.includes("npm:@example/pi-tools@1.0.0") && extensionList.content[0].text.includes("project persona"));
+	check("persona listing keeps extension configuration in metadata only", !extensionList.content[0].text.includes("npm:@example/pi-tools@1.0.0") && extensionList.details.agents[0].extensionsSource === "project persona" && JSON.stringify(extensionList.details.agents[0].extensions) === JSON.stringify(extensionSources));
 	writeFileSync(extensionPaths.projectConfig, JSON.stringify({ personas: { routed: { extensions: [] } } }));
 	check("empty project extension list clears lower-precedence sources", extensionPersona()?.extensions?.length === 0 && extensionPersona()?.extensionsSource === "project persona");
 	const extensionResumeHerdr = fakeHerdr();

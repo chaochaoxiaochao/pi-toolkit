@@ -9,6 +9,7 @@
 
 ## Unreleased
 
+- Herdr Subagents: show only Persona names and descriptions in model-facing selection lists, preserving diagnostics and detailed user-facing inspection.
 - Make Agent Team user-invoked only through `/skill:agent-team`, hidden from automatic model selection.
 - Add `npm run release:check -- vX.Y.Z` to wait for GitHub publication and verify exact npm versions, remote tags, integrity, and all tarball contents against the release commit, including coordinated child releases.
 

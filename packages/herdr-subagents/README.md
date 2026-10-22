@@ -119,13 +119,15 @@ A batch containing a write-capable Persona must explicitly or effectively use `c
 
 | Action | `runId` | Purpose |
 | --- | --- | --- |
-| `list` | Not accepted | List effective Personas, resolved options, and diagnostics. |
+| `list` | Not accepted | List Persona names and descriptions for task selection, plus configuration diagnostics when present. |
 | `status` | Required | Show one run and its task states. |
 | `history` | Not accepted | List durable project-local run history. |
 | `cancel` | Required | Cancel an active run. |
 | `cleanup` | Required | Remove one archived run. |
 
 Settled tasks are immutable. Follow-up work starts a new task or run; there is no resume/respond lifecycle.
+
+The model-facing `list` text does not expand tools, skills, extensions, models, thinking levels, or configuration sources. Describe routing-relevant capabilities and constraints in each Persona's description. Use `/herdr-subagents agents` and `/herdr-subagents settings` for detailed configuration; full resolved data remains in the tool result's `details` metadata.
 
 ### Slash command
 

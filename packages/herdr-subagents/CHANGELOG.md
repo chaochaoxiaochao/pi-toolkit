@@ -1,3 +1,7 @@
+## Unreleased
+
+- Limit model-facing Persona listings and unknown-Persona suggestions to names and descriptions. Preserve configuration diagnostics, detailed result metadata, and the `/herdr-subagents agents` and `settings` inspection commands.
+
 ## 2026-10-21 - v0.7.2
 
 - clarify final answer submission through subagent_report
