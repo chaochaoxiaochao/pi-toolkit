@@ -1,3 +1,8 @@
+## Unreleased
+
+- Hide the child parent-navigation footer hint and clear its legacy status on reload, while retaining `Alt+P`, `/parent`, and editor/plugin status.
+- Permit `apply_patch` in the persistent CLI allowlist only for Personas that allow `edit`; test actual Pi startup selection, read-only limits and native fallback instead of relying on mocked tool lists or status labels.
+
 ## 2026-10-21 - v0.7.2
 
 - clarify final answer submission through subagent_report

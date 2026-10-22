@@ -290,6 +290,42 @@ assert.throws(() => applyTaskStatus(terminal, "running"), /terminal tasks are im
 }
 
 {
+	const previousParent = process.env.PI_HERDR_SUBAGENTS_PARENT_PANE_ID;
+	process.env.PI_HERDR_SUBAGENTS_PARENT_PANE_ID = "test-workspace:parent";
+	const handlers = new Map();
+	const commands = new Map();
+	const shortcuts = new Map();
+	const calls = [];
+	const statuses = new Map([
+		["herdr-subagents-parent", "alt+p parent"],
+		["codex-edit", "editor: apply_patch"],
+	]);
+	const ctx = { ui: { notify() {}, setStatus(key, value) { statuses.set(key, value); } } };
+	try {
+		registerSubagentReport({
+			registerTool() {},
+			registerCommand(name, command) { commands.set(name, command); },
+			registerShortcut(key, shortcut) { shortcuts.set(key, shortcut); },
+			on(name, handler) { handlers.set(name, handler); },
+			events: { on() {} },
+			async exec(command, args) { calls.push([command, args]); return { code: 0, stdout: "", stderr: "" }; },
+		});
+		await handlers.get("session_start")({}, ctx);
+		assert.equal(statuses.get("herdr-subagents-parent"), undefined, "child startup clears the old parent shortcut hint");
+		assert.equal(statuses.get("codex-edit"), "editor: apply_patch", "child navigation must not overwrite editor status");
+		await commands.get("parent").handler("", ctx);
+		await shortcuts.get("alt+p").handler(ctx);
+		assert.deepEqual(calls, [
+			["herdr", ["agent", "focus", "test-workspace:parent"]],
+			["herdr", ["agent", "focus", "test-workspace:parent"]],
+		], "the parent command and shortcut must remain functional without a footer hint");
+	} finally {
+		if (previousParent === undefined) delete process.env.PI_HERDR_SUBAGENTS_PARENT_PANE_ID;
+		else process.env.PI_HERDR_SUBAGENTS_PARENT_PANE_ID = previousParent;
+	}
+}
+
+{
 	const directory = join(root, "report-idempotency");
 	mkdirSync(directory, { recursive: true });
 	const attemptId = "11111111-1111-4111-8111-111111111111";

@@ -98,6 +98,12 @@ try {
 	assert.ok(!clearedArgs.includes("./updated.ts"));
 	assert.deepEqual(selected.extensions, ["./updated.ts"]);
 	console.log("PASS defaults reach child arguments and control listings, reload per call, and preserve mandatory extensions");
+
+	const editorArgs = childPiArgs({ id: "editor", sessionFile: join(root, "editor.jsonl"), tools: ["read", "edit", "write"] }, join(root, "system.md"));
+	assert.deepEqual(editorArgs[editorArgs.indexOf("--tools") + 1].split(","), ["read", "edit", "write", "apply_patch", "codemode", "subagent_report"]);
+	const readonlyArgs = childPiArgs({ id: "readonly", sessionFile: join(root, "readonly.jsonl"), tools: ["read", "bash"] }, join(root, "system.md"));
+	assert.ok(!readonlyArgs[readonlyArgs.indexOf("--tools") + 1].split(",").includes("apply_patch"));
+	console.log("PASS edit-capable children allow the patch editor without adding it to read-only tool lists");
 } finally {
 	rmSync(root, { recursive: true, force: true });
 }

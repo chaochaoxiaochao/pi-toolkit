@@ -430,7 +430,7 @@ try {
 	await childEvents.get("session_start")?.({}, childContext);
 	await childCommands.get("parent")?.handler("", childContext);
 	await childShortcuts.get("alt+p")?.handler(childContext);
-	check("child command and shortcut return to the exact parent Agent pane", childExecCalls.length === 2 && childExecCalls.every(([command, args]) => command === "herdr" && args.join(",") === "agent,focus,w1:p-parent") && childStatuses.some(([, value]) => value.includes("alt+p")));
+	check("child command and shortcut return to the exact parent Agent pane without a footer hint", childExecCalls.length === 2 && childExecCalls.every(([command, args]) => command === "herdr" && args.join(",") === "agent,focus,w1:p-parent") && childStatuses.every(([, value]) => value === undefined));
 	const reportToolDirectory = join(root, "child-report-tool");
 	const reportAttemptId = "11111111-1111-4111-8111-111111111111";
 	mkdirSync(reportToolDirectory, { recursive: true });

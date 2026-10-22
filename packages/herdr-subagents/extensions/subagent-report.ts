@@ -96,7 +96,8 @@ export default function (pi: ExtensionAPI) {
 		async handler(ctx) { await returnToParent(pi, ctx); },
 	});
 	pi.on("session_start", async (_event, ctx) => {
-		if (process.env[PARENT_PANE_ENV]?.trim()) ctx.ui.setStatus("herdr-subagents-parent", `${RETURN_SHORTCUT} parent`);
+		// Remove the legacy hint on reload without touching editor/plugin status.
+		ctx.ui.setStatus("herdr-subagents-parent", undefined);
 	});
 	pi.registerTool({
 		name: "subagent_report",

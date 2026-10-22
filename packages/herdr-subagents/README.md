@@ -48,6 +48,10 @@ The tools and command are registered only when Pi is running inside Herdr with a
 
 Each task starts a single-task interactive Pi process in its own Herdr pane. Herdr first confirms the interactive Pi is ready, then the prompt is delivered exactly once. Prompt acknowledgement never decides task completion. Panes remain ordinary Herdr panes: they can be focused and inspected while work is running or after it settles. An early-finishing child stays at the Pi UI while sibling tasks continue. After the whole run settles, cleanup closes an unfocused run tab immediately or waits for the user to leave a focused run tab.
 
+Use `Alt+P` or `/parent` in a child to focus its parent Agent pane. The shortcut has no persistent footer hint. Other extensions' status text, such as Codex Edit's `editor: apply_patch`, remains visible when those extensions are loaded and their editing tools are active. Changing Persona extensions does not change an already running child.
+
+For a Persona whose `tools` includes `edit`, the child CLI also permits `apply_patch` so a trusted editing extension can switch protocols. This does not load an extension or enable both editors by itself. Personas without `edit` do not receive this permission, and a child without a patch extension keeps native `edit`.
+
 Cleanup belongs to the Pi session that created the run. Starting a new Pi session never scans historical runs or closes their recorded Herdr tabs. If Pi terminates before shutdown cleanup runs, any surviving Subagent tab remains visible for explicit inspection or cleanup.
 
 ## Result protocol

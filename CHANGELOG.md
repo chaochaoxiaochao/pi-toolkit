@@ -1,3 +1,8 @@
+## Unreleased
+
+- Herdr Subagents: hide the child parent-navigation footer hint while keeping `Alt+P`, `/parent`, and other extensions' editor status.
+- Herdr Subagents: permit `apply_patch` in edit-capable child CLI allowlists so editor switching does not remove the only active editing tool; preserve read-only limits and native fallback.
+
 ## 2026-10-21 - v0.13.3
 
 - codex-edit v0.2.0: persist personal routing rules in the Pi agent directory across package updates
