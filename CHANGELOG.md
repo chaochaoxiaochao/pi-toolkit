@@ -1,3 +1,7 @@
+## 2026-10-22 - v0.13.4
+
+- herdr-subagents v0.7.3: keep Persona selection lists concise
+
 ## 2026-10-21 - v0.13.3
 
 - codex-edit v0.2.0: persist personal routing rules in the Pi agent directory across package updates

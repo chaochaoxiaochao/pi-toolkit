@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-22 - v0.7.3
 
+- keep Persona selection lists concise
 - Limit model-facing Persona listings and unknown-Persona suggestions to names and descriptions. Preserve configuration diagnostics, detailed result metadata, and the `/herdr-subagents agents` and `settings` inspection commands.
 
 ## 2026-10-21 - v0.7.2
