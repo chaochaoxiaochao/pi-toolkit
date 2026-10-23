@@ -1,3 +1,7 @@
+## 2026-10-23 - v0.13.12
+
+- worktree v0.4.1: return the worktree root from already-active nested directories
+
 ## 2026-10-23 - v0.13.11
 
 - openai-account-pool v0.1.9: classify forced refresh failures and prevent output replay
