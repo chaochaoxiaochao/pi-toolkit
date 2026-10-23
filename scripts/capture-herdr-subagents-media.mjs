@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, openSync, closeSync, readdirSync, 
 import { execFileSync, spawn } from "node:child_process";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { smokePersona } from "../packages/herdr-subagents/tests/real-herdr-config.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const captureRoot = resolve(process.argv[2] ?? join(root, ".cache", "package-media"));
@@ -10,7 +11,7 @@ const frameDir = join(captureRoot, "herdr-live");
 const videoPath = join(captureRoot, "herdr-demo.webm");
 const windowId = process.env.HERDR_MEDIA_WINDOW_ID;
 const workspaceId = process.env.HERDR_WORKSPACE_ID;
-const model = process.env.PI_HERDR_MEDIA_MODEL ?? "pudu/gpt-5.6-sol";
+const runtimePersona = smokePersona(root, join(root, "packages/herdr-subagents/agents"), process.env.PI_HERDR_MEDIA_MODEL);
 
 if (process.env.HERDR_ENV !== "1" || !workspaceId) {
   throw new Error("Herdr Subagents UI capture must run from a Pi session inside Herdr.");
@@ -93,7 +94,10 @@ try {
   herdr([
     "agent", "start", parentName, "--kind", "pi", "--pane", parentPane, "--timeout", "90000", "--",
     "--no-extensions", "--no-skills", "--no-session", "--no-context-files", "--no-builtin-tools",
-    "--extension", "./packages/herdr-subagents/extensions/herdr-subagents.ts", "--model", model,
+    "--extension", "./packages/herdr-subagents/extensions/herdr-subagents.ts",
+    ...runtimePersona.extensions.flatMap((source) => ["--extension", source]),
+    ...(runtimePersona.model ? ["--model", runtimePersona.model] : []),
+    ...(runtimePersona.thinking ? ["--thinking", runtimePersona.thinking] : []),
   ]);
   herdr(["tab", "focus", parentTab]);
   await sleep(1_000);

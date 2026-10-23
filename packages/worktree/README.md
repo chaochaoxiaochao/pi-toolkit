@@ -72,3 +72,7 @@ pi-worktree prune
 `create` 是幂等接口；`create --json` 供 Extension 和其他宿主使用，返回 `created`、`attached`、`reused` 或 `already-active`，以及绝对路径、分支和 dirty 状态。已有 worktree 会复用；已存在但未挂载的同名分支会挂载；stale 注册、非法名称和路径冲突会显式失败。
 
 Agent 用法见 `skills/pi-worktree/SKILL.md`。测试流程、夹具和结果见 [TESTING.md](TESTING.md)。
+
+## Already-active paths
+
+`pi-worktree create --json <current-worktree-name>` returns the canonical Git worktree root, even when called from a nested directory. The `already-active` status and whole-worktree `dirty` flag remain unchanged. The extension uses the same CLI result.

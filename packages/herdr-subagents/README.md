@@ -10,7 +10,7 @@ The implementation is intentionally small: one task state machine, one derived r
 
 https://github.com/user-attachments/assets/8ddf3ae6-a11a-492b-9cae-d9496ba65b67
 
-The reproducible source recording is retained as [`docs/demo.webm`](docs/demo.webm).
+The embedded video is the previously published walkthrough. The current release acceptance recording is retained in full as [`docs/demo.webm`](docs/demo.webm).
 
 ## Requirements and install
 
@@ -96,7 +96,8 @@ Records are stored under:
     system-prompt.md
     report.json
     reports/<attempt-id>.json
-    results/<attempt-id>.md
+    attempt-results/<attempt-id>.md
+    attempts/<attempt-id>.reminded
 ```
 
 The orchestrator is the only writer of `run.json`, `task.json`, and promoted `report.json`. The child only writes its attempt-scoped result and report.
@@ -348,3 +349,11 @@ Use `/herdr-subagents agents`, `/herdr-subagents models`, and `/herdr-subagents 
 ## Development and tests
 
 See [TESTING.md](TESTING.md) for deterministic tests, extension loading, packaging, and real Herdr smoke requirements. The real smoke preserves your configured `analyst` model, thinking level, and explicit extensions (including authentication providers) inside its isolated fixture; unrelated Persona settings remain isolated.
+
+## Missing reports and terminal diagnostics
+
+The child checks `reports/<attempt-id>.json` at `agent_before_settle`. A valid completed or failed report adds zero requests. A normally completed round without a report receives one reminder to submit existing results, not redo the task. `attempts/<attempt-id>.reminded` is persisted before continuing; rounds and reloads cannot reset it.
+
+A second omission produces a `failed` protocol report with `error: missing_report`, an explicitly **unconfirmed** result, and the child session path. This does not assert the delegated work itself failed. Final provider errors produce `child_error` without a reminder. Pi skips before-settle on cancellation; the child writes `child_aborted` at `agent_settled`, without waking the model or replacing an existing report. Parent-requested cancellation retains its existing cancelled lifecycle.
+
+The parent still waits for an atomic attempt report or process exit. It does not infer success from idle/settled or run a second reminder monitor. Report idempotency and focus-aware tab cleanup are unchanged.

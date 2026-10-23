@@ -1,4 +1,39 @@
 export const comparisonCases = [
+  ...[false, true].map((childFirst) => ({
+    id: childFirst ? "file-parent-conflict-reversed" : "file-parent-conflict",
+    kind: "safety",
+    executionOnly: true,
+    input: { "important.txt": "before\n" },
+    expected: null,
+    patch: `*** Begin Patch
+*** Update File: important.txt
+@@
+-before
++after
+${childFirst ? "*** Add File: parent/child.txt\n+child\n*** Add File: parent\n+file" : "*** Add File: parent\n+file\n*** Add File: parent/child.txt\n+child"}
+*** End Patch`,
+    nativeCalls: null,
+    // The frozen released baseline covers the parser, not filesystem preflight.
+    outcomes: { native: "unsupported", released: "unsupported", local: "fail" },
+  })),
+  {
+    id: "move-preserves-file-mode",
+    kind: "valid-edit",
+    executionOnly: true,
+    input: { "run.sh": "#!/bin/sh\necho old\n" },
+    inputModes: { "run.sh": 0o755 },
+    expected: { "moved.sh": "#!/bin/sh\necho new\n" },
+    expectedModes: { "moved.sh": 0o755 },
+    patch: `*** Begin Patch
+*** Update File: run.sh
+*** Move to: moved.sh
+@@
+-echo old
++echo new
+*** End Patch`,
+    nativeCalls: null,
+    outcomes: { native: "unsupported", released: "unsupported", local: "pass" },
+  },
   {
     id: "unique-replacement",
     kind: "valid-edit",

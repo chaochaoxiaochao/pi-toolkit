@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { spawn, execFileSync, execSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -122,8 +122,8 @@ function isProcessAlive(pid) {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    return error.code !== "ESRCH";
   }
 }
 
@@ -162,16 +162,16 @@ async function isDebugEndpointUp() {
 
 ensureDir(BROWSER_ROOT);
 
-if (resetProfile) {
-  rmSync(userDataFsDir, { recursive: true, force: true });
-}
-
 const state = readState();
 if (state?.pid && !isProcessAlive(state.pid)) {
   clearState();
 }
 
 if (await isDebugEndpointUp()) {
+  if (resetProfile) {
+    console.error(`✗ Cannot reset a profile while debugging endpoint :${DEBUG_PORT} is in use. Close Chrome first.`);
+    process.exit(1);
+  }
   const runningState = readState();
 
   if (
@@ -209,6 +209,40 @@ if (await isDebugEndpointUp()) {
     `  Close the process using :${DEBUG_PORT} or set BROWSER_DEBUG_PORT to a different port.`,
   );
   process.exit(1);
+}
+
+// A different debug port (or missing state.json) does not mean the profile is
+// unused. Check before reset, profile copy, or removing Chrome's singleton locks.
+try {
+  if (state?.userDataDir === userDataDir && state.pid && isProcessAlive(state.pid)) {
+    throw new Error("The selected profile is still in use by Chrome");
+  }
+  if (usesWindowsChrome) {
+    const escaped = userDataDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = `--user-data-dir(?:=|\\s+)"?${escaped}(?:"|\\s|$)`;
+    const inUse = commandOutput("powershell.exe", [
+      "-NoProfile", "-NonInteractive", "-Command",
+      `$ErrorActionPreference = 'Stop'; if (Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ${powershellQuote(pattern)} }) { 'busy' } else { 'free' }`,
+    ]);
+    if (inUse !== "free") throw new Error("The selected Windows profile is still in use by Chrome");
+  } else {
+    let lock;
+    try { lock = readlinkSync(join(userDataFsDir, "SingletonLock")); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (lock) {
+      const match = /^(.*)-(\d+)$/.exec(lock);
+      if (!match || match[1] !== hostname() || isProcessAlive(Number(match[2]))) {
+        throw new Error("The selected profile has a live or unverifiable Chrome lock");
+      }
+    }
+  }
+} catch (error) {
+  console.error(`✗ ${error.message}. Close Chrome before resetting or changing its profile.`);
+  process.exit(1);
+}
+
+if (resetProfile) {
+  rmSync(userDataFsDir, { recursive: true, force: true });
 }
 
 ensureDir(userDataFsDir);

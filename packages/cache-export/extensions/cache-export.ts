@@ -60,6 +60,47 @@ function defaultOutputPath(ctx) {
 }
 
 export default function (pi) {
+  let observed;
+  pi.on("turn_start", () => { observed = undefined; });
+  pi.on("agent_end", () => { observed = undefined; });
+  pi.on("session_start", () => { observed = undefined; });
+  pi.on("before_provider_request", (event, ctx) => {
+    if (!ctx.model) return;
+    const payload = event.payload ?? {};
+    const explicitTtlsSeconds = new Set();
+    const controls = [
+      payload.cache_control,
+      ...(Array.isArray(payload.system) ? payload.system.map((block) => block?.cache_control) : []),
+      ...(Array.isArray(payload.tools) ? payload.tools.map((tool) => tool?.cache_control) : []),
+      ...(Array.isArray(payload.messages) ? payload.messages.flatMap((message) =>
+        Array.isArray(message?.content) ? message.content.map((block) => block?.cache_control) : []) : []),
+    ];
+    for (const control of controls) {
+      if (control?.type === "ephemeral" && control.ttl === "1h") explicitTtlsSeconds.add(3600);
+      if (control?.type === "ephemeral" && control.ttl === "5m") explicitTtlsSeconds.add(300);
+    }
+    const retention = ["in_memory", "24h"].includes(payload.prompt_cache_retention) ? payload.prompt_cache_retention : null;
+    if (retention === "24h") explicitTtlsSeconds.add(86400);
+    const modelReference = {};
+    for (const tier of ["short", "long"]) {
+      const seconds = ctx.model.promptCache?.[tier];
+      if (Number.isFinite(seconds) && seconds > 0) modelReference[tier] = seconds;
+    }
+    // Allowlist only. Never persist prompts, headers, URLs, cache keys, or tokens.
+    observed = {
+      provider: ctx.model.provider, model: ctx.model.id, api: ctx.model.api,
+      observedAt: Date.now(),
+      policy: { retention, explicitTtlsSeconds: [...explicitTtlsSeconds], modelReference },
+    };
+  });
+  pi.on("message_end", (event) => {
+    const message = event.message;
+    if (message?.role !== "assistant") return;
+    if (observed && observed.provider === message.provider && observed.model === message.model && observed.api === message.api) {
+      pi.appendEntry("cache-export-request", { ...observed, messageTimestamp: message.timestamp });
+    }
+    observed = undefined;
+  });
   pi.registerCommand("cache_export", {
     description: "Export an interactive cache dashboard (latest Context segment by default, all-history switch, per-request charts)",
     handler: async (args, ctx) => {
@@ -77,13 +118,13 @@ export default function (pi) {
       const pathArg = tokens.find((t) => !t.startsWith("-"));
 
       const data = parseEntries(entries);
-      if (data.requests.length === 0) {
-        ctx.ui.notify("No assistant requests with usage data yet.", "error");
+      if (data.requests.length === 0 && data.auxiliary.length === 0) {
+        ctx.ui.notify("No main or auxiliary usage data yet.", "error");
         return;
       }
       const info = ctx.sessionManager;
       const sessionId = info.getSessionId ? info.getSessionId() : undefined;
-      const outPath = resolve(pathArg || defaultOutputPath(ctx));
+      const outPath = pathArg ? resolve(ctx.cwd, pathArg) : defaultOutputPath(ctx);
 
       mkdirSync(dirname(outPath), { recursive: true });
       writeFileSync(outPath, buildCacheExportHtml(data, { title: "cache export", sessionId }), "utf8");

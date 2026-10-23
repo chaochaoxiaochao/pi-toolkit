@@ -57,3 +57,15 @@ This preserves authentication extensions such as `npm:@maxiaochao/pi-openai-acco
 `HERDR_SUBAGENTS_E2E_MODEL=provider/model` overrides only the smoke model; configured extensions remain loaded. Set `HERDR_SUBAGENTS_E2E_FOCUS_CLEANUP=1` to also verify deferred cleanup while focused and restoration of the original workspace/tab focus.
 
 For real smoke testing, verify that each child appears in a visible pane and can be focused and inspected. An early-finishing child must remain visible while sibling tasks continue. After the whole run settles, a focused child must remain at its restored Pi UI until focus leaves the run tab; the tab must then close automatically. Verify that the parent returns only after all requested tasks settle. Also verify cancellation closes the run tab and does not overwrite a report already atomically published.
+
+## Missing-report regressions
+
+`tests/report-boundary.mjs` checks completed/failed report idempotency, one durable reminder across rounds and extension reload, conflicting report rejection, unconfirmed diagnostics with a session path, and cancellation/error without continuation.
+
+`tests/report-lifecycle.mjs` uses the real installed Pi SDK and a fully offline provider. It covers ten cases: normal report, failed report, successful reminder, repeated omission, transient retry, exhausted retry, queued follow-up, another before-settle continuation, cancellation, and a fresh prompt from a settled listener. A normal report makes one request; a reminder adds at most one. Native cancellation does not emit before-settle and must still get a terminal diagnostic. These are native lifecycle checks, not a claim of real-Herdr pane/concurrency coverage.
+
+Use `PI_TEST_BINARY` to select Pi 1.4.0 for these checks rather than an older workspace-local Pi. No paid model or real credential is used by the new regression fixtures.
+
+`tests/standalone-package.mjs` packs the actual child package into a temporary directory, unpacks it outside the workspace, and runs all ten native/offline lifecycle scenarios there. `tests/runtime.mjs` resolves peers from the selected installed Pi; no sibling package or copied Pi runtime is needed.
+
+The media recorder also uses the effective analyst model, thinking level and explicit extension sources for its parent Pi. `PI_HERDR_MEDIA_MODEL` overrides only the model; required authentication extensions remain loaded. It does not copy or expose credentials.

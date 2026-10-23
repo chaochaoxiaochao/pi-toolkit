@@ -1,4 +1,4 @@
-import { access, lstat, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { access, chmod, lstat, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname } from "node:path";
 import { Text } from "@earendil-works/pi-tui";
@@ -114,6 +114,12 @@ export default async function (pi) {
         resolved.push({ ...operation, source, destination });
       }
       if (new Set(targets).size !== targets.length) throw new Error("Multiple patch operations target the same resolved path");
+      const targetSet = new Set(targets);
+      for (const target of targets) {
+        for (let parent = dirname(target); parent !== dirname(parent); parent = dirname(parent)) {
+          if (targetSet.has(parent)) throw new Error(`Patch file target is also a parent directory: ${parent}`);
+        }
+      }
 
       const committed = [];
       return withPathQueues(targets, async () => {
@@ -126,7 +132,7 @@ export default async function (pi) {
             if (await pathExists(operation.source)) throw new Error(`Cannot add existing file ${operation.path}`);
             prepared.push({ ...operation, before: "", after: operation.content });
           } else {
-            await fileInfo(operation.source, `Source file ${operation.path}`);
+            const info = await fileInfo(operation.source, `Source file ${operation.path}`);
             const before = await readFile(operation.source, "utf8");
             const after = operation.action === "delete"
               ? ""
@@ -134,7 +140,7 @@ export default async function (pi) {
             if (operation.destination && await pathExists(operation.destination)) {
               throw new Error(`Cannot move over existing file ${operation.moveTo}`);
             }
-            prepared.push({ ...operation, before, after });
+            prepared.push({ ...operation, before, after, mode: info.mode & 0o777 });
           }
         }
 
@@ -147,7 +153,9 @@ export default async function (pi) {
             await unlink(operation.source);
           } else if (operation.destination) {
             await mkdir(dirname(operation.destination), { recursive: true });
-            await writeFile(operation.destination, operation.after, "utf8");
+            await writeFile(operation.destination, operation.after, { encoding: "utf8", flag: "wx", mode: operation.mode });
+            // Creation applies umask; restore the source's ordinary permission bits.
+            await chmod(operation.destination, operation.mode);
             await unlink(operation.source);
           } else {
             await writeFile(operation.source, operation.after, "utf8");

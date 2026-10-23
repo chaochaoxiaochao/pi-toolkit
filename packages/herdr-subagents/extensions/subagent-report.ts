@@ -4,7 +4,8 @@ import { dirname, resolve } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
+import { parseReport } from "../src/records.ts";
 import { resultPathForAttemptId } from "../src/result-path.ts";
 import { PARENT_PANE_ENV } from "../src/live-agent.ts";
 import { attemptReportPath, attemptStatePath, requireAttemptId, type AttemptState } from "../src/attempts.ts";
@@ -41,9 +42,51 @@ function writeAtomic(path: string, content: string): void {
 	renameSync(temporary, path);
 }
 
+function saveReport(taskDirectory: string, attemptId: string, params: Static<typeof ReportParams>) {
+	mkdirSync(taskDirectory, { recursive: true, mode: 0o700 });
+	const resultPath = resultPathForAttemptId(taskDirectory, attemptId);
+	const reportPath = attemptReportPath(taskDirectory, attemptId);
+	const documents = (params.documents ?? []).map((document) => ({
+		path: resolve(process.cwd(), document.path),
+		description: document.description,
+	}));
+	if (!documents.some((document) => document.path === resultPath)) {
+		documents.unshift({ path: resultPath, description: "Complete task result" });
+	}
+	const report = {
+		attemptId,
+		status: params.status,
+		summary: params.summary,
+		documents,
+		...(params.error ? { error: params.error } : {}),
+		reportedAt: new Date().toISOString(),
+	};
+	if (existsSync(reportPath)) {
+		const existing = JSON.parse(readFileSync(reportPath, "utf8")) as Record<string, unknown>;
+		const comparable = ({ reportedAt: _reportedAt, ...value }: Record<string, unknown>) => value;
+		const sameReport = JSON.stringify(comparable(existing)) === JSON.stringify(comparable(report));
+		const sameResult = existsSync(resultPath) && readFileSync(resultPath, "utf8") === params.result;
+		if (!sameReport || !sameResult) throw new Error("Conflicting subagent_report already exists for this task.");
+	} else {
+		writeAtomic(resultPath, params.result);
+		writeAtomic(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+	}
+	return report;
+}
+
 function currentAttemptId(taskDirectory: string): string {
 	const task = JSON.parse(readFileSync(resolve(taskDirectory, "task.json"), "utf8")) as { currentAttemptId?: unknown };
 	return requireAttemptId(task.currentAttemptId);
+}
+
+function saveUnconfirmed(taskDirectory: string, attemptId: string, reason: string, sessionFile: string | undefined): void {
+	saveReport(taskDirectory, attemptId, {
+		status: "failed",
+		summary: `${reason}: delegated result is unconfirmed; inspect the child session.`,
+		result: `No terminal subagent_report was submitted. Diagnostic: ${reason}.\nThis does not establish whether the delegated work succeeded or failed.\nChild session: ${sessionFile ?? "unavailable"}\n`,
+		error: reason,
+		documents: sessionFile ? [{ path: sessionFile, description: "Child session with unconfirmed task results" }] : [],
+	});
 }
 
 function writeAttemptState(taskDirectory: string, attemptId: string, state: AttemptState): void {
@@ -72,9 +115,47 @@ export default function (pi: ExtensionAPI) {
 		writeAttemptState(taskDirectory, activeAttemptId, "working");
 	});
 	pi.on("agent_start", () => reportHerdrState("working"));
-	pi.on("agent_settled", (_event, ctx) => {
+	pi.on("agent_before_settle", (event, ctx) => {
+		const taskDirectory = process.env.PI_HERDR_SUBAGENTS_TASK_DIR?.trim();
+		if (!taskDirectory) return;
+		const attemptId = activeAttemptId ?? currentAttemptId(taskDirectory);
+		const reportPath = attemptReportPath(taskDirectory, attemptId);
+		if (existsSync(reportPath)) {
+			const report = parseReport(JSON.parse(readFileSync(reportPath, "utf8")), reportPath);
+			if (report.attemptId !== attemptId || report.status === "blocked") throw new Error("Invalid terminal attempt report.");
+			return; // A valid failed report is terminal too. Never ask for it again.
+		}
+		if (event.outcome === "completed") {
+			const reminderPath = resolve(taskDirectory, "attempts", `${attemptId}.reminded`);
+			mkdirSync(dirname(reminderPath), { recursive: true, mode: 0o700 });
+			try {
+				// Persist before continuing. Neither a new round nor /reload resets this budget.
+				writeFileSync(reminderPath, new Date().toISOString(), { flag: "wx", mode: 0o600 });
+				return {
+					entries: [...event.entries, {
+						type: "custom_message" as const,
+						customType: "herdr-subagents-missing-report",
+						content: "Do not redo the task. Submit the results you already have with subagent_report now. If you cannot confirm completion, report failed and explain what is unconfirmed.",
+						display: true,
+					}],
+					continue: true,
+				};
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+			}
+		}
+		const reason = event.outcome === "completed" ? "missing_report" : event.outcome === "aborted" ? "child_aborted" : "child_error";
+		saveUnconfirmed(taskDirectory, attemptId, reason, ctx.sessionManager.getSessionFile());
+		// Cancellation and final provider errors receive a diagnostic, never a wake-up.
+	});
+	pi.on("agent_settled", (event, ctx) => {
 		const taskDirectory = process.env.PI_HERDR_SUBAGENTS_TASK_DIR?.trim();
 		if (taskDirectory && activeAttemptId) {
+			// Pi skips before-settle on cancellation. Close the protocol without
+			// claiming the work failed, replacing a report, or requesting more tokens.
+			if (event.aborted && !existsSync(attemptReportPath(taskDirectory, activeAttemptId))) {
+				saveUnconfirmed(taskDirectory, activeAttemptId, "child_aborted", ctx.sessionManager.getSessionFile());
+			}
 			writeAttemptState(taskDirectory, activeAttemptId, "settled");
 		}
 		// Keep the interactive child alive at Pi's final automatic-work boundary.
@@ -121,34 +202,7 @@ export default function (pi: ExtensionAPI) {
 			const taskDirectory = process.env.PI_HERDR_SUBAGENTS_TASK_DIR?.trim();
 			if (!taskDirectory) throw new Error("PI_HERDR_SUBAGENTS_TASK_DIR is not set");
 			const attemptId = activeAttemptId ?? currentAttemptId(taskDirectory);
-			mkdirSync(taskDirectory, { recursive: true, mode: 0o700 });
-			const resultPath = resultPathForAttemptId(taskDirectory, attemptId);
-			const reportPath = attemptReportPath(taskDirectory, attemptId);
-			const documents = (params.documents ?? []).map((document) => ({
-				path: resolve(process.cwd(), document.path),
-				description: document.description,
-			}));
-			if (!documents.some((document) => document.path === resultPath)) {
-				documents.unshift({ path: resultPath, description: "Complete task result" });
-			}
-			const report = {
-				attemptId,
-				status: params.status,
-				summary: params.summary,
-				documents,
-				...(params.error ? { error: params.error } : {}),
-				reportedAt: new Date().toISOString(),
-			};
-			if (existsSync(reportPath)) {
-				const existing = JSON.parse(readFileSync(reportPath, "utf8")) as Record<string, unknown>;
-				const comparable = ({ reportedAt: _reportedAt, ...value }: Record<string, unknown>) => value;
-				const sameReport = JSON.stringify(comparable(existing)) === JSON.stringify(comparable(report));
-				const sameResult = existsSync(resultPath) && readFileSync(resultPath, "utf8") === params.result;
-				if (!sameReport || !sameResult) throw new Error("Conflicting subagent_report already exists for this task.");
-			} else {
-				writeAtomic(resultPath, params.result);
-				writeAtomic(reportPath, `${JSON.stringify(report, null, 2)}\n`);
-			}
+			const report = saveReport(taskDirectory, attemptId, params);
 			return {
 				content: [{ type: "text" as const, text: `${params.status}: ${params.summary}` }],
 				details: report,

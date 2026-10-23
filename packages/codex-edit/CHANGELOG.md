@@ -1,3 +1,10 @@
+## Unreleased
+
+- Reject file/ancestor target conflicts before any patch writes, regardless of operation order.
+- Preserve ordinary source permission bits on Move, including executable bits and permissions masked by umask.
+- Add real-filesystem cases to the shared corpus. Keep the frozen parser baseline unchanged and mark filesystem-only baseline comparisons unsupported.
+- Keep expected-failure assertions outside exception handlers so unexpected success cannot pass as rejection.
+
 ## 2026-10-21 - v0.2.0
 
 - persist personal routing rules in the Pi agent directory across package updates

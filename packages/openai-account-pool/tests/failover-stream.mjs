@@ -283,6 +283,40 @@ function poolRuntime(agent, statePath, notes, usageFetch = async () => exhausted
 }
 
 // ---------------------------------------------------------------------------
+// Authentication repair must classify refresh failures just like initial refresh.
+// No real OAuth call or credential is used in these cases.
+// ---------------------------------------------------------------------------
+for (const failure of ["network", "invalid_grant", "cancelled"]) {
+	const { agent, statePath } = await setupPool();
+	try {
+		const log = { attempts: [], refreshes: [], fetches: [] };
+		const notes = [];
+		const controller = new AbortController();
+		const base = scriptedProvider([{ kind: "unauthorized" }, { kind: "ok", text: "backup" }], log);
+		base.auth.oauth.refresh = async () => {
+			if (failure === "cancelled") {
+				controller.abort();
+				throw new DOMException("Request was aborted", "AbortError");
+			}
+			throw new Error(failure === "invalid_grant" ? "invalid_grant" : "ECONNRESET private token exchange response");
+		};
+		const provider = createPoolProvider(base, poolRuntime(agent, statePath, notes));
+		const events = await collect(provider.stream(MODEL, CONTEXT, {
+			apiKey: POOL_UNRESOLVED_API_KEY,
+			signal: controller.signal,
+			fetch: scriptedFetch([() => jsonResponse(401, { error: { message: "Unauthorized" } })], log),
+		}));
+		assert.equal(log.attempts.length, failure === "invalid_grant" ? 2 : 1, `${failure}: only a proven dead grant may switch accounts`);
+		assert.equal(events.at(-1).type, failure === "invalid_grant" ? "done" : "error");
+		assert.equal(notes.length, failure === "invalid_grant" ? 1 : 0);
+		assert.ok(!JSON.stringify(events).includes("private token exchange response"));
+		if (failure !== "invalid_grant") assert.deepEqual((await readPoolState(statePath)).accounts, {});
+	} finally {
+		agent.dispose();
+	}
+}
+
+// ---------------------------------------------------------------------------
 // With every account limited the request stops immediately with a masked status.
 // ---------------------------------------------------------------------------
 {

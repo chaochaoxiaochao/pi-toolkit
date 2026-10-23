@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createEditToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -37,15 +37,13 @@ async function runNativeCase(testCase) {
       for (const [index, call] of testCase.nativeCalls.entries()) {
         await edit.execute(`native-${index}`, call, undefined, undefined, { cwd: workspace });
       }
-      if (testCase.outcomes.native !== "pass") {
-        assert.fail(`${testCase.id}: native edit unexpectedly succeeded`);
-      }
-      assert.deepEqual(await readSnapshot(workspace), testCase.expected);
-      return "pass";
     } catch (error) {
       if (testCase.outcomes.native === "pass") throw error;
       return "fail";
     }
+    assert.equal(testCase.outcomes.native, "pass", `${testCase.id}: native edit unexpectedly succeeded`);
+    assert.deepEqual(await readSnapshot(workspace), testCase.expected);
+    return "pass";
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -66,16 +64,12 @@ async function runCodexCase(tool, testCase) {
   const workspace = await mkdtemp(join(tmpdir(), "codex-edit-local-"));
   try {
     await writeSnapshot(workspace, testCase.input);
+    for (const [path, mode] of Object.entries(testCase.inputModes ?? {})) await chmod(join(workspace, path), mode);
     try {
       await tool.execute("codex-local", { patch: testCase.patch }, undefined, undefined, {
         cwd: workspace,
         hasUI: false,
       });
-      if (testCase.outcomes.local !== "pass") {
-        assert.fail(`${testCase.id}: local Codex Edit unexpectedly succeeded`);
-      }
-      assert.deepEqual(await readSnapshot(workspace), testCase.expected);
-      return "pass";
     } catch (error) {
       if (testCase.outcomes.local === "pass") throw error;
       assert.deepEqual(
@@ -85,6 +79,12 @@ async function runCodexCase(tool, testCase) {
       );
       return "fail";
     }
+    assert.equal(testCase.outcomes.local, "pass", `${testCase.id}: local Codex Edit unexpectedly succeeded`);
+    assert.deepEqual(await readSnapshot(workspace), testCase.expected);
+    for (const [path, mode] of Object.entries(testCase.expectedModes ?? {})) {
+      assert.equal((await stat(join(workspace, path))).mode & 0o777, mode, `${testCase.id}: file permissions changed`);
+    }
+    return "pass";
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -101,9 +101,9 @@ export default async function () {
   assert.equal(results.length, comparisonCases.length);
   assert.equal(results.filter(({ native }) => native === "pass").length, 5);
   assert.equal(results.filter(({ native }) => native === "fail").length, 2);
-  assert.equal(results.filter(({ native }) => native === "unsupported").length, 5);
-  assert.equal(results.filter(({ codex }) => codex === "pass").length, 7);
-  assert.equal(results.filter(({ codex }) => codex === "fail").length, 5);
+  assert.equal(results.filter(({ native }) => native === "unsupported").length, 8);
+  assert.equal(results.filter(({ codex }) => codex === "pass").length, 8);
+  assert.equal(results.filter(({ codex }) => codex === "fail").length, 7);
   for (const result of results) console.log(`${result.id}: native=${result.native}, codex=${result.codex}`);
   console.log(`Native edit vs local Codex Edit: ${results.length} comparison cases passed`);
 }

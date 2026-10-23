@@ -95,6 +95,16 @@ node -e '
   if (value.status !== "already-active" || value.dirty !== true) process.exit(1);
 ' "$ROOT/active.json"
 
+mkdir -p .worktrees/prepared/nested/path
+(cd .worktrees/prepared/nested/path && bash "$PACKAGE_DIR/bin/pi-worktree" create --json prepared) > "$ROOT/active-subdir.json"
+node -e '
+  const fs = require("node:fs");
+  const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  if (value.status !== "already-active" || value.path !== process.argv[2] || value.dirty !== true) {
+    throw new Error("already-active must return the worktree root even when called from a subdirectory");
+  }
+' "$ROOT/active-subdir.json" "$ROOT/repo/.worktrees/prepared"
+
 if bash "$PACKAGE_DIR/bin/pi-worktree" create --json ../escape >/dev/null 2>&1; then
   echo "create accepted an unsafe worktree name" >&2
   exit 1

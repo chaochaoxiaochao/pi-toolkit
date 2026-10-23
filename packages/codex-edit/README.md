@@ -136,3 +136,7 @@ Herdr Subagents does not automatically inherit the parent's extensions. To enabl
 - `docs/test-report.html`: current self-contained report; its authoritative source is `docs/test-report.md`.
 
 The historical 20-case benchmark found equal final correctness, with first editor-call success improving from 85% to 95%. The completed frozen 100-task three-arm benchmark (`explicit-edit-100-sol-low-v3-complete`) ran all 300 chains: native and released v0.1.7 scored 91.25%, while the local version scored 92.00%. All arms reached 92% Final Exact, all eight final failures were shared, and there was no local-only final regression. The sanitized run evidence is committed under `benchmark/results/`; the generated report contains the full methodology, paired results, efficiency, and safety evidence.
+
+## Filesystem safety
+
+Preflight rejects file/parent target conflicts before any write. Move preserves ordinary permission bits, including executable bits. These checks prevent predictable path conflicts; they do not promise cross-file rollback for arbitrary disk failures. Real-filesystem regressions cover both operation orders, unchanged original bytes after rejection, and moved-file permissions.

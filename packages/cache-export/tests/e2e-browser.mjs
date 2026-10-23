@@ -11,7 +11,7 @@
 // Run: node tests/e2e-browser.mjs        (from packages/cache-export)
 
 import { spawn, execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -183,6 +183,8 @@ async function run() {
   }
   const usesWindowsChrome = IS_WSL && /\.exe$/i.test(chrome);
   let windowsPid = 0;
+  let chromeProcess;
+  let cdp;
   const port = await freePort();
   const userDataDir = usesWindowsChrome
     ? commandOutput("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
@@ -202,7 +204,8 @@ async function run() {
       `$p = Start-Process -FilePath '${winPath}' -ArgumentList @(${quoted}) -PassThru; $p.Id`]);
     windowsPid = Number(out.trim());
   } else {
-    spawn(chrome, chromeArgs, { stdio: "ignore", detached: true }).unref();
+    chromeProcess = spawn(chrome, chromeArgs, { stdio: "ignore", detached: true });
+    chromeProcess.unref();
   }
 
   try {
@@ -212,7 +215,7 @@ async function run() {
     }
     const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
     const page = list.find((t) => t.type === "page");
-    const cdp = await cdpConnect(page.webSocketDebuggerUrl);
+    cdp = await cdpConnect(page.webSocketDebuggerUrl);
     await cdp.send("Page.enable");
     await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1600, height: 1200, deviceScaleFactor: 1, mobile: false });
     await cdp.send("Page.navigate", { url: "data:text/html;charset=utf-8," + encodeURIComponent(html) });
@@ -304,11 +307,48 @@ async function run() {
       ev && ev.dataRequest === "1" && ev.info.includes("before request 25"),
       JSON.stringify(ev));
 
-    cdp.close();
+    // Exercise the actual native selector with CDP input, not a synthetic change.
+    const selectBox = await evalJs(`(() => {
+      const select = document.querySelector("[data-context-segment-select]");
+      select.scrollIntoView(); const r = select.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    })()`);
+    for (const type of ["mousePressed", "mouseReleased"]) await cdp.send("Input.dispatchMouseEvent", { type, ...selectBox, button: "left", clickCount: 1 });
+    for (const [key, code] of [["Home", 36], ["Enter", 13]]) {
+      for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key, windowsVirtualKeyCode: code });
+    }
+    check("e2e real click/keyboard selects all-history", await evalJs(`document.querySelector("[data-context-segment-select]").value === "all"`));
+    check("e2e scope, formula, auxiliary and segment cumulative labels", await evalJs(`document.body.textContent.includes("cacheRead / (input + cacheRead + cacheWrite)") && document.body.textContent.includes("Auxiliary usage") && !!document.querySelector('[data-name="segment cumulative"]')`));
+    const plot = await evalJs(`(() => {
+      const chart = document.querySelector('[data-context-view="all"] [aria-label="Output and reasoning tokens"]');
+      chart.scrollIntoView({ block: "center" }); const r = chart.getBoundingClientRect();
+      return { x: r.x + r.width * 0.6, y: r.y + r.height * 0.6 };
+    })()`);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...plot });
+    check("e2e unknown reasoning is neither a zero line nor a zero hover point", await evalJs(`(() => {
+      const series = document.querySelector('[data-context-view="all"] [data-name="reasoning"]');
+      return series.dataset.labels.split("|").every(value => value === "Unknown") &&
+        !series.querySelector(".series-line:not([visibility])") &&
+        series.querySelector(".hover-point").getAttribute("visibility") === "hidden" &&
+        document.querySelector(".usage-tooltip").textContent.includes("Unknown");
+    })()`));
+    if (process.env.CACHE_EXPORT_SCREENSHOT_DIR) {
+      mkdirSync(process.env.CACHE_EXPORT_SCREENSHOT_DIR, { recursive: true });
+      const { data } = await cdp.send("Page.captureScreenshot", { format: "png" });
+      writeFileSync(join(process.env.CACHE_EXPORT_SCREENSHOT_DIR, "unknown-reasoning.png"), Buffer.from(data, "base64"));
+      await evalJs("window.scrollTo(0, 0)");
+      const overview = await cdp.send("Page.captureScreenshot", { format: "png" });
+      writeFileSync(join(process.env.CACHE_EXPORT_SCREENSHOT_DIR, "screenshot.png"), Buffer.from(overview.data, "base64"));
+    }
+  } finally {
+    if (cdp) { await cdp.send("Browser.close").catch(() => {}); cdp.close(); }
     if (usesWindowsChrome && windowsPid) {
       try { execFileSync("taskkill.exe", ["/PID", String(windowsPid), "/T", "/F"]); } catch { /* best effort */ }
     }
-  } finally {
+    if (chromeProcess?.pid) {
+      try { process.kill(-chromeProcess.pid, "SIGTERM"); } catch (error) { if (error.code !== "ESRCH") throw error; }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
     if (!usesWindowsChrome) rmSync(userDataDir, { recursive: true, force: true });
   }
 }

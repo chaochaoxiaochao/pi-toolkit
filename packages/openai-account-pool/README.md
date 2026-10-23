@@ -71,3 +71,7 @@ pi remove npm:@maxiaochao/pi-openai-account-pool
 ```
 
 先运行 `/codex_pool off` 恢复单账号登录，再卸载，否则 `openai-codex` 会留下一条无法使用的池引用。如果安装的是仍内置本包的主包版本（0.11.9 及更早），不要同时安装独立包，否则命令会注册两次。
+
+## Refresh and replay boundary
+
+Both initial credential refresh and forced refresh after 401 use the same classification policy. A transient token-endpoint failure (for example `ECONNRESET`) stops the request; it neither rotates accounts nor marks authorization invalid. Only proven authorization failure or structured quota evidence permits switching. Cancellation does not start another attempt. After any outward output, neither account switching nor same-account authentication repair may replay the request.

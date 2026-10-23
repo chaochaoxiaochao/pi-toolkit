@@ -8,6 +8,10 @@ import { applyLegacyUpdate, parseLegacyPatch } from "./legacy-parser-v0.1.7.mjs"
 test("released v0.1.7 versus local parser over the growing comparison corpus", () => {
   const results = [];
   for (const testCase of comparisonCases) {
+    if (testCase.executionOnly) {
+      results.push({ id: testCase.id, released: "unsupported", local: "unsupported" });
+      continue; // Verified with real files by native-vs-codex.ts, not by a parser-only baseline.
+    }
     const released = runPatchCase(
       testCase,
       parseLegacyPatch,

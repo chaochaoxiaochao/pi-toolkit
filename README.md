@@ -58,7 +58,7 @@ Root and child versions remain independent, but repository release tooling publi
 
 ### `/btw`
 
-`/btw` opens a separate side-chat session that can inspect the main conversation and repository without entering the main context. Closing it can optionally inject a summary. Use `Up` / `Down` for line scrolling and `PageUp` / `PageDown` for page scrolling.
+`/btw` opens a separate side-chat session that can inspect the main conversation and repository without entering the main context. Main and restored side history are seeded through SessionManager; subsequent questions reuse the side session. Closing it can optionally inject a summary. Use `Up` / `Down` for line scrolling and `PageUp` / `PageDown` for page scrolling.
 
 ### Global instructions and theme
 
@@ -105,3 +105,7 @@ npm run release:check -- v0.13.1 --timeout 900 --interval 15
 Omit the tag to use the current root `package.json` version. Requires Node.js, Git, npm, tar, authenticated GitHub CLI (`gh auth login`), and local release tags (`git fetch origin --tags` if needed).
 
 The read-only check verifies remote tag commits, waits for the matching `publish.yml` run to succeed, and checks exact public npm versions and tarball integrity. It compares every packaged file and mode against an isolated snapshot of the release tag, including an optional coordinated child release. It uses the tag rather than uncommitted checkout changes, never installs or publishes, and removes temporary downloads. Failures exit nonzero; only a pending workflow or npm `E404` is retried within the shared timeout (600 seconds by default). Local packing uses `--ignore-scripts`, matching this repository's source-only packages; packages that add generated prepack output will need this check updated.
+
+## Safety and evidence boundaries
+
+Cache Export reports provider/Pi usage, not measured server cache state. Main requests and auxiliary calls are separate; missing reasoning or retention remains unknown. Relative paths use the session cwd. Herdr children get at most one missing-report reminder and report unconfirmed outcomes explicitly. Codex Edit preflights path hierarchy conflicts and preserves executable bits on moves. Account-pool transient refresh errors never justify rotation, and delivered output forbids replay. Worktree reuse always returns the worktree root. Browser profile reset requires Chrome to be stopped.

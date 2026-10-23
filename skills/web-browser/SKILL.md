@@ -14,7 +14,7 @@ Minimal CDP tools for collaborative site exploration.
 ./scripts/start.js --headless            # Recommended: isolated reusable profile
 ./scripts/start.js --headless --profile  # Headless with a copy of your profile
 ./scripts/start.js                       # Visible browser window when needed
-./scripts/start.js --headless --reset-profile  # Clear cached profile before launch
+./scripts/start.js --headless --reset-profile  # Clear a stopped cached profile before launch
 ```
 
 Starts Chrome with remote debugging (default port `:9222`). **Agents should use `--headless` by default** because it is less disruptive and supports navigation, evaluation, screenshots, emulation, and logging. User extensions are disabled for headless launches; a copied profile still provides its cookies and other browser state, but extension-based features are unavailable. Headed launches continue to load extensions normally. Use headed mode only when a person needs to see or interact with the browser, such as for `pick.js`, manual authentication, or debugging a headless-specific difference.
@@ -32,6 +32,8 @@ If Chrome is installed in a non-standard location, set:
 ```bash
 BROWSER_BIN=/path/to/chrome ./scripts/start.js --headless
 ```
+
+`--reset-profile` refuses to delete an active profile. Close Chrome first, including instances on another debugging port. Missing launcher state does not bypass native profile locks; an unverifiable lock fails closed. These checks also run before profile-copy and stale-lock cleanup.
 
 The launcher auto-detects common macOS and Linux paths. Under WSL, it also detects Windows Chrome in the standard `Program Files` locations and launches it through PowerShell with an isolated Windows-local profile.
 

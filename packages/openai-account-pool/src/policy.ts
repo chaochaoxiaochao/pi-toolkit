@@ -168,9 +168,9 @@ export function decideFailover(input: FailoverInput): { action: FailoverAction; 
 	const { kind } = input.classification;
 	if (kind === "cancelled") return { action: "stop", reason: "cancelled" };
 	if (kind === "transient" || kind === "fatal" || kind === "unknown") return { action: "stop", reason: kind };
+	if (input.emittedOutput) return { action: "stop", reason: "output_already_delivered" };
 	if (kind === "auth_retry" && !input.repairUsed) return { action: "repair", reason: "authentication_repair" };
 	// Everything below is quota or a proven authorization problem.
-	if (input.emittedOutput) return { action: "stop", reason: "output_already_delivered" };
 	if (!input.hasRemainingCandidate) return { action: "stop", reason: "pool_exhausted" };
 	return { action: "failover", reason: input.classification.reason };
 }

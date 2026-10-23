@@ -118,14 +118,14 @@ const hitOf = (r) => r.cached / (r.fresh + r.cached + r.cacheWrite);
   check("G fresh=799 -> not member", analyzeStreaks(parseEntries(mk3(7190, 799)).requests).length === 0);
 }
 
-// H. TTL expiry attribution ---------------------------------------------
+// H. Unknown historical timing/policy ---------------------------------------------
 {
   const entries = [
     req({ cached: 50000, fresh: 2000, min: 1 }),
     req({ cached: 5000, fresh: 15000, min: 40 }), // 39min gap same model, hit .25
   ];
   const m = analyzeMisses(parseEntries(entries).requests, parseEntries(entries).events);
-  check("H 39min gap + low hit -> possible TTL expiry", m.misses.length === 1 && m.misses[0].causes.some(([c]) => c === "possible TTL expiry"),
+  check("H missing request timing/policy -> no invented TTL expiry", m.misses.length === 1 && !m.misses[0].causes.some(([c]) => c === "possible TTL expiry"),
     JSON.stringify(m.misses.map((x) => x.causes)));
 }
 
@@ -156,7 +156,7 @@ const hitOf = (r) => r.cached / (r.fresh + r.cached + r.cacheWrite);
     JSON.stringify(two && two.causes));
 }
 
-// H4. 1h retention survives intervening read-only requests -----------------
+// H4. One-hour write references do not establish later expiry -----------------
 {
   const entries = [
     req({ cached: 0, fresh: 2000, write: 50000, write1h: 50000, min: 1, api: "anthropic-messages" }),
@@ -165,13 +165,13 @@ const hitOf = (r) => r.cached / (r.fresh + r.cached + r.cacheWrite);
   ];
   const d = parseEntries(entries);
   const three = analyzeMisses(d.requests, d.events).misses.find((x) => x.number === 3);
-  check("H4 inherited 1h window -> rebuild, not TTL expiry",
-    d.requests[1].cacheTtlMinutes === 60 && three && three.causes.some(([cause]) => cause === "cache rebuild") &&
+  check("H4 no invented expiry after intervening reported reads",
+    d.requests[0].policyReferenceSeconds === 3600 && d.requests[1].policyReferenceSeconds === null && three && three.causes.some(([cause]) => cause === "cache rebuild") &&
       !three.causes.some(([cause]) => cause === "possible TTL expiry"),
-    JSON.stringify({ ttl: d.requests[1].cacheTtlMinutes, causes: three && three.causes }));
+    JSON.stringify({ reference: d.requests[1].policyReferenceSeconds, causes: three && three.causes }));
 }
 
-// H5. short-lived replacement clears an older 1h retention window ----------
+// H5. Replacement without historical policy remains unknown ----------
 {
   const entries = [
     req({ cached: 0, fresh: 2000, write: 50000, write1h: 50000, min: 1, api: "anthropic-messages" }),
@@ -180,9 +180,9 @@ const hitOf = (r) => r.cached / (r.fresh + r.cached + r.cacheWrite);
   ];
   const d = parseEntries(entries);
   const three = analyzeMisses(d.requests, d.events).misses.find((x) => x.number === 3);
-  check("H5 short replacement resets TTL to 5min",
-    d.requests[1].cacheTtlMinutes === 5 && three && three.causes.some(([cause]) => cause === "possible TTL expiry"),
-    JSON.stringify({ ttl: d.requests[1].cacheTtlMinutes, causes: three && three.causes }));
+  check("H5 replacement without TTL metadata remains unknown",
+    d.requests[1].policyReferenceSeconds === null && three && !three.causes.some(([cause]) => cause === "possible TTL expiry"),
+    JSON.stringify({ reference: d.requests[1].policyReferenceSeconds, causes: three && three.causes }));
 }
 
 // I. cache rebuild (prev turn was a miss, same model) -------------------
@@ -393,8 +393,9 @@ const hitOf = (r) => r.cached / (r.fresh + r.cached + r.cacheWrite);
   const active = entry(req({ cached: 8000, fresh: 2000, min: 3, model: "active-model" }), "p3", "p1");
 
   let command;
-  registerCacheExport({ registerCommand: (name, definition) => { if (name === "cache_export") command = definition; } });
+  registerCacheExport({ on() {}, registerCommand: (name, definition) => { if (name === "cache_export") command = definition; } });
   await command.handler(reportFile, {
+    cwd: root,
     sessionManager: {
       getBranch: () => [first, active],
       getEntries: () => [first, abandoned, active],

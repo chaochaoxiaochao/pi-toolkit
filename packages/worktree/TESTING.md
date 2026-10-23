@@ -24,3 +24,7 @@
 ## 最近验证结果
 
 验收要求全部 Node/shell 断言通过，Extension 能被 Pi 单独加载，且 `npm pack --dry-run` 包含 `bin/`、`extensions/`、`skills/` 和 `scripts/install.mjs`。
+
+## Review regressions
+
+The CLI integration suite also calls `create --json` from a nested linked-worktree directory. It asserts `already-active`, the canonical worktree root, and the whole-worktree dirty flag. Load the extension with `pi -ne -ns --no-session -e ./packages/worktree/extensions/worktree.ts`; this package has no `load-test` npm script.

@@ -5,12 +5,13 @@
 被测包：`@maxiaochao/pi-codex-edit`（当前工作区）
 
 本报告严格区分真实模型基准、确定性协议回归和安全回归，三类成功率不会混算。
+Agent Benchmark 是已提交的历史运行证据，不代表本次文件系统修复重新运行了付费模型基准。
 
 ## 执行摘要
 
 - Agent Benchmark：**通过（有共同例外）** — 已完成 300/300 条 chain；本地版 First Exact 92/100、Final Exact 92/100，全部正式门槛通过。
 - 协议/包回归：**通过** — 5/5 项检查通过。
-- 安全回归：**5/5 正确拒绝且零写入**，包括工作区外路径。
+- 安全回归：**7/7 正确拒绝且零写入**，包括工作区外路径。
 - 下文提供 Agent、协议、安全、效率、版本、integrity 和任务来源的完整证据。
 
 ## Agent Benchmark：真实模型基准
@@ -123,16 +124,16 @@ Score v2 = `覆盖率 ×（0.75 × 首次精确率 + 0.25 × 最终精确率）`
 ## 确定性回归基线
 
 - Node 测试：预期 29 个，覆盖用户配置覆盖与校验、parser、matcher、路由、包契约、resolved-path 防护、发布版对比、分层调度和生产事故语料。
-- 共享对比 corpus：12 个 case。
-- 原生 edit：5 通过 / 2 失败或正确拒绝 / 5 不适用。
-- Codex Edit 发布版 v0.1.7：6 通过 / 6 失败或正确拒绝。
-- Codex Edit 本地版：7 通过 / 5 正确安全拒绝。
+- 共享对比 corpus：15 个 case。
+- 原生 edit：5 通过 / 2 失败或正确拒绝 / 8 不适用。
+- Codex Edit 发布版 v0.1.7：6 通过 / 6 失败或正确拒绝 / 3 不适用。
+- Codex Edit 本地版：8 通过 / 7 正确安全拒绝。
 
-“正确拒绝”表示无效或陈旧操作被拒绝，且工作区没有变化。“不适用”表示 Pi 原生 `edit` 无法用一次编辑协议调用表达该操作，不计为工具缺陷。
+“正确拒绝”表示无效或陈旧操作被拒绝，且工作区没有变化。“不适用”表示原生 edit 无法表达该操作，或冻结的发布版 parser 基线不包含文件系统执行层；不计为工具缺陷。层级冲突与权限保留使用本地扩展和真实临时文件验证，不伪造发布版执行结果。
 
 ## 安全回归
 
-本地版 5/5 个安全 case 均正确拒绝，且工作区零写入。特别是 `outside-workspace-absolute-path` 的结果为 **工作区外路径 — 正确拒绝**；放行该操作会允许任意写入 benchmark sandbox 之外。安全拒绝不计入编辑失败率。
+本地版 7/7 个安全 case 均正确拒绝，且工作区零写入。特别是 `outside-workspace-absolute-path` 的结果为 **工作区外路径 — 正确拒绝**；放行该操作会允许任意写入 benchmark sandbox 之外。安全拒绝不计入编辑失败率。
 
 ## 生产事故回归
 
@@ -150,17 +151,17 @@ Score v2 = `覆盖率 ×（0.75 × 首次精确率 + 0.25 × 最终精确率）`
 
 ## 确定性对比结论
 
-每个测试臂运行同一组 12 个 case。对比 1 执行 24 次工具调用（原生 + 本地）；对比 2 执行 24 次 parser/执行评估（发布版 + 本地）。下表以 7 个有效编辑任务为完成率分母；5 个故意无效或危险的 patch 单独计入安全检查。
+共享语料共 15 个 case。不适用的测试臂不执行。对比 1 验证本地扩展的 8 个有效编辑和 7 个安全 case；对比 2 只比较 parser 基线适用的 7 个有效编辑和 5 个安全 case。
 
 ### 1. Pi 原生 edit vs Codex Edit 本地版
 
 | 指标 | Pi 原生 edit | Codex Edit 本地版 | 变化 |
 |---|---:|---:|---:|
-| 有效任务完成 | 5/7 | 7/7 | +2 个 |
-| 有效任务完成率 | 71.4% | 100.0% | +28.6 pp |
-| 有效任务失败 | 1/7 | 0/7 | 减少 1 个 |
-| 有效任务不适用 | 1/7 | 0/7 | 减少 1 个 |
-| 正确拒绝适用的危险/陈旧 patch | 1/1 (100.0%) | 5/5 (100.0%) | Codex 覆盖全部 5 个 |
+| 有效任务完成 | 5/8 | 8/8 | +3 个 |
+| 有效任务完成率 | 62.5% | 100.0% | +37.5 pp |
+| 有效任务失败 | 1/8 | 0/8 | 减少 1 个 |
+| 有效任务不适用 | 2/8 | 0/8 | 减少 2 个 |
+| 正确拒绝适用的危险/陈旧 patch | 1/1 (100.0%) | 7/7 (100.0%) | Codex 覆盖全部 7 个 |
 
 ### 2. Codex Edit 发布版 v0.1.7 vs 本地修改版
 
@@ -179,6 +180,9 @@ Score v2 = `覆盖率 ×（0.75 × 首次精确率 + 0.25 × 最终精确率）`
 
 | Case | 原生 edit | 本地 Codex Edit | 说明 |
 |---|---|---|---|
+| `file-parent-conflict` | 不适用 | 正确拒绝/失败 | 两者均避免危险写入 |
+| `file-parent-conflict-reversed` | 不适用 | 正确拒绝/失败 | 两者均避免危险写入 |
+| `move-preserves-file-mode` | 不适用 | 通过 | Codex 协议可处理该形态 |
 | `unique-replacement` | 通过 | 通过 | 预期行为一致 |
 | `disjoint-edits-one-file` | 通过 | 通过 | 预期行为一致 |
 | `repeated-markdown-separator` | 正确拒绝/失败 | 通过 | Codex 协议可处理该形态 |
@@ -200,6 +204,9 @@ Score v2 = `覆盖率 ×（0.75 × 首次精确率 + 0.25 × 最终精确率）`
 
 | Case | 发布版 v0.1.7 | 本地版 | 回归状态 |
 |---|---|---|---|
+| `file-parent-conflict` | 不适用 | 正确拒绝/失败 | 仅本地真实文件验证 |
+| `file-parent-conflict-reversed` | 不适用 | 正确拒绝/失败 | 仅本地真实文件验证 |
+| `move-preserves-file-mode` | 不适用 | 通过 | 仅本地真实文件验证 |
 | `unique-replacement` | 通过 | 通过 | 已保留 |
 | `disjoint-edits-one-file` | 通过 | 通过 | 已保留 |
 | `repeated-markdown-separator` | 通过 | 通过 | 已保留 |
@@ -223,6 +230,8 @@ Score v2 = `覆盖率 ×（0.75 × 首次精确率 + 0.25 × 最终精确率）`
 | 同一 raw path 出现多个普通 `Update File` | 合并后按顺序执行 | `repeated-update-same-path` |
 | Add/delete/move 或 resolved path alias 冲突 | 写入前拒绝 | `conflicting-targets`、`resolved-path-alias-conflict` |
 | 工作区外绝对路径 | 读取或写入前正确拒绝 | `outside-workspace-absolute-path` |
+| 文件与父目录层级冲突 | 任意操作写入前拒绝，两种顺序均零写入 | `file-parent-conflict`、`file-parent-conflict-reversed` |
+| Move 丢失执行权限 | 保留源文件普通权限位，不受 umask 截断 | `move-preserves-file-mode` |
 | 空 update chunk | 拒绝，不猜测意图 | `empty-update-chunk` |
 | 陈旧预期行 | 拒绝；调用方必须重新读取并生成 patch | `stale-expected-lines` |
 | 缺少 `patch` 参数 | 必填 TypeBox schema 在扩展执行前拒绝 | 包契约测试 |

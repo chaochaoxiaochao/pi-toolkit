@@ -1,3 +1,13 @@
+## Unreleased
+
+- Cache Export: use request timing and historical, non-secret cache-policy observations; separate auxiliary usage, mark unknowns, and resolve exports against the session cwd.
+- BTW: seed main and restored side history through SessionManager instead of transient agent state.
+- Herdr Subagents: one durable child-side missing-report reminder; terminal diagnostics for unconfirmed results, cancellation, and final errors without parent-side wake-up logic.
+- Codex Edit: preflight file/parent conflicts before writing and preserve ordinary file permissions on moves.
+- OpenAI Account Pool: classify forced-refresh failures consistently and prohibit authentication repair after output delivery.
+- Worktree: return the worktree root from already-active nested directories.
+- web-browser: refuse profile mutation while Chrome is active, including another port or missing launcher state.
+
 ## 2026-10-23 - v0.13.7
 
 - openai-account-pool v0.1.8: fix stranded account-pool references after removal and recover email labels

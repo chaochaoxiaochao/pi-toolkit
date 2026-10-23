@@ -9,8 +9,8 @@ import { USAGE_STYLES, USAGE_SCRIPT } from "./tau-assets.ts";
 // ---------------------------------------------------------------------------
 
 function hhmmss(ts) {
-  const iso = String(ts || "");
-  if (!iso) return "";
+  const iso = ts ?? "";
+  if (iso === "") return "";
   const d = new Date(iso);
   if (isNaN(d)) return "";
   // render in the machine's local timezone (Asia/Shanghai here -> Beijing time)
@@ -26,13 +26,20 @@ export function tzLabel() {
   return `${tz} (UTC${off})`;
 }
 
+function timeMs(value) {
+  const result = typeof value === "number" ? value : typeof value === "string" && value ? Date.parse(value) : NaN;
+  return Number.isFinite(result) ? result : null;
+}
+
 export function parseEntries(entries) {
   const requests = [];
   const events = [];
   const toolCounts = {};
   let compactions = 0;
   let prevKey = null;
-  const longCacheUntilByKey = new Map();
+  const auxiliary = [];
+  const warmByKey = new Map();
+  let observedPolicy;
   let gapTools = []; // tool results accumulated since the previous request
 
   const addEvent = (num, kind, label, ts) =>
@@ -41,7 +48,26 @@ export function parseEntries(entries) {
   for (const e of entries || []) {
     const t = e?.type;
     const ts = e?.timestamp;
+    if (t === "custom" && e.customType === "cache-export-request") {
+      observedPolicy = e.data;
+      continue;
+    }
+    if (t === "usage" || ((t === "compaction" || t === "branch_summary") && e.usage)) {
+      const kind = t === "usage" ? e.kind : t;
+      auxiliary.push({ kind, timestamp: hhmmss(ts), beforeRequest: requests.length + 1,
+        provider: e.provider ?? "Unknown", model: e.model ?? "Unknown", usage: e.usage ?? {} });
+      if (kind === "cache_warm" && ((e.usage?.cacheRead ?? 0) + (e.usage?.cacheWrite ?? 0)) > 0) {
+        warmByKey.set(`${e.provider}/${e.model}`, timeMs(ts));
+      }
+      if (t === "usage") continue;
+    }
+    if (t === "context_edit" || t === "branch_summary") {
+      addEvent(requests.length + 1, "context", t === "context_edit" ? "Context edit" : "Branch summary", ts);
+      warmByKey.clear();
+      continue;
+    }
     if (t === "compaction") {
+      warmByKey.clear();
       compactions += 1;
       addEvent(requests.length + 1, "compaction", "Compaction", ts);
       continue;
@@ -98,25 +124,33 @@ export function parseEntries(entries) {
     }
     prevKey = key;
 
-    const tsMs = Date.parse(String(ts || ""));
-    let longCacheUntil = longCacheUntilByKey.get(key) || 0;
-    if (u.cacheRead === 0 && u.cacheWrite > 0 && !u.cacheWrite1h) {
-      longCacheUntil = 0;
-      longCacheUntilByKey.delete(key);
-    }
-    if (u.cacheWrite1h > 0 && Number.isFinite(tsMs)) {
-      longCacheUntil = Math.max(longCacheUntil, tsMs + LONG_TTL_MINUTES * 60000);
-      longCacheUntilByKey.set(key, longCacheUntil);
-    }
-    const cacheTtlMinutes = Number.isFinite(tsMs) && tsMs <= longCacheUntil
-      ? LONG_TTL_MINUTES
-      : DEFAULT_TTL_MINUTES;
+    const startMs = timeMs(m.timestamp);
+    const durationMs = Number.isFinite(m.durationMs) && m.durationMs >= 0 ? m.durationMs : null;
+    const previous = requests.at(-1);
+    const startGapMs = startMs !== null && previous?.startMs !== null && previous?.startMs !== undefined
+      ? startMs - previous.startMs : null;
+    const idleMs = startMs !== null && previous?.endMs !== null && previous?.endMs !== undefined
+      ? Math.max(0, startMs - previous.endMs) : null;
+    const policy = observedPolicy?.messageTimestamp === m.timestamp && observedPolicy?.provider === provider && observedPolicy?.model === model && observedPolicy?.api === api
+      ? observedPolicy.policy : null;
+    observedPolicy = undefined;
+    const references = new Set((Array.isArray(policy?.explicitTtlsSeconds) ? policy.explicitTtlsSeconds : [])
+      .filter((seconds) => Number.isFinite(seconds) && seconds > 0));
+    // A reported one-hour write is a policy reference, not a server expiry time.
+    // Never propagate a guessed expiry or downgrade historical hits to five minutes.
+    if (u.cacheWrite1h > 0) references.add(3600);
+    const mixedWrites = u.cacheWrite1h > 0 && u.cacheWrite > u.cacheWrite1h;
+    const policyReferenceSeconds = !mixedWrites && references.size === 1 ? [...references][0] : null;
 
     const cost = u.cost && typeof u.cost.total === "number" ? u.cost.total : null;
     requests.push({
       number: num,
       isoTs: String(ts || ""),
-      timestamp: hhmmss(ts),
+      timestamp: hhmmss(startMs) || "Unknown",
+      startMs, durationMs, startGapMs, idleMs,
+      endMs: startMs !== null && durationMs !== null ? startMs + durationMs : null,
+      lastWarmAt: warmByKey.get(key) ?? null,
+      policy, policyReferenceSeconds,
       provider,
       model,
       api,
@@ -125,9 +159,8 @@ export function parseEntries(entries) {
       cached,
       cacheWrite,
       cacheWrite1h: u.cacheWrite1h || 0,
-      cacheTtlMinutes,
       output,
-      reasoning: u.reasoning || 0,
+      reasoning: Number.isFinite(u.reasoning) ? u.reasoning : null,
       stopReason: m.stopReason || "",
       estimatedCost: cost,
       gapTools,
@@ -138,7 +171,7 @@ export function parseEntries(entries) {
   }
 
   const toolCalls = Object.entries(toolCounts).sort((a, b) => b[1] - a[1]);
-  return { requests, events, toolCalls, compactions };
+  return { requests, events, toolCalls, compactions, auxiliary };
 }
 
 // ---------------------------------------------------------------------------
@@ -160,7 +193,7 @@ const SERIES_COLORS = {
   "cache writes": ["#9cffb1", "#166534"],
   fresh: ["#ff4f4f", "#b91c1c"],
   request: ["#ff4f4f", "#b91c1c"],
-  cumulative: ["#93c5fd", "#2563eb"],
+  "segment cumulative": ["#93c5fd", "#2563eb"],
   output: ["#c084fc", "#9333ea"],
   reasoning: ["#9cffb1", "#166534"],
   event: ["#a7f3f0", "#0f766e"],
@@ -181,6 +214,27 @@ function fmtCost(v) {
 
 const fmtInt = (n) => n.toLocaleString("en-US");
 const fmtPct1 = (x) => (x * 100).toFixed(1) + "%";
+const fmtDuration = (ms) => Number.isFinite(ms) ? `${(ms / 1000).toFixed(1)}s` : "Unknown";
+
+function policyLabel(request) {
+  const reference = request.policyReferenceSeconds;
+  const model = request.policy?.modelReference;
+  const modelText = model && Object.keys(model).length
+    ? `; model reference ${Object.entries(model).map(([tier, seconds]) => `${tier}=${seconds}s`).join(", ")}` : "";
+  const retention = request.policy?.retention ? `; observed retention=${request.policy.retention}` : "";
+  return `${Number.isFinite(reference) ? `${reference}s recorded reference` : "Unknown"}${retention}${modelText}; server expiry Unknown`;
+}
+
+function renderAuxiliaryUsage(auxiliary = []) {
+  const count = (value) => Number.isFinite(value) ? fmtInt(value) : "Unknown";
+  const rows = auxiliary.map((entry) => `<tr><td>${esc(entry.kind)}</td><td>${esc(entry.timestamp)}</td>` +
+    `<td>${esc(entry.provider)}</td><td>${esc(entry.model)}</td>` +
+    ["input", "cacheRead", "cacheWrite", "output"].map((field) => `<td>${count(entry.usage[field])}</td>`).join("") + "</tr>").join("");
+  return `<div class="usage-panel"><h2>Auxiliary usage (whole branch)</h2>` +
+    `<p class="usage-note">Completed usage records only: cache warming, compaction and other auxiliary calls. Excluded from main-request charts and totals. A completed warm call is not proof that the next main prefix will hit. Planned warming is not counted.</p>` +
+    `<div class="usage-table-wrap"><table><thead><tr><th>Kind</th><th>Recorded completion</th><th>Provider</th><th>Model</th><th>Fresh</th><th>Cached</th><th>Written</th><th>Output</th></tr></thead>` +
+    `<tbody>${rows || '<tr><td colspan="8">No auxiliary usage recorded.</td></tr>'}</tbody></table></div></div>`;
+}
 
 // ---------------------------------------------------------------------------
 // _line_chart port
@@ -271,7 +325,7 @@ function lineChart(title, series, opts = {}) {
     // every index while the visible broken polylines still draw the gaps.
     const full = `<polyline class="series-line" data-dark="${dark}" data-light="${light}" visibility="hidden" fill="none" stroke="${dark}" stroke-width="3" ` +
       `points="${values.map((v, i) => point(i, Number.isFinite(v) ? v : 0).map((c) => c.toFixed(1)).join(",")).join(" ")}"/>`;
-    const labels = values.map((v) => !Number.isFinite(v) ? "N/A" : (percent ? `${(v * 100).toFixed(1)}%` : fmtInt(Math.trunc(v)))).join("|");
+    const labels = values.map((v) => !Number.isFinite(v) ? "Unknown" : (percent ? `${(v * 100).toFixed(1)}%` : fmtInt(Math.trunc(v)))).join("|");
     parts.push(
       `<g class="series" data-series-id="${seriesIndex}" data-name="${esc(name, true)}" data-labels="${esc(labels, true)}">` +
         full +
@@ -291,7 +345,7 @@ function lineChart(title, series, opts = {}) {
     );
   });
   parts.push(
-    `<text class="axis-label" x="${(left + plotWidth / 2).toFixed(1)}" y="${height - 4}" text-anchor="middle">Model request</text></svg>`,
+    `<text class="axis-label" x="${(left + plotWidth / 2).toFixed(1)}" y="${height - 4}" text-anchor="middle">Main request sequence (not time)</text></svg>`,
   );
   return parts.join("");
 }
@@ -309,18 +363,12 @@ const figure = (chart) =>
 
 const MISS_THRESHOLD = 0.5; // hit rate below this gets an explanation row
 const PREFIX_REUSE_THRESHOLD = 0.5;
-const DEFAULT_TTL_MINUTES = 5;
-const LONG_TTL_MINUTES = 60;
 
 function reusablePrefix(request) {
   const prompt = request.fresh + request.cached + request.cacheWrite;
   if (request.api !== "anthropic-messages") return prompt;
   const explicitlyCached = request.cached + request.cacheWrite;
   return explicitlyCached > 0 ? explicitlyCached : prompt;
-}
-
-function ttlMinutesAfter(request) {
-  return request.cacheTtlMinutes ?? (request.cacheWrite1h > 0 ? LONG_TTL_MINUTES : DEFAULT_TTL_MINUTES);
 }
 
 export function analyzeMisses(requests, events) {
@@ -347,30 +395,34 @@ export function analyzeMisses(requests, events) {
     const prefixReuse = expectedPrefix > 0 ? Math.min(1, r.cached / expectedPrefix) : 0;
 
     if (i === 0) {
-      causes.push(["first request", "cold session: nothing cached yet; the prefix can only be reused by a later request"]);
+      causes.push(r.number === 1
+        ? ["first request", "first recorded main request; earlier server cache state is unknown, so a cold start is not established"]
+        : ["segment boundary", "first request in this view, not the first request of the session"]);
     }
     if (prev && (prev.provider !== r.provider || prev.model !== r.model)) {
-      causes.push(["model switch", `${prev.provider}/${prev.model} -> ${r.provider}/${r.model}: prefix invalidated by provider/model change`]);
+      causes.push(["model switch", `${prev.provider}/${prev.model} -> ${r.provider}/${r.model}: provider/model changed; cache reuse across routes is unknown`]);
     }
     for (const ev of evByReq.get(r.number) || []) {
       if (ev.kind === "compaction") {
-        causes.push(["compaction", "context was rewritten by compaction; cache rebuilds on the new prefix"]);
+        causes.push(["compaction", "observed compaction rewrote context; a cache rebuild is possible, not proven"]);
+      } else if (ev.kind === "context") {
+        causes.push(["context edit", `${ev.label}: recorded context transformation; cache impact is unknown`]);
       } else if (ev.kind === "model" && r.number > 1 && !causes.some(([c]) => c === "model switch")) {
-        causes.push(["model switch", `${ev.label}: prefix invalidated by provider/model change`]);
+        causes.push(["model switch", `${ev.label}: provider/model changed; cache reuse across routes is unknown`]);
       } else if (ev.kind === "thinking" && r.number > 1) {
         causes.push(["thinking change", `${ev.label}: request parameters changed`]);
       }
     }
-    if (prev && r.isoTs && prev.isoTs) {
-      const gapMin = (Date.parse(r.isoTs) - Date.parse(prev.isoTs)) / 60000;
-      const ttlMinutes = ttlMinutesAfter(prev);
-      if (gapMin > ttlMinutes && prefixReuse < PREFIX_REUSE_THRESHOLD && !causes.some(([c]) => c === "compaction" || c === "model switch")) {
-        causes.push(["possible TTL expiry", `idle gap ${gapMin.toFixed(0)}min > ${ttlMinutes}min heuristic; actual retention depends on the provider`]);
+    if (prev && r.startMs !== null && prev.startMs !== null && r.startMs > prev.startMs) {
+      const warmed = r.lastWarmAt !== null && r.lastWarmAt > prev.startMs && r.lastWarmAt <= r.startMs;
+      const reference = prev.policyReferenceSeconds;
+      if (!warmed && reference > 0 && (r.startMs - prev.startMs) / 1000 > reference && prefixReuse < PREFIX_REUSE_THRESHOLD && !causes.length) {
+        causes.push(["possible TTL expiry", `request-start gap ${((r.startMs - prev.startMs) / 60000).toFixed(1)}min crosses a recorded ${(reference / 60).toFixed(0)}min policy reference; not an idle gap or a server expiry measurement`]);
       }
     }
     if (prev && prefixReuse < PREFIX_REUSE_THRESHOLD && !causes.length) {
-      const writeDetail = r.cacheWrite > 0 ? `; provider also reported ${r.cacheWrite.toLocaleString("en-US")} tokens written for the replacement prefix` : "";
-      causes.push(["cache rebuild", `only ${(prefixReuse * 100).toFixed(1)}% of the prior reusable prefix was read; the cache was likely lost or invalidated${writeDetail}`]);
+      const writeDetail = r.cacheWrite > 0 ? `; provider also reported ${r.cacheWrite.toLocaleString("en-US")} tokens written (prefix identity unknown)` : "";
+      causes.push(["cache rebuild", `cache reads equal ${(prefixReuse * 100).toFixed(1)}% of the prior reported prompt reference; possible rebuild or changed prefix; actual server state and cause are unknown${writeDetail}`]);
     }
     if (r.cacheWrite > 0 && !causes.length) {
       causes.push(["cache write", `provider reported ${r.cacheWrite.toLocaleString("en-US")} tokens written; a low read-hit rate is expected while a prefix is created or extended`]);
@@ -379,10 +431,10 @@ export function analyzeMisses(requests, events) {
       const toolChars = (r.gapTools || []).reduce((sum, tool) => sum + tool.chars, 0);
       const toolTokens = Math.round(toolChars / 4);
       const toolDetail = toolTokens > 0 ? `, including ~${toolTokens.toLocaleString("en-US")} estimated tool-output tokens` : "";
-      causes.push(["new input", `reused ${(prefixReuse * 100).toFixed(1)}% of the prior prefix; ${r.fresh.toLocaleString("en-US")} fresh tokens were newly appended${toolDetail}`]);
+      causes.push(["new input", `cache reads equal ${(prefixReuse * 100).toFixed(1)}% of the prior reported prompt reference; ${r.fresh.toLocaleString("en-US")} fresh tokens were reported; appended content is a possible explanation${toolDetail}`]);
     }
     if (!causes.length) {
-      causes.push(["unclassified", "no rule matched; usually new content appended beyond the cached prefix (large tool results / long user input)"]);
+      causes.push(["unclassified", "no causal evidence matched; the server cache state is unknown"]);
     }
 
     for (const [cause] of causes) {
@@ -395,8 +447,7 @@ export function analyzeMisses(requests, events) {
   }
 
   const summaryArr = [...summary.entries()].sort((a, b) => b[1].fresh - a[1].fresh);
-  return { misses, summary: summaryArr, noCacheReporting, threshold: MISS_THRESHOLD,
-    ttlMinutes: DEFAULT_TTL_MINUTES, longTtlMinutes: LONG_TTL_MINUTES };
+  return { misses, summary: summaryArr, noCacheReporting, threshold: MISS_THRESHOLD };
 }
 
 // Streak detection: many consecutive requests stuck in a mid hit-rate band.
@@ -419,7 +470,7 @@ export function analyzeStreaks(requests, events = []) {
   let gaps = 0; // consecutive non-member requests inside the current run
   let prevKey = null;
   const resetBefore = new Set(events
-    .filter((event) => event.kind === "compaction" || event.kind === "model")
+    .filter((event) => event.kind === "compaction" || event.kind === "model" || event.kind === "context")
     .map((event) => event.requestNumber));
   const close = () => {
     if (cur && cur.hits.length >= STREAK_MIN_LEN) streaks.push(cur);
@@ -479,13 +530,13 @@ function renderStreakPanel(streaks) {
       const pct = (x) => (x * 100).toFixed(1) + "%";
       return `<tr><td>#${s.from}–#${s.to}</td><td>${s.hits.length}</td><td>${pct(s.avgHit)}</td>` +
         `<td>${fmtInt(s.fresh)}</td>` +
-        `<td style="white-space:normal">tool outputs: ${tools || "-"} · assistant replies: ${fmtInt(s.replyTokens)} · trace explains ~${pct(s.coverage)} of fresh</td></tr>`;
+        `<td style="white-space:normal">tool outputs: ${tools || "-"} · assistant replies: ${fmtInt(s.replyTokens)} · trace estimate / fresh ~${pct(s.coverage)} of fresh</td></tr>`;
     })
     .join("");
   return `<div class="usage-panel"><h2>Hit-rate streak analysis</h2>` +
     `<p class="usage-note">Rule-based, no LLM. A streak is ${STREAK_MIN_LEN}+ requests (single healthy outlier tolerated) with hit rate ` +
     `${(STREAK_LOW * 100).toFixed(0)}–${(STREAK_HIGH * 100).toFixed(1)}% (requests reporting cacheWrite break the streak; fresh ≥ ${STREAK_MIN_FRESH} tok, prefix ≥ ${STREAK_MIN_PROMPT}): ` +
-    `usually each turn appends large fresh content (big tool outputs / long replies), not a cache failure. ` +
+    `appended tool outputs or replies are possible contributors, not proof of cache health or failure. ` +
     `Below ${(MISS_THRESHOLD * 100).toFixed(0)}% see the miss panel above. Tool tokens estimated at 4 chars/token.</p>` +
     `<div class="usage-table-wrap" style="max-height:260px"><table>` +
     `<thead><tr><th>Requests</th><th>Turns</th><th>Avg hit</th><th>Total fresh</th><th>Trace (fresh composition)</th></tr></thead>` +
@@ -508,9 +559,9 @@ function renderMissPanel(miss) {
     .join("");
   return `<div class="usage-panel"><h2>Cache miss analysis</h2>` +
     `<p class="usage-note">Rule-based attribution, no LLM. Rows are requests below ${(miss.threshold * 100).toFixed(0)}% hit rate. ` +
-    `TTL attribution uses a ${miss.ttlMinutes}min idle-gap heuristic, or ${miss.longTtlMinutes}min after a reported 1h cache write; actual retention is provider-specific.</p>` +
+    `Observed usage and context events are facts; causes are possibilities. Policy references are not measured expiry times. Without historical request parameters, retention is unknown. No universal TTL is assumed.</p>` +
     `<div class="usage-table-wrap" style="max-height:340px"><table>` +
-    `<thead><tr><th>#</th><th>Time</th><th>Hit rate</th><th>Fresh</th><th>Cause</th></tr></thead>` +
+    `<thead><tr><th>#</th><th>Time</th><th>Hit rate</th><th>Fresh</th><th>Evidence / possible cause</th></tr></thead>` +
     `<tbody>${rows || `<tr><td colspan="5" class="empty">None</td></tr>`}</tbody></table></div>` +
     `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:12px">${summaryHtml}</div></div>`;
 }
@@ -521,7 +572,7 @@ function renderMissPanel(miss) {
 
 export function buildContextSegments(requests, events) {
   const starts = new Set(events
-    .filter((event) => (event.kind === "compaction" || event.kind === "model") && event.requestNumber >= 1 && event.requestNumber <= requests.length)
+    .filter((event) => (event.kind === "compaction" || event.kind === "model" || event.kind === "context") && event.requestNumber >= 1 && event.requestNumber <= requests.length)
     .map((event) => event.requestNumber));
   const segments = [];
   let start = 0;
@@ -571,7 +622,7 @@ function renderDashboardView(requests, events, toolCalls, compactions, scopeLabe
   const contextBreakBefore = new Set();
   const cacheBreakBefore = new Set();
   const resetBefore = new Set(events
-    .filter((event) => event.kind === "compaction" || event.kind === "model")
+    .filter((event) => event.kind === "compaction" || event.kind === "model" || event.kind === "context")
     .map((event) => event.requestNumber));
   const cumulativeRates = [];
   let runCached = 0, runPrompt = 0;
@@ -581,7 +632,7 @@ function renderDashboardView(requests, events, toolCalls, compactions, scopeLabe
   for (let index = 0; index < requests.length; index++) {
     const r = requests[index];
     const key = `${r.provider}/${r.model}`;
-    const contextReset = index > 0 && events.some((event) => (event.kind === "compaction" || event.kind === "model") && event.requestNumber === r.number);
+    const contextReset = index > 0 && events.some((event) => (event.kind === "compaction" || event.kind === "model" || event.kind === "context") && event.requestNumber === r.number);
     const cacheReset = index > 0 && (resetBefore.has(r.number) || (previousKey !== null && key !== previousKey));
     if (contextReset) contextBreakBefore.add(index);
     if (cacheReset) {
@@ -633,7 +684,7 @@ function renderDashboardView(requests, events, toolCalls, compactions, scopeLabe
   ];
   if (cacheHitRate !== null) {
     charts.push(figure(lineChart("Cache hit rate",
-      [["request", rates], ["cumulative", cumulativeRates]],
+      [["request", rates], ["segment cumulative", cumulativeRates]],
       { yMax: 1.0, percent: true, timestamps, requestNumbers, events: eventMarkers, breakBefore: cacheBreakBefore })));
   }
   charts.push(figure(lineChart("Output and reasoning tokens",
@@ -647,7 +698,10 @@ function renderDashboardView(requests, events, toolCalls, compactions, scopeLabe
       `<td>${esc(r.model)}</td><td>${fmtInt(r.fresh)}</td><td>${fmtInt(r.cached)}</td>` +
       `<td>${fmtInt(r.cacheWrite)}</td><td>${fmtInt(r.fresh + r.cached + r.cacheWrite)}</td>` +
       `<td>${showHit ? fmtPct1(r.cached / Math.max(1, r.fresh + r.cached + r.cacheWrite)) : "N/A"}</td>` +
-      `<td>${fmtInt(r.output)}</td><td>${esc(r.stopReason, true)}</td></tr>`,
+      `<td>${fmtInt(r.output)}</td><td>${Number.isFinite(r.reasoning) ? fmtInt(r.reasoning) : "Unknown"}</td>` +
+      `<td>${fmtDuration(r.durationMs)}</td><td>${fmtDuration(r.startGapMs)}</td><td>${fmtDuration(r.idleMs)}</td>` +
+      `<td>${esc(hhmmss(r.isoTs))}</td><td>${esc(policyLabel(r))}</td>` +
+      `<td>${r.lastWarmAt === null ? "Unknown" : esc(hhmmss(r.lastWarmAt))}</td><td>${esc(r.stopReason, true)}</td></tr>`,
     )
     .join("");
 
@@ -657,15 +711,16 @@ function renderDashboardView(requests, events, toolCalls, compactions, scopeLabe
 
   return (
     `<div class="usage-cards">${cardsHtml}</div>` +
-    `<p class="usage-note">Prompt and output lines break at a Context segment boundary (compaction or model change). Cache-window cumulative hit rate also resets at a model change. ` +
-    `TTL and service interruptions are shown only when recorded or inferred by the miss analysis; they do not create a Context segment.</p>` +
+    `<p class="usage-note">Prompt and output lines break at a Context segment boundary (compaction, context edit, or model change). Segment cumulative hit rate resets at each such boundary. ` +
+    `The x-axis is request sequence, not elapsed time. Cache hit rate = cacheRead / (input + cacheRead + cacheWrite). These are provider/Pi-reported usage values, not server cache telemetry. Auxiliary calls are separate; unreported reasoning is Unknown.</p>` +
     `<div class="usage-charts">${charts.join("")}</div>` +
     renderMissPanel(analyzeMisses(requests, events)) +
     renderStreakPanel(analyzeStreaks(requests, events)) +
     `<div class="usage-details">` +
     `<div class="usage-panel"><h2>Requests</h2><div class="usage-table-wrap"><table>` +
-    `<thead><tr><th>#</th><th>Time</th><th>Provider</th><th>Response Provider</th><th>Model</th>` +
+    `<thead><tr><th>#</th><th>Request start</th><th>Provider</th><th>Response Provider</th><th>Model</th>` +
     `<th>Fresh</th><th>Cached</th><th>Written</th><th>Prompt</th><th>Hit rate</th><th>Output</th>` +
+    `<th>Reasoning</th><th>Response duration</th><th>Start-to-start</th><th>Gap after response</th><th>Recorded at</th><th>Policy reference (not expiry)</th><th>Last completed warm with cache usage</th>` +
     `<th>Stop</th></tr></thead><tbody>${rows}</tbody></table></div></div>` +
     `<div class="usage-panel"><h2>Tool calls</h2>${toolRows}</div>` +
     `</div>`
@@ -675,7 +730,7 @@ function renderDashboardView(requests, events, toolCalls, compactions, scopeLabe
 export function renderDashboard(data) {
   const { requests, events, toolCalls, compactions } = data;
   if (!requests.length) {
-    return `<p class="empty">No assistant responses with token usage were found in this session.</p>`;
+    return `<p class="empty">No main assistant responses with token usage were found in this session.</p>` + renderAuxiliaryUsage(data.auxiliary);
   }
 
   const segments = buildContextSegments(requests, events);
@@ -716,7 +771,7 @@ export function renderDashboard(data) {
   return `<div class="usage-view-controls"><label for="context-segment-select">View</label>` +
     `<select id="context-segment-select" data-context-segment-select>${options}</select>` +
     `<span>Default: latest Context segment. All-history values remain available; cache metrics reset where compaction rewrites the prefix or the model changes.</span></div>` +
-    views +
+    views + renderAuxiliaryUsage(data.auxiliary) +
     `<div class="usage-tooltip" role="status" aria-live="polite"></div>`;
 }
 
@@ -778,6 +833,12 @@ document.querySelectorAll(".usage-chart").forEach((chart) => {
     if (!tooltip) return;
     const m = tooltip.textContent.match(/^Request (\\d+)/);
     if (!m) return;
+    const index = Number(m[1]) - 1;
+    chart.querySelectorAll(".series").forEach((series) => {
+      if ((series.dataset.labels || "").split("|")[index] === "Unknown") {
+        series.querySelector(".hover-point")?.setAttribute("visibility", "hidden");
+      }
+    });
     const global = nums[Number(m[1]) - 1];
     if (global && global !== Number(m[1])) {
       tooltip.textContent = tooltip.textContent.replace(/^Request \\d+/, "Request " + global);

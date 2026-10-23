@@ -122,6 +122,7 @@ const account = (id, { ordinal = 1, generation = 1 } = {}) => ({
 
 	const unauthorized = classifyFailure({ status: 401 }, NOW);
 	assert.equal(decideFailover({ ...base, classification: unauthorized }).action, "repair", "first 401 retries the same account");
+	assert.equal(decideFailover({ ...base, classification: unauthorized, emittedOutput: true }).action, "stop", "authentication repair must not replay already delivered output");
 	assert.equal(
 		decideFailover({ ...base, classification: unauthorized, repairUsed: true }).action,
 		"failover",

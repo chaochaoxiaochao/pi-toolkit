@@ -1,3 +1,14 @@
+## Unreleased
+
+- Regenerate real three-pane media and preserve configured model/authentication sources in the media parent launcher.
+
+- Ship the lifecycle test runtime resolver inside the Herdr package and execute all ten offline lifecycle cases from a real unpacked tarball without sibling packages.
+
+- At agent_before_settle, accept an existing terminal attempt report without another request; otherwise remind a completed child once to report existing work.
+- Persist the reminder before continuation so rounds and reloads cannot reset its budget.
+- Publish unconfirmed-result diagnostics after repeated omission or final provider error. Native cancellation bypasses before-settle, so agent_settled writes only a cancellation diagnostic, with no model wake-up.
+- Preserve report idempotency, interactive child lifetime, and parent-side report polling. Add offline native Pi lifecycle regressions.
+
 ## 2026-10-22 - v0.7.4
 
 - preserve Codex patch editing in child allowlists and hide the parent shortcut footer hint

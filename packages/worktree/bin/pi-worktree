@@ -246,7 +246,7 @@ create_wt() {
     [[ "$current_branch" == "$name" ]] \
       || die "already inside linked worktree '$current_branch'; return to the main checkout first"
     CREATE_STATUS="already-active"
-    CREATE_DIR=$(pwd -P)
+    CREATE_DIR=$(cd "$(git rev-parse --show-toplevel)" && pwd -P)
     CREATE_BRANCH="$current_branch"
     CREATE_DIRTY=false
     if [[ -n "$(git status --porcelain)" ]]; then CREATE_DIRTY=true; fi

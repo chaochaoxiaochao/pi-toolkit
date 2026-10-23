@@ -16,9 +16,9 @@
 <main><div class="eyebrow">GPT-5.6 Sol / Pi 0.85.1 / Explicit Edit Benchmark</div><h1 id="top">Codex Edit 测试报告</h1>
 <p><strong>回归检查：通过；Agent Benchmark：通过（有共同例外）</strong></p>
 <p>被测包：<code>@maxiaochao/pi-codex-edit</code>（当前工作区）</p>
-<p>本报告严格区分真实模型基准、确定性协议回归和安全回归，三类成功率不会混算。</p>
+<p>本报告严格区分真实模型基准、确定性协议回归和安全回归，三类成功率不会混算。 Agent Benchmark 是已提交的历史运行证据，不代表本次文件系统修复重新运行了付费模型基准。</p>
 <h2 id="summary">执行摘要</h2>
-<ul><li>Agent Benchmark：<strong>通过（有共同例外）</strong> — 已完成 300/300 条 chain；本地版 First Exact 92/100、Final Exact 92/100，全部正式门槛通过。</li><li>协议/包回归：<strong>通过</strong> — 5/5 项检查通过。</li><li>安全回归：<strong>5/5 正确拒绝且零写入</strong>，包括工作区外路径。</li><li>下文提供 Agent、协议、安全、效率、版本、integrity 和任务来源的完整证据。</li></ul>
+<ul><li>Agent Benchmark：<strong>通过（有共同例外）</strong> — 已完成 300/300 条 chain；本地版 First Exact 92/100、Final Exact 92/100，全部正式门槛通过。</li><li>协议/包回归：<strong>通过</strong> — 5/5 项检查通过。</li><li>安全回归：<strong>7/7 正确拒绝且零写入</strong>，包括工作区外路径。</li><li>下文提供 Agent、协议、安全、效率、版本、integrity 和任务来源的完整证据。</li></ul>
 <h2 id="benchmark">Agent Benchmark：真实模型基准</h2>
 <p><strong>状态：通过（有共同例外）</strong></p>
 <p>三个测试臂均完成全部 100 个配对任务（共 300 条 chain），实际成本为 $12.388。本地版满足全部正式验收门槛；8 个最终失败均为三臂共同失败，不是本地版独有回归。</p>
@@ -95,10 +95,10 @@
 <tr><td>独立包 tarball</td><td>通过</td><td><code>npm pack --dry-run --json</code></td></tr>
 </tbody></table></div>
 <h2 id="section-4">确定性回归基线</h2>
-<ul><li>Node 测试：预期 29 个，覆盖用户配置覆盖与校验、parser、matcher、路由、包契约、resolved-path 防护、发布版对比、分层调度和生产事故语料。</li><li>共享对比 corpus：12 个 case。</li><li>原生 edit：5 通过 / 2 失败或正确拒绝 / 5 不适用。</li><li>Codex Edit 发布版 v0.1.7：6 通过 / 6 失败或正确拒绝。</li><li>Codex Edit 本地版：7 通过 / 5 正确安全拒绝。</li></ul>
-<p>“正确拒绝”表示无效或陈旧操作被拒绝，且工作区没有变化。“不适用”表示 Pi 原生 <code>edit</code> 无法用一次编辑协议调用表达该操作，不计为工具缺陷。</p>
+<ul><li>Node 测试：预期 29 个，覆盖用户配置覆盖与校验、parser、matcher、路由、包契约、resolved-path 防护、发布版对比、分层调度和生产事故语料。</li><li>共享对比 corpus：15 个 case。</li><li>原生 edit：5 通过 / 2 失败或正确拒绝 / 8 不适用。</li><li>Codex Edit 发布版 v0.1.7：6 通过 / 6 失败或正确拒绝 / 3 不适用。</li><li>Codex Edit 本地版：8 通过 / 7 正确安全拒绝。</li></ul>
+<p>“正确拒绝”表示无效或陈旧操作被拒绝，且工作区没有变化。“不适用”表示原生 edit 无法表达该操作，或冻结的发布版 parser 基线不包含文件系统执行层；不计为工具缺陷。层级冲突与权限保留使用本地扩展和真实临时文件验证，不伪造发布版执行结果。</p>
 <h2 id="safety">安全回归</h2>
-<p>本地版 5/5 个安全 case 均正确拒绝，且工作区零写入。特别是 <code>outside-workspace-absolute-path</code> 的结果为 <strong>工作区外路径 — 正确拒绝</strong>；放行该操作会允许任意写入 benchmark sandbox 之外。安全拒绝不计入编辑失败率。</p>
+<p>本地版 7/7 个安全 case 均正确拒绝，且工作区零写入。特别是 <code>outside-workspace-absolute-path</code> 的结果为 <strong>工作区外路径 — 正确拒绝</strong>；放行该操作会允许任意写入 benchmark sandbox 之外。安全拒绝不计入编辑失败率。</p>
 <h2 id="incidents">生产事故回归</h2>
 <p>这些 case 来自实际报告过的问题。Agent-and-protocol case 使用不包含工具语法提示的用户任务，可进入后续付费模型运行；protocol-only case 只验证指定工具形态，不用于宣称模型质量提升。</p>
 <div class="table-wrap"><table><thead><tr><th>Incident</th><th>层级</th><th>对应回归</th><th>问题</th></tr></thead><tbody>
@@ -110,14 +110,14 @@
 </tbody></table></div>
 <p>冻结的 100-task 清单按每 5 个任务包含 4 Neutral + 1 Challenge 的顺序调度；本次完整运行覆盖全部 80 个 Neutral 和 20 个 Challenge。</p>
 <h2 id="comparison">确定性对比结论</h2>
-<p>每个测试臂运行同一组 12 个 case。对比 1 执行 24 次工具调用（原生 + 本地）；对比 2 执行 24 次 parser/执行评估（发布版 + 本地）。下表以 7 个有效编辑任务为完成率分母；5 个故意无效或危险的 patch 单独计入安全检查。</p>
+<p>共享语料共 15 个 case。不适用的测试臂不执行。对比 1 验证本地扩展的 8 个有效编辑和 7 个安全 case；对比 2 只比较 parser 基线适用的 7 个有效编辑和 5 个安全 case。</p>
 <h3 id="1-pi-edit-vs-codex-edit">1. Pi 原生 edit vs Codex Edit 本地版</h3>
 <div class="table-wrap"><table><thead><tr><th>指标</th><th>Pi 原生 edit</th><th>Codex Edit 本地版</th><th>变化</th></tr></thead><tbody>
-<tr><td>有效任务完成</td><td>5/7</td><td>7/7</td><td>+2 个</td></tr>
-<tr><td>有效任务完成率</td><td>71.4%</td><td>100.0%</td><td>+28.6 pp</td></tr>
-<tr><td>有效任务失败</td><td>1/7</td><td>0/7</td><td>减少 1 个</td></tr>
-<tr><td>有效任务不适用</td><td>1/7</td><td>0/7</td><td>减少 1 个</td></tr>
-<tr><td>正确拒绝适用的危险/陈旧 patch</td><td>1/1 (100.0%)</td><td>5/5 (100.0%)</td><td>Codex 覆盖全部 5 个</td></tr>
+<tr><td>有效任务完成</td><td>5/8</td><td>8/8</td><td>+3 个</td></tr>
+<tr><td>有效任务完成率</td><td>62.5%</td><td>100.0%</td><td>+37.5 pp</td></tr>
+<tr><td>有效任务失败</td><td>1/8</td><td>0/8</td><td>减少 1 个</td></tr>
+<tr><td>有效任务不适用</td><td>2/8</td><td>0/8</td><td>减少 2 个</td></tr>
+<tr><td>正确拒绝适用的危险/陈旧 patch</td><td>1/1 (100.0%)</td><td>7/7 (100.0%)</td><td>Codex 覆盖全部 7 个</td></tr>
 </tbody></table></div>
 <h3 id="2-codex-edit-v0-1-7-vs">2. Codex Edit 发布版 v0.1.7 vs 本地修改版</h3>
 <div class="table-wrap"><table><thead><tr><th>指标</th><th>发布版 v0.1.7</th><th>本地修改版</th><th>变化</th></tr></thead><tbody>
@@ -130,6 +130,9 @@
 <h2 id="case-edit-vs-codex-edit">逐 case：原生 edit vs 本地 Codex Edit</h2>
 <p>该对比在隔离临时工作区中执行 Pi 导出的 <code>createEditToolDefinition</code>，以及本地扩展实际注册的 <code>apply_patch</code>。</p>
 <div class="table-wrap"><table><thead><tr><th>Case</th><th>原生 edit</th><th>本地 Codex Edit</th><th>说明</th></tr></thead><tbody>
+<tr><td><code>file-parent-conflict</code></td><td>不适用</td><td>正确拒绝/失败</td><td>两者均避免危险写入</td></tr>
+<tr><td><code>file-parent-conflict-reversed</code></td><td>不适用</td><td>正确拒绝/失败</td><td>两者均避免危险写入</td></tr>
+<tr><td><code>move-preserves-file-mode</code></td><td>不适用</td><td>通过</td><td>Codex 协议可处理该形态</td></tr>
 <tr><td><code>unique-replacement</code></td><td>通过</td><td>通过</td><td>预期行为一致</td></tr>
 <tr><td><code>disjoint-edits-one-file</code></td><td>通过</td><td>通过</td><td>预期行为一致</td></tr>
 <tr><td><code>repeated-markdown-separator</code></td><td>正确拒绝/失败</td><td>通过</td><td>Codex 协议可处理该形态</td></tr>
@@ -147,6 +150,9 @@
 <h2 id="case-v0-1-7-vs-codex-edit">逐 case：发布版 v0.1.7 vs 本地 Codex Edit</h2>
 <p>发布版测试臂使用从 tag <code>codex-edit-v0.1.7</code> 冻结的语义基线（source blob <code>e2896b59d40b5f6f01b3a4a7918476f4acc28cd8</code>）。</p>
 <div class="table-wrap"><table><thead><tr><th>Case</th><th>发布版 v0.1.7</th><th>本地版</th><th>回归状态</th></tr></thead><tbody>
+<tr><td><code>file-parent-conflict</code></td><td>不适用</td><td>正确拒绝/失败</td><td>仅本地真实文件验证</td></tr>
+<tr><td><code>file-parent-conflict-reversed</code></td><td>不适用</td><td>正确拒绝/失败</td><td>仅本地真实文件验证</td></tr>
+<tr><td><code>move-preserves-file-mode</code></td><td>不适用</td><td>通过</td><td>仅本地真实文件验证</td></tr>
 <tr><td><code>unique-replacement</code></td><td>通过</td><td>通过</td><td>已保留</td></tr>
 <tr><td><code>disjoint-edits-one-file</code></td><td>通过</td><td>通过</td><td>已保留</td></tr>
 <tr><td><code>repeated-markdown-separator</code></td><td>通过</td><td>通过</td><td>已保留</td></tr>
@@ -167,6 +173,8 @@
 <tr><td>同一 raw path 出现多个普通 <code>Update File</code></td><td>合并后按顺序执行</td><td><code>repeated-update-same-path</code></td></tr>
 <tr><td>Add/delete/move 或 resolved path alias 冲突</td><td>写入前拒绝</td><td><code>conflicting-targets</code>、<code>resolved-path-alias-conflict</code></td></tr>
 <tr><td>工作区外绝对路径</td><td>读取或写入前正确拒绝</td><td><code>outside-workspace-absolute-path</code></td></tr>
+<tr><td>文件与父目录层级冲突</td><td>任意操作写入前拒绝，两种顺序均零写入</td><td><code>file-parent-conflict</code>、<code>file-parent-conflict-reversed</code></td></tr>
+<tr><td>Move 丢失执行权限</td><td>保留源文件普通权限位，不受 umask 截断</td><td><code>move-preserves-file-mode</code></td></tr>
 <tr><td>空 update chunk</td><td>拒绝，不猜测意图</td><td><code>empty-update-chunk</code></td></tr>
 <tr><td>陈旧预期行</td><td>拒绝；调用方必须重新读取并生成 patch</td><td><code>stale-expected-lines</code></td></tr>
 <tr><td>缺少 <code>patch</code> 参数</td><td>必填 TypeBox schema 在扩展执行前拒绝</td><td>包契约测试</td></tr>

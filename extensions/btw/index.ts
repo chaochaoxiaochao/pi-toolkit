@@ -12,7 +12,7 @@ import {
 	type ModelRuntime,
 	type ResourceLoader,
 } from "@earendil-works/pi-coding-agent";
-import { type AssistantMessage, type Message, type ThinkingLevel as AiThinkingLevel } from "@earendil-works/pi-ai";
+import { type AssistantMessage, type ThinkingLevel as AiThinkingLevel } from "@earendil-works/pi-ai";
 import {
 	Container,
 	Input,
@@ -140,15 +140,8 @@ function getLastAssistantMessage(session: AgentSession): AssistantMessage | null
 	return null;
 }
 
-function buildSeedMessages(ctx: ExtensionContext, thread: BtwDetails[]): Message[] {
-	const seed: Message[] = [];
-
-	try {
-		const contextMessages = buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages;
-		seed.push(...(contextMessages.filter((message) => "role" in message) as Message[]));
-	} catch {
-		// Ignore context seed failures and continue with an empty side thread.
-	}
+function buildSeedMessages(ctx: ExtensionContext, thread: BtwDetails[]): ReturnType<typeof buildSessionContext>["messages"] {
+	const seed = buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages;
 
 	for (const item of thread) {
 		seed.push(
@@ -631,19 +624,17 @@ export default function (pi: ExtensionAPI) {
 			return null;
 		}
 
+		const sessionManager = SessionManager.inMemory(ctx.cwd);
+		for (const message of buildSeedMessages(ctx, thread)) sessionManager.appendMessage(message);
 		const { session } = await createAgentSession({
-			sessionManager: SessionManager.inMemory(),
+			cwd: ctx.cwd,
+			sessionManager,
 			model: ctx.model,
 			modelRuntime: getParentModelRuntime(ctx),
 			thinkingLevel: pi.getThinkingLevel() as SessionThinkingLevel,
 			tools: ["read", "bash", "edit", "write"],
 			resourceLoader: createBtwResourceLoader(ctx),
 		});
-
-		const seedMessages = buildSeedMessages(ctx, thread);
-		if (seedMessages.length > 0) {
-			session.agent.state.messages = seedMessages as typeof session.agent.state.messages;
-		}
 
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
 			if (!sideBusy || !pendingQuestion) {

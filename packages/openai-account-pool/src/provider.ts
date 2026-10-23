@@ -371,6 +371,16 @@ export function createPoolProvider(base: Provider, runtime: PoolRuntime): Provid
 		throw new Error(await poolExhaustedTextWithRecovery(lastAvailability, snapshot.accounts, model.id));
 	}
 
+	async function handleRefreshFailure(error: unknown, modelId: string, account: PoolAccount, hasRemainingCandidate: boolean): Promise<AttemptOutcome> {
+		const classification = classifyRefreshError(error, modelId, now());
+		await recordFailure({ statePath: runtime.statePath, account, classification, now: now() });
+		const decision = decideFailover({ classification, emittedOutput: false, hasRemainingCandidate, repairUsed: true });
+		if (decision.action === "failover") return { kind: "failover", classification };
+		// A token endpoint may echo credentials. Surface only the non-secret reason code.
+		if (classification.kind === "cancelled") throw new Error("Request was aborted");
+		throw new Error(`Codex 账号 ${maskAccountId(account.id)} 凭据刷新失败（${classification.reason}）。`);
+	}
+
 	async function* attemptAccount(
 		kind: StreamKind,
 		model: Model<Api>,
@@ -391,15 +401,7 @@ export function createPoolProvider(base: Provider, runtime: PoolRuntime): Provid
 			});
 			credential = fresh.credential;
 		} catch (error) {
-			const classification = classifyRefreshError(error, model.id, now());
-			await recordFailure({ statePath: runtime.statePath, account, classification, now: now() });
-			const decision = decideFailover({ classification, emittedOutput: false, hasRemainingCandidate: gate.hasRemainingCandidate, repairUsed: true });
-			if (decision.action !== "failover") {
-				// The raw token response may echo request details, so only the reason code is surfaced.
-				if (classification.kind === "cancelled") throw new Error("Request was aborted");
-				throw new Error(`Codex 账号 ${maskAccountId(account.id)} 凭据刷新失败（${classification.reason}）。`);
-			}
-			return { kind: "failover", classification };
+			return await handleRefreshFailure(error, model.id, account, gate.hasRemainingCandidate);
 		}
 
 		const instrumented = instrument(options, String(credential.access), model.id);
@@ -439,9 +441,7 @@ export function createPoolProvider(base: Provider, runtime: PoolRuntime): Provid
 					signal: options?.signal,
 				});
 			} catch (error) {
-				const classification = classifyRefreshError(error, model.id, now());
-				await recordFailure({ statePath: runtime.statePath, account, classification, now: now() });
-				return { kind: "failover", classification };
+				return await handleRefreshFailure(error, model.id, account, gate.hasRemainingCandidate);
 			}
 			return outcome;
 		}

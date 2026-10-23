@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Return Git's canonical worktree root for already-active create calls made from a nested directory; preserve the dirty flag.
+
 ## 2026-10-12 - v0.4.0
 
 - Replace CLI start and prepare with the create-only command

@@ -1,3 +1,9 @@
+## Unreleased
+
+- Classify initial and post-401 refresh failures through one policy path. Transient network failures do not switch accounts or claim invalid authorization.
+- Block same-account authentication repair once output has been delivered, as well as cross-account failover.
+- Add isolated transient-refresh, invalid-grant, cancellation, and emitted-output policy regressions.
+
 ## 2026-10-23 - v0.1.8
 
 - fix stranded account-pool references after removal and recover email labels

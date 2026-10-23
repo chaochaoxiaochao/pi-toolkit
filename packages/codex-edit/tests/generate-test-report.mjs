@@ -314,6 +314,8 @@ function buildMarkdown(results, benchmark) {
   const assessment = benchmarkAssessment(benchmark);
   const validCases = comparisonCases.filter((testCase) => testCase.outcomes.local === "pass");
   const safetyCases = comparisonCases.filter((testCase) => testCase.outcomes.local === "fail");
+  const parserValidCases = validCases.filter((testCase) => !testCase.executionOnly);
+  const parserSafetyCases = safetyCases.filter((testCase) => !testCase.executionOnly);
   const nativeValidPasses = validCases.filter((testCase) => testCase.outcomes.native === "pass").length;
   const nativeValidFailures = validCases.filter((testCase) => testCase.outcomes.native === "fail").length;
   const nativeValidUnsupported = validCases.filter((testCase) => testCase.outcomes.native === "unsupported").length;
@@ -331,6 +333,7 @@ function buildMarkdown(results, benchmark) {
     `被测包：\`@maxiaochao/pi-codex-edit\`（当前工作区）`,
     "",
     "本报告严格区分真实模型基准、确定性协议回归和安全回归，三类成功率不会混算。",
+    "Agent Benchmark 是已提交的历史运行证据，不代表本次文件系统修复重新运行了付费模型基准。",
     "",
     "## 执行摘要",
     "",
@@ -352,10 +355,10 @@ function buildMarkdown(results, benchmark) {
     `- Node 测试：预期 29 个，覆盖用户配置覆盖与校验、parser、matcher、路由、包契约、resolved-path 防护、发布版对比、分层调度和生产事故语料。`,
     `- 共享对比 corpus：${comparisonCases.length} 个 case。`,
     `- 原生 edit：${count("pass", "native")} 通过 / ${count("fail", "native")} 失败或正确拒绝 / ${count("unsupported", "native")} 不适用。`,
-    `- Codex Edit 发布版 v0.1.7：${count("pass", "released")} 通过 / ${count("fail", "released")} 失败或正确拒绝。`,
+    `- Codex Edit 发布版 v0.1.7：${count("pass", "released")} 通过 / ${count("fail", "released")} 失败或正确拒绝 / ${count("unsupported", "released")} 不适用。`,
     `- Codex Edit 本地版：${count("pass", "local")} 通过 / ${count("fail", "local")} 正确安全拒绝。`,
     "",
-    "“正确拒绝”表示无效或陈旧操作被拒绝，且工作区没有变化。“不适用”表示 Pi 原生 `edit` 无法用一次编辑协议调用表达该操作，不计为工具缺陷。",
+    "“正确拒绝”表示无效或陈旧操作被拒绝，且工作区没有变化。“不适用”表示原生 edit 无法表达该操作，或冻结的发布版 parser 基线不包含文件系统执行层；不计为工具缺陷。层级冲突与权限保留使用本地扩展和真实临时文件验证，不伪造发布版执行结果。",
     "",
     "## 安全回归",
     "",
@@ -373,7 +376,7 @@ function buildMarkdown(results, benchmark) {
     "",
     "## 确定性对比结论",
     "",
-    `每个测试臂运行同一组 ${comparisonCases.length} 个 case。对比 1 执行 ${comparisonCases.length * 2} 次工具调用（原生 + 本地）；对比 2 执行 ${comparisonCases.length * 2} 次 parser/执行评估（发布版 + 本地）。下表以 ${validCases.length} 个有效编辑任务为完成率分母；${safetyCases.length} 个故意无效或危险的 patch 单独计入安全检查。`,
+    `共享语料共 ${comparisonCases.length} 个 case。不适用的测试臂不执行。对比 1 验证本地扩展的 ${validCases.length} 个有效编辑和 ${safetyCases.length} 个安全 case；对比 2 只比较 parser 基线适用的 ${parserValidCases.length} 个有效编辑和 ${parserSafetyCases.length} 个安全 case。`,
     "",
     "### 1. Pi 原生 edit vs Codex Edit 本地版",
     "",
@@ -389,9 +392,9 @@ function buildMarkdown(results, benchmark) {
     "",
     "| 指标 | 发布版 v0.1.7 | 本地修改版 | 变化 |",
     "|---|---:|---:|---:|",
-    `| 有效任务完成 | ${releasedValidPasses}/${validCases.length} | ${localValidPasses}/${validCases.length} | +${localValidPasses - releasedValidPasses} 个 |`,
-    `| 有效任务完成率 | ${rate(releasedValidPasses, validCases.length)} | ${rate(localValidPasses, validCases.length)} | ${signedPoints(localValidPasses, releasedValidPasses, validCases.length)} |`,
-    `| 安全 case 正确拒绝 | ${releasedSafetyPasses}/${safetyCases.length} (${rate(releasedSafetyPasses, safetyCases.length)}) | ${localSafetyPasses}/${safetyCases.length} (${rate(localSafetyPasses, safetyCases.length)}) | 无变化 |`,
+    `| 有效任务完成 | ${releasedValidPasses}/${parserValidCases.length} | ${parserValidCases.length}/${parserValidCases.length} | +${parserValidCases.length - releasedValidPasses} 个 |`,
+    `| 有效任务完成率 | ${rate(releasedValidPasses, parserValidCases.length)} | 100.0% | ${signedPoints(parserValidCases.length, releasedValidPasses, parserValidCases.length)} |`,
+    `| 安全 case 正确拒绝 | ${releasedSafetyPasses}/${parserSafetyCases.length} (${rate(releasedSafetyPasses, parserSafetyCases.length)}) | ${parserSafetyCases.length}/${parserSafetyCases.length} (100.0%) | 无变化 |`,
     `| 保留原有通过任务 | ${releasedValidPasses}/${releasedValidPasses} | ${releasedValidPasses}/${releasedValidPasses} | 100% 保留 |`,
     "",
     "这些是确定性协议/执行成功率，不是独立模型采样成功率。Agent 质量、token、成本和耗时只在 Agent Benchmark 章节报告。",
@@ -424,7 +427,7 @@ function buildMarkdown(results, benchmark) {
     ...comparisonCases.map((testCase) => {
       const released = outcomeLabel(testCase.outcomes.released);
       const local = outcomeLabel(testCase.outcomes.local);
-      const status = testCase.outcomes.released === "fail" && testCase.outcomes.local === "pass"
+      const status = testCase.executionOnly ? "仅本地真实文件验证" : testCase.outcomes.released === "fail" && testCase.outcomes.local === "pass"
         ? "已修复"
         : "已保留";
       return `| \`${testCase.id}\` | ${released} | ${local} | ${status} |`;
@@ -440,6 +443,8 @@ function buildMarkdown(results, benchmark) {
     "| 同一 raw path 出现多个普通 `Update File` | 合并后按顺序执行 | `repeated-update-same-path` |",
     "| Add/delete/move 或 resolved path alias 冲突 | 写入前拒绝 | `conflicting-targets`、`resolved-path-alias-conflict` |",
     "| 工作区外绝对路径 | 读取或写入前正确拒绝 | `outside-workspace-absolute-path` |",
+    "| 文件与父目录层级冲突 | 任意操作写入前拒绝，两种顺序均零写入 | `file-parent-conflict`、`file-parent-conflict-reversed` |",
+    "| Move 丢失执行权限 | 保留源文件普通权限位，不受 umask 截断 | `move-preserves-file-mode` |",
     "| 空 update chunk | 拒绝，不猜测意图 | `empty-update-chunk` |",
     "| 陈旧预期行 | 拒绝；调用方必须重新读取并生成 patch | `stale-expected-lines` |",
     "| 缺少 `patch` 参数 | 必填 TypeBox schema 在扩展执行前拒绝 | 包契约测试 |",

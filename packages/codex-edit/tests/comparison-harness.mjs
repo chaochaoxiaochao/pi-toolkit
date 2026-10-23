@@ -30,15 +30,14 @@ export function applyOperations(input, operations, applyUpdate) {
 }
 
 export function runPatchCase(testCase, parse, applyUpdate, expectedOutcome) {
+  let actual;
   try {
-    const actual = applyOperations(testCase.input, parse(testCase.patch), applyUpdate);
-    if (expectedOutcome !== "pass") {
-      assert.fail(`${testCase.id}: expected ${expectedOutcome}, but patch succeeded`);
-    }
-    assert.deepEqual(actual, testCase.expected, `${testCase.id}: final filesystem differs`);
-    return "pass";
+    actual = applyOperations(testCase.input, parse(testCase.patch), applyUpdate);
   } catch (error) {
     if (expectedOutcome === "pass") throw error;
     return "fail";
   }
+  assert.equal(expectedOutcome, "pass", `${testCase.id}: patch unexpectedly succeeded`);
+  assert.deepEqual(actual, testCase.expected, `${testCase.id}: final filesystem differs`);
+  return "pass";
 }

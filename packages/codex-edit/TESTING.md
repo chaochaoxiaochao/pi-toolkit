@@ -57,3 +57,7 @@
 `summary.md` 的 20-case 报告是历史证据。当前正式运行 `explicit-edit-100-sol-low-v3-complete` 已完成 300/300 条 chain，实际成本 $12.388；本地版 First Exact 92%、Final Exact 92%、Score v2 92.00%，满足全部正式门槛。原生与发布版均为 First 91%、Final 92%、Score v2 91.25%；8 个最终失败为三臂共同例外，本地独有最终回归为 0。
 
 公开、去敏后的正式证据提交在 `benchmark/results/explicit-edit-100-sol-low-v3.json`。正常测试只读取该文件，因此干净 checkout 不依赖 `.cache`，且 Markdown 与 HTML 可逐字节重建。导入新运行时，使用 `benchmark/export-evidence.mjs <run-directory> <output.json>`；只有在确认运行完整性、配置 identity 和无敏感字段后才替换正式证据。预算必须在每次运行前声明 scheduling stop 与 hard cap，预算停止的前缀一律标为 INCOMPLETE，禁止选择性补跑后宣称完整。任何模型路由、prompt 或 tool schema 变化仍需重跑独立模型基准，不能用 parser 测试替代。
+
+## Filesystem review regressions
+
+The shared comparison corpus includes two file/parent conflicts (both orderings) and a move preserving `0755`. The local extension runs against real temporary files; rejection must leave all original bytes unchanged. Native edit and the frozen released parser baseline cannot exercise these filesystem operations, so those arms are explicitly unsupported, not fabricated successes. The released parser file remains unchanged. Ordinary permission bits are tested on POSIX; no arbitrary disk-failure transaction rollback is claimed.

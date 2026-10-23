@@ -28,3 +28,7 @@ Regenerate package media with:
 ```bash
 node scripts/capture-package-media.mjs openai-account-pool
 ```
+
+## Refresh review regressions
+
+The stream fixture returns 401 and then makes forced refresh fail with a transient network error, `invalid_grant`, or cancellation. It asserts attempt counts, notices, credential-state classification, and redacted errors. `selection.mjs` also proves that emitted output blocks authentication repair. The latter ordering is an enforced policy invariant over a simulated stream; this does not claim that the native transport was observed producing a late 401 after text.
