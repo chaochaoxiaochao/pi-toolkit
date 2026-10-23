@@ -1,3 +1,7 @@
+## 2026-10-23 - v0.13.7
+
+- openai-account-pool v0.1.8: fix stranded account-pool references after removal and recover email labels
+
 ## 2026-10-22 - v0.13.6
 
 - background-tasks v0.1.1: batch unread completions at tool boundaries, preserve interrupted runs, and provide non-polling startup guidance
