@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-23 - v0.2.1
 
+- preflight path hierarchy conflicts and preserve moved-file permissions
 - Reject file/ancestor target conflicts before any patch writes, regardless of operation order.
 - Preserve ordinary source permission bits on Move, including executable bits and permissions masked by umask.
 - Add real-filesystem cases to the shared corpus. Keep the frozen parser baseline unchanged and mark filesystem-only baseline comparisons unsupported.

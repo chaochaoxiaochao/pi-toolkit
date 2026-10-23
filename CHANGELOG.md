@@ -1,3 +1,7 @@
+## 2026-10-23 - v0.13.10
+
+- codex-edit v0.2.1: preflight path hierarchy conflicts and preserve moved-file permissions
+
 ## 2026-10-23 - v0.13.9
 
 - cache-export v0.1.1: correct request timing, usage scope and historical cache evidence
