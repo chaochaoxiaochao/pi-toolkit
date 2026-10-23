@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import {
 	accountCredential,
+	accountProfileOf,
 	commitAccount,
 	disablePool,
 	ensureFreshAccountCredential,
@@ -12,6 +13,7 @@ import {
 	loadPoolSnapshot,
 	PoolAccountMissingError,
 	PoolNotEnabledError,
+	pruneMissingPoolAccounts,
 	removeAccount,
 } from "../src/auth.ts";
 import {
@@ -26,6 +28,27 @@ import { poolEntryKey, poolStatePathFor, readPoolState, withAuthTransaction } fr
 import { fakeAccessToken, fakeCredential, makeAgentDir, seedAuthFile } from "./helpers/fixtures.mjs";
 import { NativeCredentialStore } from "./helpers/native-credential-store.mjs";
 
+// Email claims vary by token. Both locations must pass the same label validation.
+for (const { profile, email, expected } of [
+	{ profile: "profile@example.com", email: "root@example.com", expected: "profile@example.com" },
+	{ email: "root@example.com", expected: "root@example.com" },
+	{ profile: "invalid", email: "root@example.com", expected: "root@example.com" },
+	{ email: " root@example.com ", expected: "root@example.com" },
+	{ email: "bad\nlabel@example.com", expected: undefined },
+	{ email: { address: "root@example.com" }, expected: undefined },
+	{ email: `${"a".repeat(250)}@example.com`, expected: undefined },
+	{ expected: undefined },
+]) {
+	const credential = fakeCredential("profile-fixture");
+	const parts = credential.access.split(".");
+	const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+	claims.email = email;
+	claims["https://api.openai.com/profile"] = { email: profile };
+	parts[1] = Buffer.from(JSON.stringify(claims)).toString("base64url");
+	credential.access = parts.join(".");
+	assert.equal(accountProfileOf(credential).email, expected);
+}
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const readEntries = (authPath) => JSON.parse(readFileSync(authPath, "utf8"));
 const storedCredential = (entries, accountId) => {
@@ -37,6 +60,46 @@ const UNRELATED = {
 	anthropic: { type: "api_key", key: "$ANTHROPIC_API_KEY", env: { AWS_REGION: "us-east-1" } },
 	"custom-gateway": { type: "oauth", access: "gateway-access", refresh: "gateway-refresh", expires: 7, vendorField: { nested: true } },
 };
+
+// Missing credentials are deletion evidence; expired/malformed entries must not be discarded.
+{
+	const agent = makeAgentDir();
+	try {
+		seedAuthFile(agent.authPath, { ...UNRELATED });
+		assert.equal(await pruneMissingPoolAccounts({ authPath: agent.authPath }), undefined);
+		await commitAccount({ authPath: agent.authPath, credential: fakeCredential("account-aaaa") });
+		await commitAccount({ authPath: agent.authPath, credential: fakeCredential("account-bbbb", { expiresInMs: -1 }) });
+		await commitAccount({ authPath: agent.authPath, credential: fakeCredential("account-cccc") });
+		const entries = readEntries(agent.authPath);
+		delete entries[poolEntryKey("account-aaaa")];
+		entries[poolEntryKey("account-cccc")] = { type: "oauth", access: "malformed-fixture" };
+		seedAuthFile(agent.authPath, entries);
+		const cleanup = await pruneMissingPoolAccounts({ authPath: agent.authPath });
+		assert.deepEqual(cleanup.pruned.map((account) => account.id), ["account-aaaa"]);
+		assert.equal(cleanup.remaining, 2);
+		assert.equal(cleanup.poolDisabled, false);
+		assert.deepEqual((await loadPoolSnapshot(agent.authPath)).accounts.map((account) => account.id), ["account-bbbb", "account-cccc"]);
+		assert.equal((await loadPoolSnapshot(agent.authPath)).generation, 4);
+		const repaired = readFileSync(agent.authPath, "utf8");
+		assert.equal(await pruneMissingPoolAccounts({ authPath: agent.authPath }), undefined);
+		assert.equal(readFileSync(agent.authPath, "utf8"), repaired, "a healthy reference must not be rewritten");
+
+		const empty = readEntries(agent.authPath);
+		empty["openai-codex"].piOpenAIAccountPool.accounts = [];
+		seedAuthFile(agent.authPath, empty);
+		const cleared = await pruneMissingPoolAccounts({ authPath: agent.authPath });
+		assert.equal(cleared.poolDisabled, true);
+		assert.equal(readEntries(agent.authPath)["openai-codex"], undefined, "empty references must also be removed");
+		assert.ok(readEntries(agent.authPath)[poolEntryKey("account-bbbb")], "unreferenced credentials must never be deleted or adopted by repair");
+
+		const native = { ...UNRELATED, "openai-codex": fakeCredential("native-fixture") };
+		seedAuthFile(agent.authPath, native);
+		assert.equal(await pruneMissingPoolAccounts({ authPath: agent.authPath }), undefined);
+		assert.deepEqual(readEntries(agent.authPath), native, "repair must not change native login or unrelated providers");
+	} finally {
+		agent.dispose();
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Unrelated provider entries survive every ownership change.

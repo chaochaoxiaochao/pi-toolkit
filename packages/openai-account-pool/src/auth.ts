@@ -33,7 +33,7 @@ const DEFAULT_MIN_VALIDITY_MS = 5 * 60_000;
 
 /** Non-secret identity claims, so two subscriptions can be told apart by name. */
 export interface AccountProfile {
-	/** ChatGPT sign-in address from the token's profile claim. */
+	/** ChatGPT sign-in address from the token's profile or root email claim. */
 	email?: string;
 	/** Subscription tier claim, e.g. `plus` or `pro`. */
 	plan?: string;
@@ -132,7 +132,8 @@ export function accountProfileOf(entry: AuthEntry | undefined): AccountProfile {
 	const claims = accessTokenClaims(entry);
 	const profile = claims?.[JWT_PROFILE_CLAIM] as { email?: unknown } | undefined;
 	const auth = claims?.[JWT_ACCOUNT_CLAIM] as { chatgpt_plan_type?: unknown } | undefined;
-	return sanitizeProfile({ email: profile?.email, plan: auth?.chatgpt_plan_type });
+	const sanitized = sanitizeProfile({ email: profile?.email, plan: auth?.chatgpt_plan_type });
+	return { ...sanitized, email: sanitized.email ?? sanitizeProfile({ email: claims?.email }).email };
 }
 
 /** The token is the fresher source, so a rotated credential updates a stored label. */
@@ -349,19 +350,46 @@ export async function disablePool(input: { authPath: string; accountId: string; 
 	}, { signal: input.signal });
 }
 
-/** Delete one account's local credential. Removing the last one leaves openai-codex logged out. */
-export async function removeAccount(input: { authPath: string; accountId: string; signal?: AbortSignal }): Promise<{ removed: PoolAccount; remaining: number; poolDisabled: boolean }> {
+export interface PoolReferenceCleanup {
+	/** References whose credentials were already removed outside the pool. */
+	pruned: PoolAccount[];
+	remaining: number;
+	poolDisabled: boolean;
+}
+
+/**
+ * Native /logout can remove an account entry without updating our main reference. Only prune
+ * absent credentials; expired or malformed credentials are not proof that the user deleted them.
+ */
+export async function pruneMissingPoolAccounts(input: { authPath: string; signal?: AbortSignal }): Promise<PoolReferenceCleanup | undefined> {
+	return withAuthTransaction(input.authPath, (entries) => {
+		const reference = readPoolReference(entries[MAIN_PROVIDER_ID]);
+		if (!reference) return { result: undefined };
+		const pruned = reference.accounts.filter((account) => entries[account.key] === undefined);
+		if (pruned.length === 0 && reference.accounts.length > 0) return { result: undefined };
+		const remaining = reference.accounts.filter((account) => entries[account.key] !== undefined);
+		const next = { ...entries };
+		if (remaining.length === 0) delete next[MAIN_PROVIDER_ID];
+		else next[MAIN_PROVIDER_ID] = buildPoolReferenceEntry({ v: 1, generation: reference.generation + 1, accounts: remaining });
+		return { value: next, result: { pruned, remaining: remaining.length, poolDisabled: remaining.length === 0 } };
+	}, { signal: input.signal });
+}
+
+/** Delete one account's local credential. Removing the last real one also clears stale references. */
+export async function removeAccount(input: { authPath: string; accountId: string; signal?: AbortSignal }): Promise<PoolReferenceCleanup & { removed: PoolAccount }> {
 	return withAuthTransaction(input.authPath, (entries) => {
 		const reference = readPoolReference(entries[MAIN_PROVIDER_ID]);
 		if (!reference) throw new PoolNotEnabledError();
 		const account = reference.accounts.find((candidate) => candidate.id === input.accountId);
 		if (!account) throw new PoolAccountMissingError(input.accountId);
-		const remaining = reference.accounts.filter((candidate) => candidate.id !== input.accountId);
+		const others = reference.accounts.filter((candidate) => candidate.id !== input.accountId);
+		const pruned = others.filter((candidate) => entries[candidate.key] === undefined);
+		const remaining = others.filter((candidate) => entries[candidate.key] !== undefined);
 		const next: AuthEntries = { ...entries };
 		delete next[account.key];
 		if (remaining.length === 0) delete next[MAIN_PROVIDER_ID];
 		else next[MAIN_PROVIDER_ID] = buildPoolReferenceEntry({ v: 1, generation: reference.generation + 1, accounts: remaining });
-		return { value: next, result: { removed: account, remaining: remaining.length, poolDisabled: remaining.length === 0 } };
+		return { value: next, result: { removed: account, pruned, remaining: remaining.length, poolDisabled: remaining.length === 0 } };
 	}, { signal: input.signal });
 }
 

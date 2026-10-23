@@ -19,6 +19,7 @@ import {
 	poolStatus,
 	redactMessage,
 	removePoolAccount,
+	repairPool,
 	resolveAccount,
 	runEnrollment,
 	setDefaultAccount,
@@ -226,10 +227,11 @@ async function handleCommand(
 			const confirmed = await ctx.ui.confirm("删除这个 Codex 账号？", `将删除 ${accountLabel(account)} 的本地凭据，不会撤销 OpenAI 上的授权。`);
 			if (!confirmed) return;
 			const result = await removePoolAccount({ authPath, statePath, accountId: account.id });
+			const cleanup = result.pruned.length > 0 ? ` 同时清理了 ${result.pruned.length} 个凭据已删除的账号引用。` : "";
 			ctx.ui.notify(
-				result.poolDisabled
+				(result.poolDisabled
 					? `已删除最后一个账号 ${accountLabel(account)}，账号池已关闭，openai-codex 现在没有登录。`
-					: `已删除账号 ${accountLabel(account)}，还剩 ${result.remaining} 个。`,
+					: `已删除账号 ${accountLabel(account)}，还剩 ${result.remaining} 个。`) + cleanup,
 			);
 			return;
 		}
@@ -366,6 +368,15 @@ export default function openaiAccountPool(pi: ExtensionAPI) {
 	};
 
 	pi.on("session_start", async (_event, ctx) => {
+		const repair = await repairPool(agentPaths());
+		if (repair) {
+			ctx.ui.notify(
+				repair.poolDisabled
+					? "已清理失效的 Codex 账号池引用；没有剩余账号，openai-codex 现在没有登录。"
+					: `已清理 ${repair.pruned.length} 个凭据已删除的 Codex 账号引用，还剩 ${repair.remaining} 个账号。`,
+				"warning",
+			);
+		}
 		await install(ctx);
 	});
 

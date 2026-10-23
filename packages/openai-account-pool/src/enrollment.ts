@@ -4,8 +4,10 @@ import {
 	disablePool,
 	loadPoolSnapshot,
 	maskAccountId,
+	pruneMissingPoolAccounts,
 	removeAccount,
 	type PoolAccount,
+	type PoolReferenceCleanup,
 	type PoolSnapshot,
 } from "./auth.ts";
 import { availabilityFor, setPreferredAccountId } from "./availability.ts";
@@ -172,9 +174,10 @@ async function removeThroughWizard(input: {
 		const removal = await removePoolAccount({ authPath: input.authPath, statePath: input.statePath, accountId: chosen.id });
 		input.result.removed += 1;
 		input.result.accounts = removal.remaining;
-		return removal.poolDisabled
+		const cleanup = removal.pruned.length > 0 ? ` 同时清理了 ${removal.pruned.length} 个凭据已删除的账号引用。` : "";
+		return (removal.poolDisabled
 			? `已删除最后一个账号 ${accountLabel(chosen)}，账号池已关闭。`
-			: `已删除账号 ${accountLabel(chosen)}，还剩 ${removal.remaining} 个。`;
+			: `已删除账号 ${accountLabel(chosen)}，还剩 ${removal.remaining} 个。`) + cleanup;
 	} catch (error) {
 		return `删除失败（${redactMessage(error)}），账号池没有变化。`;
 	}
@@ -336,9 +339,16 @@ export async function endPool(input: { authPath: string; statePath: string; keep
 	return { kept: result.restored, dormantAccounts: result.dormantAccounts };
 }
 
-export async function removePoolAccount(input: { authPath: string; statePath: string; accountId: string }): Promise<{ removed: PoolAccount; remaining: number; poolDisabled: boolean }> {
+/** Reconcile references after an external credential deletion, without restoring any login. */
+export async function repairPool(input: { authPath: string; statePath: string }): Promise<PoolReferenceCleanup | undefined> {
+	const result = await pruneMissingPoolAccounts(input);
+	if (result) await forgetState(input.statePath, result.poolDisabled ? "all" : result.pruned.map((account) => account.id));
+	return result;
+}
+
+export async function removePoolAccount(input: { authPath: string; statePath: string; accountId: string }): Promise<PoolReferenceCleanup & { removed: PoolAccount }> {
 	const result = await removeAccount({ authPath: input.authPath, accountId: input.accountId });
-	await forgetState(input.statePath, result.poolDisabled ? "all" : [input.accountId]);
+	await forgetState(input.statePath, result.poolDisabled ? "all" : [input.accountId, ...result.pruned.map((account) => account.id)]);
 	return result;
 }
 

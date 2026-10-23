@@ -1,5 +1,13 @@
 # Package split verification
 
+## OpenAI Account Pool: removal reference cleanup (2026-10-23)
+
+- Reproduced with isolated fixture credentials: delete account B through Pi's credential store, then remove account A through the production `/codex_pool remove` command. Before the fix, `auth.json` retained B in the main non-token pool reference even though no real credential remained. This reproduces one stranded-reference path; the original user's exact startup error was not available.
+- Removal now prunes missing sibling credentials in the same auth transaction. Startup also reconciles missing membership and clears its cooldown/preference state, with a visible notification. Existing expired/malformed credentials, native login, dormant entries, and unrelated providers are preserved.
+- The new `tests/integration-removal.mjs` covers picker/email removal, both email claim locations, cancellation, Pi's actual credential cache, partial/last-account cleanup, startup repair, and a real Pi RPC subprocess restart that confirms `/codex_pool` remains available. Unit checks cover email validation, empty references, repair idempotence, and credential preservation.
+- Passed `npm --prefix packages/openai-account-pool test` (11 suites), and separately ran all 11 suites against installed Pi **1.4.0**. Passed the package load test with the explicit Pi 1.4.0 binary, child `npm pack --dry-run`, and `git diff --check`. All authentication/model responses in these tests use fixtures; no real OAuth login or paid-quota exhaustion was performed. No real credentials were changed or included.
+- Reviewed root README/AGENTS and both manifests. The package remains optional and separately installed; root loadout and peer dependency contracts are unchanged.
+
 ## Background Tasks: final OMP-aligned contract (2026-10-22)
 
 - Changes remain in `fix-background-task-notifications`. Pi source, installed packages, global prompt rules, Herdr execution and global queue settings were not changed. Reviewed root AGENTS and both manifests: existing acceptance/loadout requirements remain valid; the child manifest adds only the new regression files to its test command.

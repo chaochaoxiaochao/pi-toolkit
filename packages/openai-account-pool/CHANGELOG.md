@@ -1,3 +1,9 @@
+## Unreleased
+
+- Remove stale membership alongside the last real account instead of leaving an unusable `openai-codex` reference. Reconcile missing credentials on startup, report the cleanup, and forget their state/preferences without deleting existing credentials.
+- Recover account emails from root-level access-token claims as well as profile claims, including existing accounts in removal and preference pickers.
+- Add production-extension removal regression checks with Pi's real credential cache, cancellation, reference updates, restarts, and last-account cleanup.
+
 ## 2026-10-14 - v0.1.7
 
 - fix the session account marker after successful requests and failover
