@@ -1,3 +1,7 @@
+## 2026-10-23 - v0.13.11
+
+- openai-account-pool v0.1.9: classify forced refresh failures and prevent output replay
+
 ## 2026-10-23 - v0.13.10
 
 - codex-edit v0.2.1: preflight path hierarchy conflicts and preserve moved-file permissions
