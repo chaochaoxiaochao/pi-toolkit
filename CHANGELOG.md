@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-23 - v0.13.8
 
+- herdr-subagents v0.7.5: bound missing-report recovery and close unconfirmed child outcomes
 - Cache Export: use request timing and historical, non-secret cache-policy observations; separate auxiliary usage, mark unknowns, and resolve exports against the session cwd.
 - BTW: seed main and restored side history through SessionManager instead of transient agent state.
 - Herdr Subagents: one durable child-side missing-report reminder; terminal diagnostics for unconfirmed results, cancellation, and final errors without parent-side wake-up logic.

@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-23 - v0.7.5
 
+- bound missing-report recovery and close unconfirmed child outcomes
 - Regenerate real three-pane media and preserve configured model/authentication sources in the media parent launcher.
 
 - Ship the lifecycle test runtime resolver inside the Herdr package and execute all ten offline lifecycle cases from a real unpacked tarball without sibling packages.
