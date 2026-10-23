@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2026-10-23 - v0.1.1
 
+- correct request timing, usage scope and historical cache evidence
 - Keep mixed historical TTLs and partial one-hour writes unknown at request scope; a one-hour subset must not override mixed-policy evidence.
 
 - Show main-request usage separately from completed cache-warm, compaction, and other auxiliary usage.

@@ -1,3 +1,7 @@
+## 2026-10-23 - v0.13.9
+
+- cache-export v0.1.1: correct request timing, usage scope and historical cache evidence
+
 ## 2026-10-23 - v0.13.8
 
 - herdr-subagents v0.7.5: bound missing-report recovery and close unconfirmed child outcomes
