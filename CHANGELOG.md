@@ -1,3 +1,7 @@
+## 2026-10-26 - v0.13.13
+
+- background-tasks v0.1.2: restrict background tasks to model-only and use concise automatic-notification guidance
+
 ## 2026-10-23 - v0.13.12
 
 - worktree v0.4.1: return the worktree root from already-active nested directories

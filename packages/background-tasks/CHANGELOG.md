@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2026-10-26 - v0.1.2
 
+- restrict background tasks to model-only and use concise automatic-notification guidance
 - Fix `background_task` exposure to `model-only`; reject Codemode and other nested callers without adding a configuration file.
 - Use concise English startup guidance emphasizing automatic notification without sleep or polling.
 
