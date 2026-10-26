@@ -11,6 +11,7 @@ export interface SubagentConfig {
 	defaultConcurrency: number;
 	maxConcurrency: number;
 	stalledWarningSeconds: number;
+	abortGraceSeconds: number;
 	defaultModel?: string;
 	defaultThinking?: string;
 	defaultExtensions?: string[];
@@ -39,6 +40,7 @@ interface ConfigFile {
 	defaultConcurrency?: number;
 	maxConcurrency?: number;
 	stalledWarningSeconds?: number;
+	abortGraceSeconds?: number;
 	defaultModel?: string;
 	defaultThinking?: string;
 	defaultExtensions?: string[];
@@ -50,7 +52,7 @@ export interface ConfigurationPaths {
 	globalAgents?: string;
 	projectAgents?: string;
 }
-const DEFAULTS: SubagentConfig = { defaultConcurrency: 1, maxConcurrency: 4, stalledWarningSeconds: 300, personas: {} };
+const DEFAULTS: SubagentConfig = { defaultConcurrency: 1, maxConcurrency: 4, stalledWarningSeconds: 300, abortGraceSeconds: 30, personas: {} };
 
 function readConfig(path: string, source: string, diagnostics: string[]): ConfigFile {
 	if (!existsSync(path)) return {};
@@ -70,7 +72,7 @@ function mergeConfig(base: SubagentConfig, input: ConfigFile, source: string, so
 		if (input.exposure === "direct" || input.exposure === "model-only") { result.exposure = input.exposure; sources.exposure = source; }
 		else diagnostics.push(`${source} exposure must be 'direct' or 'model-only'`);
 	}
-	for (const key of ["defaultConcurrency", "maxConcurrency", "stalledWarningSeconds"] as const) {
+	for (const key of ["defaultConcurrency", "maxConcurrency", "stalledWarningSeconds", "abortGraceSeconds"] as const) {
 		const value = input[key];
 		if (value === undefined) continue;
 		if (!Number.isInteger(value) || Number(value) <= 0) { diagnostics.push(`${source} ${key} must be a positive integer`); continue; }
@@ -121,7 +123,7 @@ export function loadSubagentConfiguration(cwd: string, packageAgentsDirectory: s
 	const projectConfigPath = paths.projectConfig ?? join(cwd, ".pi", "herdr-subagents.json");
 	const globalAgentsDirectory = paths.globalAgents ?? join(dirname(globalConfigPath), "herdr-subagents", "agents");
 	const projectAgentsDirectory = paths.projectAgents ?? join(cwd, ".pi", "herdr-subagents", "agents");
-	const settingSources: Record<string, string> = { defaultConcurrency: "built-in", maxConcurrency: "built-in", stalledWarningSeconds: "built-in" };
+	const settingSources: Record<string, string> = { defaultConcurrency: "built-in", maxConcurrency: "built-in", stalledWarningSeconds: "built-in", abortGraceSeconds: "built-in" };
 	const globalInput = readConfig(globalConfigPath, "global", diagnostics);
 	const projectInput = readConfig(projectConfigPath, "project", diagnostics);
 	const globalSettings = mergeConfig(DEFAULTS, globalInput, "global", settingSources, diagnostics);

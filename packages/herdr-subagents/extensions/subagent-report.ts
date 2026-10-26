@@ -9,6 +9,10 @@ import { parseReport } from "../src/records.ts";
 import { resultPathForAttemptId } from "../src/result-path.ts";
 import { PARENT_PANE_ENV } from "../src/live-agent.ts";
 import { attemptReportPath, attemptStatePath, requireAttemptId, type AttemptState } from "../src/attempts.ts";
+import { loadSubagentConfiguration } from "../src/config.ts";
+import { fileURLToPath } from "node:url";
+
+const packageAgentsDir = fileURLToPath(new URL("../agents/", import.meta.url));
 
 const RETURN_SHORTCUT = "alt+p";
 
@@ -108,7 +112,10 @@ function reportHerdrState(state: "working" | "blocked" | "idle", message?: strin
 export default function (pi: ExtensionAPI) {
 	let activeAttemptId: string | undefined;
 	let blockedCount = 0;
+	let abortTimer: ReturnType<typeof setTimeout> | undefined;
+	const clearAbortTimer = () => { if (abortTimer) clearTimeout(abortTimer); abortTimer = undefined; };
 	pi.on("before_agent_start", async () => {
+		clearAbortTimer(); // The user steered the child after Esc.
 		const taskDirectory = process.env.PI_HERDR_SUBAGENTS_TASK_DIR?.trim();
 		if (!taskDirectory) return;
 		activeAttemptId = currentAttemptId(taskDirectory);
@@ -144,19 +151,25 @@ export default function (pi: ExtensionAPI) {
 				if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
 			}
 		}
-		const reason = event.outcome === "completed" ? "missing_report" : event.outcome === "aborted" ? "child_aborted" : "child_error";
+		// Esc normally skips this boundary; if it lands mid-boundary, still let the user steer.
+		if (event.outcome === "aborted") return;
+		const reason = event.outcome === "completed" ? "missing_report" : "child_error";
 		saveUnconfirmed(taskDirectory, attemptId, reason, ctx.sessionManager.getSessionFile());
-		// Cancellation and final provider errors receive a diagnostic, never a wake-up.
+		// Final provider errors receive a diagnostic, never a wake-up.
 	});
 	pi.on("agent_settled", (event, ctx) => {
 		const taskDirectory = process.env.PI_HERDR_SUBAGENTS_TASK_DIR?.trim();
-		if (taskDirectory && activeAttemptId) {
-			// Pi skips before-settle on cancellation. Close the protocol without
-			// claiming the work failed, replacing a report, or requesting more tokens.
-			if (event.aborted && !existsSync(attemptReportPath(taskDirectory, activeAttemptId))) {
-				saveUnconfirmed(taskDirectory, activeAttemptId, "child_aborted", ctx.sessionManager.getSessionFile());
-			}
-			writeAttemptState(taskDirectory, activeAttemptId, "settled");
+		if (event.aborted && taskDirectory && activeAttemptId) {
+			// Esc skips before-settle. Give the user time to steer; if nothing starts a new
+			// round within the grace period, close the attempt with an unconfirmed diagnostic.
+			const attemptId = activeAttemptId;
+			const sessionFile = ctx.sessionManager.getSessionFile();
+			const graceMs = loadSubagentConfiguration(ctx.cwd, packageAgentsDir).settings.abortGraceSeconds * 1000;
+			clearAbortTimer();
+			abortTimer = setTimeout(() => {
+				abortTimer = undefined;
+				if (!existsSync(attemptReportPath(taskDirectory, attemptId))) saveUnconfirmed(taskDirectory, attemptId, "child_aborted", sessionFile);
+			}, graceMs);
 		}
 		// Keep the interactive child alive at Pi's final automatic-work boundary.
 		// The orchestrator settles each task from its atomic report. Once every task in
@@ -176,6 +189,7 @@ export default function (pi: ExtensionAPI) {
 		description: "Return to parent Agent",
 		async handler(ctx) { await returnToParent(pi, ctx); },
 	});
+	pi.on("session_shutdown", clearAbortTimer);
 	pi.on("session_start", async (_event, ctx) => {
 		// Remove the legacy hint on reload without touching editor/plugin status.
 		ctx.ui.setStatus("herdr-subagents-parent", undefined);

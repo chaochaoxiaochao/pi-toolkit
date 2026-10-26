@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { mkdirSync } from "node:fs";
 import registerReport from "../extensions/subagent-report.ts";
 
 const root = mkdtempSync(join(tmpdir(), "herdr-report-boundary-"));
@@ -10,7 +11,9 @@ const previous = process.env.PI_HERDR_SUBAGENTS_TASK_DIR;
 process.env.PI_HERDR_SUBAGENTS_TASK_DIR = root;
 const sessionFile = join(root, "session.jsonl");
 writeFileSync(sessionFile, "");
-const ctx = { sessionManager: { getSessionFile: () => sessionFile }, isIdle: () => true };
+mkdirSync(join(root, ".pi"));
+writeFileSync(join(root, ".pi", "herdr-subagents.json"), JSON.stringify({ abortGraceSeconds: 1 }));
+const ctx = { cwd: root, sessionManager: { getSessionFile: () => sessionFile }, isIdle: () => true };
 function fixture() {
   const handlers = new Map();
   let tool;
@@ -58,14 +61,44 @@ try {
   assert.ok(diagnostic.documents.some(({ path }) => path === sessionFile));
   assert.equal(await reloaded.handlers.get("agent_before_settle")(boundary(), ctx), undefined);
 
-  for (const outcome of ["aborted", "error"]) {
+  {
     const current = attempt();
     const run = fixture();
     await run.handlers.get("before_agent_start")();
-    assert.equal(await run.handlers.get("agent_before_settle")(boundary(outcome), ctx), undefined, `${outcome}: do not wake or retry the child`);
+    assert.equal(await run.handlers.get("agent_before_settle")(boundary("aborted"), ctx), undefined);
+    assert.equal(existsSync(current.report), false, "Esc abort must not publish a terminal report; the user may steer");
+  }
+  {
+    // Esc skips before-settle and only emits agent_settled(aborted). Grace period, configurable.
+    const current = attempt();
+    const run = fixture();
+    await run.handlers.get("before_agent_start")();
+    await run.handlers.get("agent_settled")({ aborted: true }, ctx);
+    assert.equal(existsSync(current.report), false, "no report inside the grace period");
+    await run.handlers.get("before_agent_start")(); // user steers: timer must be cancelled
+    await new Promise((resolve) => setTimeout(resolve, 1300));
+    assert.equal(existsSync(current.report), false, "steering within the grace period cancels the diagnostic");
+    await run.handlers.get("agent_settled")({ aborted: true }, ctx);
+    await new Promise((resolve) => setTimeout(resolve, 1300));
+    const report = JSON.parse(readFileSync(current.report, "utf8"));
+    assert.equal(report.error, "child_aborted");
+    assert.match(report.summary, /unconfirmed/);
+    const shutdown = fixture(); // shutdown must clear a pending timer
+    const other = attempt();
+    await shutdown.handlers.get("before_agent_start")();
+    await shutdown.handlers.get("agent_settled")({ aborted: true }, ctx);
+    shutdown.handlers.get("session_shutdown")();
+    await new Promise((resolve) => setTimeout(resolve, 1300));
+    assert.equal(existsSync(other.report), false, "session shutdown clears the grace timer");
+  }
+  {
+    const current = attempt();
+    const run = fixture();
+    await run.handlers.get("before_agent_start")();
+    assert.equal(await run.handlers.get("agent_before_settle")(boundary("error"), ctx), undefined, "error: do not wake or retry the child");
     const report = JSON.parse(readFileSync(current.report, "utf8"));
     assert.equal(report.status, "failed");
-    assert.equal(report.error, outcome === "aborted" ? "child_aborted" : "child_error");
+    assert.equal(report.error, "child_error");
     assert.match(report.summary, /unconfirmed/);
   }
   const repaired = attempt();

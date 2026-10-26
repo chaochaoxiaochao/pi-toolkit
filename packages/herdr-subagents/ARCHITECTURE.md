@@ -82,7 +82,7 @@ There is no global dispatcher, persisted background queue, blocked response lane
 
 Each task owns one Herdr pane and one single-task Pi process. Herdr first starts and detects the interactive Pi, then submits the prompt exactly once. At Pi’s final `agent_settled` boundary, the child extension records settled state but leaves the interactive process alive. The atomic report remains the authoritative task result. Early-finishing children remain visible while sibling tasks continue. Once the whole run settles, the orchestrator closes an unfocused owned tab immediately and defers a focused tab until the user leaves it, so Pi can restore the terminal normally.
 
-A completed round without a terminal report gets one child-side reminder at `agent_before_settle`. The marker is written before continuation. Another omission publishes an unconfirmed `missing_report` diagnostic; final errors use `child_error`. Native cancellation skips that boundary, so `agent_settled` publishes only `child_aborted`, never a model wake-up. Existing terminal reports are not replaced. None of this adds a parent monitoring loop.
+A completed round without a terminal report gets one child-side reminder at `agent_before_settle`. The marker is written before continuation. Another omission publishes an unconfirmed `missing_report` diagnostic; final errors use `child_error`. A user abort (Esc) skips that boundary. `agent_settled(aborted)` starts a grace timer (`abortGraceSeconds`, default 30); a new round (`before_agent_start`) or session shutdown clears it, otherwise it publishes `child_aborted`. Existing terminal reports are not replaced. None of this adds a parent monitoring loop.
 
 The child writes:
 

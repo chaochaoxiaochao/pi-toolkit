@@ -18,6 +18,7 @@ try{
   const dir=join(root,scenario);mkdirSync(dir);
   const attemptId=randomUUID();const statePath=join(dir,'attempts',attemptId+'.json');
   process.env.PI_HERDR_SUBAGENTS_TASK_DIR=dir;
+  if(scenario==='abort'){mkdirSync(join(dir,'.pi'));writeFileSync(join(dir,'.pi','herdr-subagents.json'),JSON.stringify({abortGraceSeconds:1}));}
   writeFileSync(join(dir,'task.json'),JSON.stringify({currentAttemptId:attemptId}));
   const trace=[],states=[],errors=[],inputs=[];let requests=0,ended=0,boundaries=0,settled=0;
   const entered=Promise.withResolvers();let session;
@@ -52,6 +53,7 @@ try{
    const running=session.prompt('Run offline lifecycle check');
    if(scenario==='abort'){await entered.promise;await session.abort();}
    await running;
+   if(scenario==='abort'){assert.equal(existsSync(join(dir,'reports',attemptId+'.json')),false,'no report inside the grace period');await new Promise(r=>setTimeout(r,1500));}
    assert.equal(errors.length,0,JSON.stringify(errors));
    const expectedRequests={reported:1,failed_report:1,remind_success:2,normal_no_report:2,transient_retry:3,retry_exhausted:2,queued_followup:3,boundary_continue:2,abort:1,settled_hook_new_prompt:3}[scenario];
    assert.equal(requests,expectedRequests,scenario);

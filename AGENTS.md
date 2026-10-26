@@ -50,7 +50,7 @@ pi-toolkit/
 - Scheduler 必须运行确定性 fake-clock 与 extension 集成测试、加载 `packages/scheduler/extensions/scheduler.ts`，并验证定时/手动触发统一使用 followUp、同一 schedule 最多积压一次、取消与 session shutdown 清理 timer；媒体展示真实核心状态机输出。
 - Background Tasks 验收见 `packages/background-tasks/TESTING.md`：覆盖原生 Bash 双层输出对照、超时/进程树清理与真实 Pi TUI；主包默认内嵌并启用，根 load-test 验证完整组合包只注册一次；不向全局 promptGuidelines 添加工具规则。
 - Cache Export 只表述服务商/Pi 报告的 usage；主请求与辅助调用分列，时间用 message timestamp/duration，不用落盘间隔冒充空闲。历史缓存参数只存非秘密白名单；缺证据写未知，不能用 Pi 推断校准服务端状态。
-- Herdr 漏报补救只在子侧：before-settle 最多一次持久化提醒，重复漏报/最终错误写未确认诊断；原生取消跳过该边界，在 settled 只写取消诊断，不唤醒模型、不新增父侧补报监控。
+- Herdr 漏报补救只在子侧：before-settle 最多一次持久化提醒，重复漏报/最终错误写未确认诊断；用户 Esc 跳过该边界，agent_settled 启动 `abortGraceSeconds`（默认 30）宽限计时；期间有新一轮或 session 关闭则取消计时，超时才写 `child_aborted` 未确认诊断，不唤醒模型、不新增父侧补报监控。
 - Cache Export 的发布验收要求确定性测试通过，并在有 Chrome 的环境中跑浏览器 E2E；skip 不算发布验收通过。
 - `packages/cache-export/src/tau-assets.ts` 来自 `huggingface/tau` 的 `session_usage.py`，只能重生成，不能手改。
 - Herdr Subagents 的实现可能存在并行工作；重构 package 接线时保留其未提交实现改动。

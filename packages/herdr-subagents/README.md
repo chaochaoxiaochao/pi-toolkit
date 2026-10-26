@@ -175,6 +175,7 @@ These are all supported top-level fields in `herdr-subagents.json`:
 | `defaultConcurrency` | Positive integer | `1` | Concurrency used when a call omits `concurrency`; capped to `maxConcurrency`. |
 | `maxConcurrency` | Positive integer | `4` | Hard ceiling for requested/default read-only concurrency. It does not make write-capable batches safe. |
 | `stalledWarningSeconds` | Positive integer | `300` | Emit a warning after a child runs this long. This is not a timeout and does not stop it. |
+| `abortGraceSeconds` | Positive integer | `30` | After the user aborts a child with Esc, wait this long for a correction. If no new round starts, publish an unconfirmed `child_aborted` failure. |
 | `defaultModel` | Non-empty Pi model ID, normally `provider/model` | Unset | Fallback child model. If unset, the parent model is inherited. |
 | `defaultThinking` | Non-empty Pi thinking value | Unset | Fallback thinking level below Persona-specific settings. Typical Pi values are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`; model support varies. |
 | `defaultExtensions` | Array of non-empty Pi source strings | Unset (no optional extensions) | Fallback extension sources for Personas without an explicit `extensions` list. Project replaces global; `[]` clears inherited defaults. |
@@ -219,6 +220,7 @@ Save this as `~/.pi/agent/herdr-subagents.json`. Model IDs, skills, and extensio
   "defaultConcurrency": 2,
   "maxConcurrency": 4,
   "stalledWarningSeconds": 300,
+  "abortGraceSeconds": 30,
   "defaultModel": "anthropic/claude-sonnet-4-5",
   "defaultThinking": "medium",
   "defaultExtensions": ["~/.pi/agent/extensions/provider-routing.ts"],
@@ -354,6 +356,6 @@ See [TESTING.md](TESTING.md) for deterministic tests, extension loading, packagi
 
 The child checks `reports/<attempt-id>.json` at `agent_before_settle`. A valid completed or failed report adds zero requests. A normally completed round without a report receives one reminder to submit existing results, not redo the task. `attempts/<attempt-id>.reminded` is persisted before continuing; rounds and reloads cannot reset it.
 
-A second omission produces a `failed` protocol report with `error: missing_report`, an explicitly **unconfirmed** result, and the child session path. This does not assert the delegated work itself failed. Final provider errors produce `child_error` without a reminder. Pi skips before-settle on cancellation; the child writes `child_aborted` at `agent_settled`, without waking the model or replacing an existing report. Parent-requested cancellation retains its existing cancelled lifecycle.
+A second omission produces a `failed` protocol report with `error: missing_report`, an explicitly **unconfirmed** result, and the child session path. This does not assert the delegated work itself failed. Final provider errors produce `child_error` without a reminder. A user abort (Esc) skips before-settle. The child waits `abortGraceSeconds` (default 30) for a correction; a new round cancels the timer and the child continues. If nothing starts in time, it publishes an unconfirmed `child_aborted` failure. Parent-requested cancellation retains its existing cancelled lifecycle.
 
 The parent still waits for an atomic attempt report or process exit. It does not infer success from idle/settled or run a second reminder monitor. Report idempotency and focus-aware tab cleanup are unchanged.

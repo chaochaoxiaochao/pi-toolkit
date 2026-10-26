@@ -357,8 +357,6 @@ assert.throws(() => applyTaskStatus(terminal, "running"), /terminal tasks are im
 		process.exit = originalExit;
 	}
 	assert.equal(exitCode, undefined, "settled child must remain alive for focus-aware tab cleanup");
-	const attempt = JSON.parse(readFileSync(join(directory, "attempts", `${attemptId}.json`), "utf8"));
-	assert.equal(attempt.state, "settled");
 	const theme = { fg: (_color, text) => text, bold: (text) => text };
 	const renderedCall = reportTool.renderCall({ ...report, result: "FULL RESULT MUST NOT RENDER" }, theme).render(120).join("\n");
 	assert.match(renderedCall, /completed.*saved to disk/);

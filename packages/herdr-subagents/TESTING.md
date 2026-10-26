@@ -60,9 +60,9 @@ For real smoke testing, verify that each child appears in a visible pane and can
 
 ## Missing-report regressions
 
-`tests/report-boundary.mjs` checks completed/failed report idempotency, one durable reminder across rounds and extension reload, conflicting report rejection, unconfirmed diagnostics with a session path, and cancellation/error without continuation.
+`tests/report-boundary.mjs` checks completed/failed report idempotency, one durable reminder across rounds and extension reload, conflicting report rejection, unconfirmed diagnostics with a session path, Esc grace period (timer cancelled by steering or shutdown, `child_aborted` after expiry), and error without continuation.
 
-`tests/report-lifecycle.mjs` uses the real installed Pi SDK and a fully offline provider. It covers ten cases: normal report, failed report, successful reminder, repeated omission, transient retry, exhausted retry, queued follow-up, another before-settle continuation, cancellation, and a fresh prompt from a settled listener. A normal report makes one request; a reminder adds at most one. Native cancellation does not emit before-settle and must still get a terminal diagnostic. These are native lifecycle checks, not a claim of real-Herdr pane/concurrency coverage.
+`tests/report-lifecycle.mjs` uses the real installed Pi SDK and a fully offline provider. It covers ten cases: normal report, failed report, successful reminder, repeated omission, transient retry, exhausted retry, queued follow-up, another before-settle continuation, Esc abort, and a fresh prompt from a settled listener. A normal report makes one request; a reminder adds at most one. Native abort does not emit before-settle; its terminal diagnostic appears only after `abortGraceSeconds` (set to 1 in the test). These are native lifecycle checks, not a claim of real-Herdr pane/concurrency coverage.
 
 Use `PI_TEST_BINARY` to select Pi 1.4.0 for these checks rather than an older workspace-local Pi. No paid model or real credential is used by the new regression fixtures.
 
