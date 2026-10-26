@@ -7,7 +7,7 @@ import { BackgroundTasks, errorText, summary, systemClock, type Clock, type Task
 import { BackgroundWidget, FINISHED_VISIBLE_MS, WIDGET_KEY, duration, visibleTasks } from "../src/widget.ts";
 
 const actions = ["start", "list", "output", "cancel"] as const;
-const startGuidance = "完成会自动通知。现在不要查询等待；继续其他独立工作，没有其他工作就结束当前轮，收到通知后再取结果。";
+const startGuidance = "Notifies automatically on completion. Do not sleep or poll; continue other work or end the turn.";
 type Action = typeof actions[number];
 interface Params {
 	action: Action;
@@ -23,7 +23,7 @@ const Parameters = Type.Object({
 	description: Type.Optional(Type.String({ description: "Short display label for start" })),
 	cwd: Type.Optional(Type.String({ description: "Working directory for start; defaults to the session directory. Relative paths resolve from it." })),
 	timeout: Type.Optional(Type.Integer({ minimum: 1, maximum: 7200, description: "Runtime limit for start, in seconds: default 1800 (30 minutes), maximum 7200 (2 hours); no unlimited mode" })),
-	id: Type.Optional(Type.String({ description: "Task ID for output or cancel; output shows the last 2000 lines or 50 KiB. Codemode receives up to 1 MiB, keeping head/tail if larger, plus a log path." })),
+	id: Type.Optional(Type.String({ description: "Task ID for output or cancel; output shows the last 2000 lines or 50 KiB, plus a log path." })),
 }, { additionalProperties: false });
 const TaskSchema = Type.Object({
 	id: Type.String(), status: StringEnum(["running", "succeeded", "failed", "cancelled", "timed_out", "output_limit"] as const),
@@ -240,6 +240,7 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 
 	pi.registerTool({
 		name: "background_task", label: "Background task",
+		exposure: "model-only",
 		description: `Start shell commands as background tasks and return task IDs immediately. Supports status, output, and cancellation. After start: ${startGuidance}`,
 		parameters: Parameters, outputSchema: OutputSchema,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -247,7 +248,7 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 			try {
 				if (signal?.aborted) throw new Error("Tool call aborted before task acceptance");
 				const result = await perform(params, ctx?.cwd ?? context?.cwd ?? process.cwd());
-				// A terminal result was consumed by this tool's caller (including Codemode).
+				// A terminal result was consumed by the model.
 				// User /bg inspections and running snapshots do not acknowledge completion.
 				if (params.action === "output" && "task" in result.data && result.data.task.status !== "running") {
 					pending.delete(result.data.task.id);

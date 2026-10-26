@@ -1,5 +1,5 @@
-// A blocking tool stands in for a synchronous subagent. Pi queues and shell jobs are real.
-import { appendFileSync, writeFileSync } from "node:fs";
+// Sequential fixture tools hold one native batch open; background calls remain model-issued.
+import { appendFileSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
@@ -8,31 +8,39 @@ import { Type } from "typebox";
 
 export default function (pi: ExtensionAPI) {
 	const record = (entry: unknown) => appendFileSync(process.env.BG_NOTIFICATION_EVENTS!, JSON.stringify(entry) + "\n");
+	const tasks = new Map<string, any>();
+	const consumed: string[] = [];
+	let finished = false;
 	pi.registerTool({
 		name: "synchronous_subagent_fixture", label: "Synchronous subagent fixture",
-		description: "Wait for four real shell jobs while holding one synchronous tool call open.",
-		parameters: Type.Object({ reads: Type.Number() }),
-		async execute(_id, { reads }, _signal, _update, ctx) {
-			record({ event: "waiting" });
-			writeFileSync(join(ctx.cwd, "release"), "ready");
-			const list = async () => (await ctx.executeTool("background_task", { action: "list" })).result.structuredContent as any;
-			const wait = async () => {
-				for (let i = 0; i < 1000; i++) {
-					const tasks = await list();
-					if (tasks.running === 0) return tasks.tasks;
-					await delay(5);
+		description: "Wait for two real shell jobs while holding one synchronous tool call open.",
+		parameters: Type.Object({ wave: Type.Number() }), executionMode: "sequential",
+		async execute(_id, { wave }, _signal, _update, ctx) {
+			record({ event: "waiting", wave });
+			writeFileSync(join(ctx.cwd, `release-${wave}`), "ready");
+			for (let i = 0; i < 1000; i++) {
+				if ([0, 1].every((job) => existsSync(join(ctx.cwd, `exited-${wave}-${job}`)))) {
+					// Exit markers precede process exit. Let the native shell backend settle.
+					await delay(100);
+					if (wave === 1) finished = true;
+					return { content: [{ type: "text", text: "Synchronous subagent returned; shell wave finished." }], details: undefined };
 				}
-				throw new Error("Fixture shell jobs did not finish");
-			};
-			await wait();
-			for (let i = 0; i < 2; i++) await ctx.executeTool("background_task", {
-				action: "start", command: "printf 'second wave\\n'; exit 7", description: `second wave ${i}`, timeout: 10,
-			});
-			const tasks = await wait();
-			for (const task of tasks.slice(0, reads)) await ctx.executeTool("background_task", { action: "output", id: task.id });
-			record({ event: "returned", tasks, consumed: tasks.slice(0, reads).map((task: any) => task.id) });
-			return { content: [{ type: "text", text: "Synchronous subagent returned; final build report is ready." }], details: undefined };
+				await delay(5);
+			}
+			throw new Error("Fixture shell jobs did not finish");
 		},
+	});
+	pi.on("tool_execution_end", (event) => {
+		if (event.toolName !== "background_task") return;
+		const data = event.result.structuredContent as any;
+		if (data?.task) tasks.set(data.task.id, data.task);
+		if (data?.action === "output" && data.task.status !== "running") consumed.push(data.task.id);
+	});
+	pi.on("context", () => {
+		if (finished) {
+			record({ event: "returned", tasks: [...tasks.values()], consumed });
+			finished = false;
+		}
 	});
 	let requests = 0;
 	pi.registerProvider("bg-notifications", {
@@ -43,21 +51,23 @@ export default function (pi: ExtensionAPI) {
 			queueMicrotask(() => {
 				requests++;
 				record({ event: "request", number: requests, messages: context.messages });
-				const direct = process.env.BG_NOTIFICATION_MODE === "direct";
-				const toolTurn = requests === 1 || (direct && requests === 2);
-				const message: any = { role: "assistant", api: model.api, provider: model.provider, model: model.id, timestamp: Date.now(), content: [], stopReason: toolTurn ? "toolUse" : "stop",
+				const message: any = { role: "assistant", api: model.api, provider: model.provider, model: model.id, timestamp: Date.now(), content: [], stopReason: requests <= 2 ? "toolUse" : "stop",
 					usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
 				stream.push({ type: "start", partial: message });
-				if (toolTurn) {
-					const reads = Number(process.env.BG_NOTIFICATION_READS);
-					if (direct && requests === 1) {
-						for (let i = 0; i < 2; i++) message.content.push({ type: "toolCall", id: `direct-start-${i}`, name: "background_task", arguments: {
-							action: "start", command: "while [ ! -f release ]; do sleep 0.01; done; printf 'first wave\\n'; exit 7", description: `first wave ${i}`, timeout: 10,
-						} });
-					} else if (direct) message.content.push({ type: "toolCall", id: "direct-blocking-tool", name: "synchronous_subagent_fixture", arguments: { reads } });
-					else {
-						const code = `for (let i = 0; i < 2; i++) text(await tools.background_task({ action: "start", command: "while [ ! -f release ]; do sleep 0.01; done; printf 'first wave\\\\n'; exit 7", description: "first wave " + i, timeout: 10 }));\ntext(await tools.synchronous_subagent_fixture({ reads: ${reads} }));`;
-						message.content.push({ type: "toolCall", id: "notification-fixture", name: "codemode", arguments: { code } });
+				if (requests <= 2) {
+					// First start a pair to obtain IDs. The second native batch waits, starts
+					// another pair, waits again, and reads selected outputs before its boundary.
+					const wave = requests - 1;
+					if (requests === 2) message.content.push({ type: "toolCall", id: "wait-first-wave", name: "synchronous_subagent_fixture", arguments: { wave: 0 } });
+					for (let i = 0; i < 2; i++) message.content.push({ type: "toolCall", id: `start-${wave}-${i}`, name: "background_task", arguments: {
+						action: "start", command: `while [ ! -f release-${wave} ]; do sleep 0.01; done; printf 'wave ${wave}\\n'; touch exited-${wave}-${i}; exit 7`, description: `wave ${wave} job ${i}`, timeout: 10,
+					} });
+					if (requests === 2) {
+						if (process.env.BG_NOTIFICATION_MODE === "codemode") message.content.push({ type: "toolCall", id: "wait-second-wave", name: "codemode", arguments: { code: "text(await tools.synchronous_subagent_fixture({ wave: 1 }));" } });
+						else message.content.push({ type: "toolCall", id: "wait-second-wave", name: "synchronous_subagent_fixture", arguments: { wave: 1 } });
+						// Only first-wave IDs are known to the model before this batch returns.
+						const reads = Number(process.env.BG_NOTIFICATION_READS);
+						for (const task of [...tasks.values()].slice(0, reads)) message.content.push({ type: "toolCall", id: `read-${task.id}`, name: "background_task", arguments: { action: "output", id: task.id } });
 					}
 					for (let i = 0; i < message.content.length; i++) {
 						stream.push({ type: "toolcall_start", contentIndex: i, partial: message });

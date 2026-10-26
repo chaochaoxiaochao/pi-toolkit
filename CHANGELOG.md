@@ -54,6 +54,8 @@
 
 ## Unreleased
 
+- Background Tasks: fix tool exposure to `model-only` and shorten startup guidance to English, emphasizing automatic notification without sleep or polling.
+
 - OpenAI Account Pool: clear stranded `openai-codex` references after deleting the last real account and on startup, including stale membership left by external credential deletion.
 - OpenAI Account Pool: recover email labels from both profile and root-level token claims; cover removal persistence and last-account cleanup through the production extension and Pi credential cache.
 - Background Tasks: expose the approved non-polling startup guidance to direct and Codemode callers. Retain results after a user interrupt without restarting the agent, then hand them to the next user-message run; verify native tool batches, interrupts and compaction cancellation without changing Pi itself.

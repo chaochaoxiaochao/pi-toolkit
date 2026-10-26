@@ -126,15 +126,21 @@ try:
     assert loaded['tools'].count('background_task') == 1
     send('/schedule add 1h Check release status')
     wait(lambda: 'active schedule' in raw, 'Scheduler widget')
+    send('SMOKE_EXPOSURE')
+    wait(lambda: bool(tools('codemode')), 'Codemode exposure check')
+    assert 'BACKGROUND_CALL_BLOCKED' in str(tools('codemode')[-1]['result'])
+    assert not (work / 'should-not-exist').exists()
+    wait(lambda: any(e.get('event') == 'settled' for e in events()), 'exposure turn completion')
+    settled_count = len([e for e in events() if e.get('event') == 'settled'])
     send('SMOKE_START')
-    wait(lambda: len(tools()) >= 3 and any(e.get('name') == 'codemode' for e in tools('codemode')), 'Codemode startup batch')
+    wait(lambda: len(tools()) >= 3, 'model startup batch')
     starts = tools()[:3]
     assert not starts[0]['isError'] and not starts[1]['isError'] and starts[2]['isError'], starts
     first = starts[0]['result']['structuredContent']['task']
     second = starts[1]['result']['structuredContent']['task']
     assert first['status'] == second['status'] == 'running'
-    assert any('Script completed' in str(e.get('result')) for e in tools('codemode')), tools('codemode')
-    assert not finished('succeeded'), 'Sleeping job must survive Codemode completion'
+    wait(lambda: len([e for e in events() if e.get('event') == 'settled']) > settled_count, 'foreground turn completion')
+    assert not finished('succeeded'), 'Sleeping job must survive foreground turn completion'
     shot('running')
     send('/bg output ' + first['id'])
     send('SMOKE_CANCEL')
@@ -176,7 +182,7 @@ try:
     assert all(not Path(path).exists() for path in logs), 'Session logs were not removed'
     (OUT / 'events.jsonl').write_text('\n'.join(json.dumps(e) for e in records) + '\n')
     (OUT / 'result.json').write_text(json.dumps({'passed': True, 'screenshots': screens,
-        'checks': ['two jobs', 'third rejected', 'Codemode returns while jobs live', 'Scheduler coexistence', '/bg output',
+        'checks': ['two jobs', 'third rejected', 'Codemode background calls blocked', 'model returns while jobs live', 'Scheduler coexistence', '/bg output',
                    'cancel notification', 'success notification', 'main agent notification', 'no duplicate persisted notifications',
                    '5-second terminal row', 'reload cleanup', 'new-session cleanup', 'quit cleanup']}, indent=2))
 except Exception:

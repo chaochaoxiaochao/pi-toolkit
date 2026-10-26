@@ -1,5 +1,14 @@
 # Package split verification
 
+## Background Tasks: model-only exposure and English guidance
+
+- Fixed `background_task` registration to `exposure: "model-only"` without a configuration file. Guidance is now `Notifies automatically on completion. Do not sleep or poll; continue other work or end the turn.` Notifications, job ownership and output limits are unchanged.
+- Registration and wording regressions failed against the original source, then passed. Native Pi confirms direct model calls still work, the description has no appended Codemode instructions, and Codemode cannot discover or invoke the tool or create the probe's sentinel file.
+- Updated integration fixtures to issue background calls directly from the model. Four real failing shell jobs still complete within one busy native batch, with zero, one or two first-wave outputs consumed before notification. Blocking fixtures run directly or through Codemode; complete pending-batch consumption remains covered by deterministic tests.
+- Passed all **72** child tests, with no failures or skips, using installed Pi **1.4.0** via explicit `PI_TEST_BINARY` (the local launcher wrapper is not resolved by the existing test-runtime lookup). Standalone/toolkit load tests each register exactly one active background tool. Child/root dry-run packs and `npm run test:root` passed.
+- Real Pi PTY smoke passed: direct starts, rejected third job, rejected Codemode background call, foreground settlement while jobs remain alive, Scheduler coexistence, output, cancellation, automatic notifications without duplicates, and reload/new/quit process/log cleanup. Evidence: `.cache/verification/background-model-only/`. This run used an offline provider; no live-model obedience evaluation, GUI screenshots or media regeneration was performed.
+- Reviewed root AGENTS and both manifests; loading and dependency contracts need no changes. Root/child README, TESTING and changelogs reflect the new exposure. Full workspace `npm test` was not run for this package-only change.
+
 ## OpenAI Account Pool: removal reference cleanup (2026-10-23)
 
 - Reproduced with isolated fixture credentials: delete account B through Pi's credential store, then remove account A through the production `/codex_pool remove` command. Before the fix, `auth.json` retained B in the main non-token pool reference even though no real credential remained. This reproduces one stranded-reference path; the original user's exact startup error was not available.

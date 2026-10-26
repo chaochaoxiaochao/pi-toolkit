@@ -325,6 +325,7 @@ test("registration is compact, does not inject prompt rules or start session res
 	const h = harness();
 	try {
 		assert.equal(h.tool.name, "background_task");
+		assert.equal(h.tool.exposure, "model-only");
 		assert.match(h.tool.description, /return task IDs immediately/);
 		assert.ok(h.tool.description.length < 500);
 		assert.equal(h.tool.promptGuidelines, undefined);
@@ -344,9 +345,9 @@ test("start provides non-blocking next steps in both model text and structured r
 		const started = await h.tool.execute("start", { action: "start", command: "sleep 60" });
 		const { task, guidance } = started.structuredContent;
 		assert.equal(task.status, "running");
-		assert.equal(guidance, "完成会自动通知。现在不要查询等待；继续其他独立工作，没有其他工作就结束当前轮，收到通知后再取结果。");
-		assert.ok(started.content[0].text.includes(guidance), "ordinary tool callers must see the same guidance as Codemode");
-		assert.ok(h.tool.description.includes(guidance), "scripts that filter out guidance still discover the lifecycle in the tool description");
+		assert.equal(guidance, "Notifies automatically on completion. Do not sleep or poll; continue other work or end the turn.");
+		assert.ok(started.content[0].text.includes(guidance), "the start result must include the guidance");
+		assert.ok(h.tool.description.includes(guidance), "the tool description must include the same guidance");
 		assert.equal(h.tool.outputSchema.properties.guidance.type, "string");
 		assert.equal(h.tool.outputSchema.required?.includes("guidance") ?? false, false);
 		const list = await h.tool.execute("list", { action: "list" });

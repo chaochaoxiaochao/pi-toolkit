@@ -31,9 +31,11 @@ The complete `@maxiaochao/pi-toolkit` package **bundles and enables Background T
 background_task({ action: "start", command: "sleep 10; printf 'checks complete\\n'", description: "Delayed check", timeout: 120 })
 ```
 
-Each accepted start includes this exact guidance in the tool's text and `structuredContent.guidance`. The tool description carries it too, including for Codemode discovery:
+The tool is fixed to `exposure: "model-only"`: the model calls it directly; Codemode and other tools cannot call it. There is no exposure setting.
 
-> 完成会自动通知。现在不要查询等待；继续其他独立工作，没有其他工作就结束当前轮，收到通知后再取结果。
+Each accepted start includes this guidance in the tool description, result text and `structuredContent.guidance`:
+
+> Notifies automatically on completion. Do not sleep or poll; continue other work or end the turn.
 
 After the completion notification, read the result:
 
@@ -79,7 +81,7 @@ Completion, failure, cancellation, timeout and output-limit termination update t
 - While idle, pending completions are combined on the next event-loop tick and wake the main agent once. Jobs that finish after that batch can produce another notification. Pi's global steering/follow-up queue settings are unchanged.
 - If another operation such as manual compaction keeps the session busy without an agent boundary, one local timer retries after 1, 2, 4, 8, 16, then 30 seconds, staying at 30 seconds thereafter. There is no retry-count limit or expiry that discards unread results. This does not call a model or poll shell output.
 - Normal tool/settlement boundaries still deliver immediately, without waiting for the retry timer. Without a boundary, an idle session can wait up to the current retry interval (at most 30 seconds, subject to native timer delays). Once a batch is delivered or fully consumed, the next batch starts with an immediate check and fresh backoff.
-- A successful tool `output` read of a finished task consumes its pending reminder, including failed tasks. This applies to direct and Codemode callers; a script that reads and filters a result has consumed it even if it does not print it. A running snapshot, `list`, a failed log read, or a user `/bg output` inspection does not consume the main agent's reminder. Consumption does not mean the task passed validation.
+- A successful tool `output` read of a finished task consumes its pending reminder, including failed tasks. A running snapshot, `list`, a failed log read, or a user `/bg output` inspection does not consume the main agent's reminder. Consumption does not mean the task passed validation.
 - Aborted/error boundaries do not request continuation or replay a previously scheduled wake. An error does not suppress later completions.
 - A user interrupt keeps the agent stopped: accepted jobs still run, but even later completions cannot restart it. Unread results remain queryable and are handed to the next user-message run before its first model request. Another extension's custom wake does not release this interrupt state; a new user-message run or session replacement does. This adds no notification pause switch.
 - Cancelling manual compaction is separate from interrupting the agent. Pending completions still wake an otherwise-idle session after compaction succeeds, fails or is cancelled.
@@ -95,7 +97,7 @@ Pi reports asynchronous message/run-start failures through its extension error c
 | View | Limit |
 | --- | --- |
 | Model-visible output | Last 2000 lines or 50 KiB, whichever is reached first, like Bash |
-| Codemode's `structuredContent.output` | Up to 1 MiB of raw log bytes; larger logs keep their first and last 512 KiB with an omission marker |
+| Internal `structuredContent.output` | Up to 1 MiB of raw log bytes; larger logs keep their first and last 512 KiB with an omission marker |
 | Disk capture | 32 MiB per task, 256 MiB total per session |
 
 Display/program-view truncation does **not** stop the command. Disk limits **do** stop the overflowing task with `output_limit`; a full session budget rejects new starts. Nothing silently evicts old logs.
@@ -104,22 +106,11 @@ Output includes a log path for further reads. `truncated` describes the program 
 
 Output streams to private temporary logs (directory 0700, files 0600 on Unix), with bounded memory and range-limited reads. Log errors stop the task and are reported. Stdout and stderr are merged; strict ordering across the two streams is not promised. Logs and command arguments can contain secrets: choose commands accordingly.
 
-## Codemode and Bash
+## Bash and background execution
 
-Use Bash when you need a command's result before proceeding. Codemode composes tool calls and filters their results; it does not itself own background jobs.
+Use Bash when you need a command's result before proceeding. Use `background_task` directly when the command should keep running after the model's turn ends. Completion notifies the model automatically; do not add sleep or polling calls to wait for it.
 
-Codemode can start a managed job and finish immediately:
-
-```javascript
-const started = await tools.background_task({
-  action: "start",
-  command: "sleep 10; printf 'done\\n'",
-  timeout: 120,
-});
-text(started);
-```
-
-This prints the startup guidance as well as the task. Continue independent work or end the turn; do not keep a Codemode worker open to sleep or poll for completion. After notification, another script can read the result. Merely starting an unawaited Bash call is different: Codemode cancels unfinished nested calls when its script ends.
+Codemode cannot call this model-only tool. Starting an unawaited Bash call in Codemode is not a substitute: Codemode cancels unfinished nested calls when its script ends.
 
 The tool description is compact. This package adds no `promptGuidelines` or extra global system-prompt rules.
 

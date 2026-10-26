@@ -8,6 +8,7 @@ export default function (pi: ExtensionAPI) {
 		if (process.env.BG_SMOKE_EVENTS) appendFileSync(process.env.BG_SMOKE_EVENTS, JSON.stringify(entry) + "\n");
 	};
 	let sequence = 0;
+	const tasks = new Map<string, any>();
 	const observedNotifications = new Set<string>();
 	pi.registerProvider("bg-fixture", {
 		name: "Offline background-task fixture", baseUrl: "http://127.0.0.1:1", api: "bg-fixture",
@@ -21,29 +22,38 @@ export default function (pi: ExtensionAPI) {
 				const tools = getCurrentTools(context.messages);
 				record({ event: "request", lastRole: last?.role, text: text.slice(0, 2000), tools: tools.map((tool) => tool.name),
 					backgroundDescription: tools.find((tool) => tool.name === "background_task")?.description });
-				let code: string | undefined;
+				const calls: { name: string; arguments: any }[] = [];
+				const call = (args: any) => calls.push({ name: "background_task", arguments: args });
 				if (last?.role !== "toolResult") {
-					if (text.includes("SMOKE_START")) code = `const a = await tools.background_task({ action: "start", command: "sleep 9; printf 'BUILD SUCCESSFUL\\\\n'", description: "Release build", timeout: 30 });
-const b = await tools.background_task({ action: "start", command: "sleep 300", description: "Cancel this task", timeout: 300 });
-const c = await tools.background_task({ action: "start", command: "printf third" });
-text({ first: a.task.id, second: b.task.id, third: c });`;
-					else if (text.includes("SMOKE_CANCEL")) code = `const list = await tools.background_task({ action: "list" });
-const task = list.tasks.find(t => t.description === "Cancel this task");
-text(await tools.background_task({ action: "cancel", id: task.id }));`;
-					else if (text.includes("SMOKE_OUTPUT")) code = `const list = await tools.background_task({ action: "list" });
-const task = list.tasks.find(t => t.description === "Release build");
-const result = await tools.background_task({ action: "output", id: task.id });
-text({ status: result.task.status, output: result.output });`;
-					else if (text.includes("SMOKE_LONG")) code = `text(await tools.background_task({ action: "start", command: "echo $$ > shell.pid; sleep 300 & echo $! > child.pid; wait", description: "Lifecycle cleanup check", timeout: 300 }));`;
-					else if (text.includes("SMOKE_GUIDANCE")) code = `text(await tools.background_task({ action: "start", command: "sleep 300", description: "Guidance check", timeout: 300 }));`;
+					if (text.includes("SMOKE_START")) {
+						call({ action: "start", command: "sleep 9; printf 'BUILD SUCCESSFUL\\n'", description: "Release build", timeout: 30 });
+						call({ action: "start", command: "sleep 300", description: "Cancel this task", timeout: 300 });
+						call({ action: "start", command: "printf third" });
+					} else if (text.includes("SMOKE_CANCEL")) {
+						call({ action: "cancel", id: tasks.get("Cancel this task").id });
+					} else if (text.includes("SMOKE_OUTPUT")) {
+						call({ action: "output", id: tasks.get("Release build").id });
+					} else if (text.includes("SMOKE_LONG")) {
+						call({ action: "start", command: "echo $$ > shell.pid; sleep 300 & echo $! > child.pid; wait", description: "Lifecycle cleanup check", timeout: 300 });
+					} else if (text.includes("SMOKE_GUIDANCE")) {
+						call({ action: "start", command: "sleep 300", description: "Guidance check", timeout: 300 });
+					} else if (text.includes("SMOKE_EXPOSURE")) {
+						calls.push({ name: "codemode", arguments: { code: `
+text({ discovered: ALL_TOOLS.some(t => t.name === "background_task"), available: "background_task" in tools });
+try { await tools.background_task({ action: "start", command: "touch should-not-exist" }); text("UNEXPECTED_SUCCESS"); }
+catch { text("BACKGROUND_CALL_BLOCKED"); }` } });
+					}
 				}
-				const message: any = { role: "assistant", api: model.api, provider: model.provider, model: model.id, timestamp: Date.now(), content: [], stopReason: code ? "toolUse" : "stop",
+				const message: any = { role: "assistant", api: model.api, provider: model.provider, model: model.id, timestamp: Date.now(), content: [], stopReason: calls.length ? "toolUse" : "stop",
 					usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
 				stream.push({ type: "start", partial: message });
-				if (code) {
-					message.content.push({ type: "toolCall", id: `fixture-${++sequence}`, name: "codemode", arguments: { code } });
-					stream.push({ type: "toolcall_start", contentIndex: 0, partial: message });
-					stream.push({ type: "toolcall_end", contentIndex: 0, toolCall: message.content[0], partial: message });
+				if (calls.length) {
+					for (const call of calls) {
+						const index = message.content.length;
+						message.content.push({ type: "toolCall", id: `fixture-${++sequence}`, ...call });
+						stream.push({ type: "toolcall_start", contentIndex: index, partial: message });
+						stream.push({ type: "toolcall_end", contentIndex: index, toolCall: message.content[index], partial: message });
+					}
 				} else {
 					const reply = text.includes("[Background task finished]") ? "BACKGROUND_NOTIFICATION_RECEIVED" : "Main agent is ready; accepted background tasks keep running.";
 					message.content.push({ type: "text", text: reply });
@@ -60,7 +70,12 @@ text({ status: result.task.status, output: result.output });`;
 		record({ event: "loaded", tools: pi.getAllTools().map((tool) => tool.name) });
 		if (ctx.hasUI) ctx.ui.setTitle("Pi Background Tasks Smoke");
 	});
-	pi.on("tool_execution_end", (event) => record({ event: "tool_end", name: event.toolName, isError: event.isError, result: event.result }));
+	pi.on("agent_settled", () => record({ event: "settled" }));
+	pi.on("tool_execution_end", (event) => {
+		const data = event.result.structuredContent as any;
+		if (event.toolName === "background_task" && data?.action === "start" && data.task) tasks.set(data.task.description, data.task);
+		record({ event: "tool_end", name: event.toolName, isError: event.isError, result: event.result });
+	});
 	pi.on("context", (_event, ctx) => {
 		// Both boundary entries and idle messages are persisted before the provider request.
 		// Key by entry ID so two actual notifications for the same tasks remain observable.

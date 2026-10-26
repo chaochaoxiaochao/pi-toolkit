@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Fix `background_task` exposure to `model-only`; reject Codemode and other nested callers without adding a configuration file.
+- Use concise English startup guidance emphasizing automatic notification without sleep or polling.
+
 ## 2026-10-22 - v0.1.1
 
 - batch unread completions at tool boundaries, preserve interrupted runs, and provide non-polling startup guidance
