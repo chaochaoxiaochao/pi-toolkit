@@ -1,3 +1,7 @@
+## 2026-10-26 - v0.7.6
+
+- Esc in a child waits abortGraceSeconds (default 30) for a correction before publishing child_aborted
+
 ## 2026-10-23 - v0.7.5
 
 - bound missing-report recovery and close unconfirmed child outcomes

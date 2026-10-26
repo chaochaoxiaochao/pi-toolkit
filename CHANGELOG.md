@@ -1,3 +1,7 @@
+## 2026-10-26 - v0.13.14
+
+- herdr-subagents v0.7.6: Esc in a child waits abortGraceSeconds (default 30) for a correction before publishing child_aborted
+
 ## 2026-10-26 - v0.13.13
 
 - background-tasks v0.1.2: restrict background tasks to model-only and use concise automatic-notification guidance
