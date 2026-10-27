@@ -6,7 +6,7 @@
 #   pi-worktree -l | --list                # list worktrees (main checkout marked "main checkout")
 #   pi-worktree -i <name>                  # show base commit, ahead/behind, unique commits
 #   pi-worktree -o | --out                 # cd back to the main checkout
-#   pi-worktree -r <name>                  # remove worktree <name> (must be clean & merged)
+#   pi-worktree -r <name> [<name> ...]     # remove worktrees (confirms dirty or unmerged)
 #   pi-worktree -p | --prune               # drop stale worktree registrations
 set -euo pipefail
 
@@ -150,7 +150,14 @@ cmd_info() {
 
 cmd_remove() {
   require_repo
-  [[ $# -eq 1 ]] || die "usage: pi-worktree -r <name>"
+  [[ $# -ge 1 ]] || die "usage: pi-worktree -r <name> [<name> ...]"
+  local name
+  for name in "$@"; do
+    remove_one "$name"
+  done
+}
+
+remove_one() {
   local dir; dir="$(wt_dir "$1")"
   local branch registered rm_anyway=0 force=0
   if [[ ! -d "$dir" ]]; then

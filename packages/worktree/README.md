@@ -17,7 +17,7 @@ pi-worktree create feature
 pi-worktree create --base main --json feature
 pi-worktree info feature
 pi-worktree out
-pi-worktree remove feature
+pi-worktree remove feature another-feature
 ```
 
 `create` 从当前分支（或显式 `--base`）创建或复用 `.worktrees/feature` 并记录 base，不启动 Pi。`--json` 提供相同操作的机器可读结果。
@@ -65,11 +65,13 @@ pi-worktree create [--base <ref>] [--json] <name>
 pi-worktree list
 pi-worktree info <name>
 pi-worktree out
-pi-worktree remove <name>
+pi-worktree remove <name> [<name> ...]
 pi-worktree prune
 ```
 
 `create` 是幂等接口；`create --json` 供 Extension 和其他宿主使用，返回 `created`、`attached`、`reused` 或 `already-active`，以及绝对路径、分支和 dirty 状态。已有 worktree 会复用；已存在但未挂载的同名分支会挂载；stale 注册、非法名称和路径冲突会显式失败。
+
+`remove` 按顺序删除指定 worktree；每个脏 worktree 或未合并分支仍需单独确认。遇到错误或拒绝确认时停止，已经删除的 worktree 不会恢复。
 
 Agent 用法见 `skills/pi-worktree/SKILL.md`。测试流程、夹具和结果见 [TESTING.md](TESTING.md)。
 

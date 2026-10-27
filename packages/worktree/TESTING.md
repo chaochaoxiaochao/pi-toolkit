@@ -19,6 +19,7 @@
 - 已删除的 CLI `start` 和 `prepare` 会显式失败。
 - `list` 标记主 checkout 和子 worktree。
 - `info` 报告 clean、branch、base 和 ahead。
+- `remove` 支持多个名称，逐个确认风险；拒绝时停止且保留后续 worktree。补全支持后续名称。
 - postinstall 把可执行 CLI 与 completion 复制到隔离 HOME，并保持执行权限。
 
 ## 最近验证结果

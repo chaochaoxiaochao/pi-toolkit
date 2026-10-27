@@ -19,7 +19,7 @@ Installed by the package postinstall hook to `~/.local/bin/pi-worktree`, with ba
 | `pi-worktree list` | All worktrees; the main checkout is marked `(main checkout)`, stale registrations are flagged. |
 | `pi-worktree info <name>` | Clean/dirty status, branch and HEAD, base commit, ahead/behind `main`, unique commits. |
 | `pi-worktree out` | Open a shell in the main checkout (for merging). |
-| `pi-worktree remove <name>` | Remove the worktree and its branch; asks before discarding dirty files or unmerged commits. |
+| `pi-worktree remove <name> [<name> ...]` | Remove worktrees and branches in order; asks before discarding dirty files or unmerged commits. Stops on failure without undoing earlier removals. |
 | `pi-worktree prune` | Drop registrations whose directory was deleted by hand. |
 
 ## Isolating a task

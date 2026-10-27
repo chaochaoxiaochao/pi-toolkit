@@ -23,9 +23,11 @@ _pi_worktree() {
   fi
 
   case "$first" in
-    -i|--info|info|-r|--remove|remove|rm|create)
-      # only the second word of info/remove completes worktree names;
-      # later words offer nothing (info/remove take no further args)
+    -r|--remove|remove|rm)
+      COMPREPLY=($(compgen -W "$wts" -- "$cur"))
+      ;;
+    -i|--info|info|create)
+      # info and create accept one name
       if (( COMP_CWORD == 2 )); then
         COMPREPLY=($(compgen -W "$wts" -- "$cur"))
       else

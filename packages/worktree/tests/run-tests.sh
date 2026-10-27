@@ -127,6 +127,49 @@ mkdir "$ROOT/symlink-repo" "$ROOT/outside-worktrees"
 )
 
 bash "$PACKAGE_DIR/bin/pi-worktree" --help | grep -q 'pi-worktree create'
+bash "$PACKAGE_DIR/bin/pi-worktree" remove feature attachable
+test ! -d .worktrees/feature && test ! -d .worktrees/attachable
+! git show-ref --verify --quiet refs/heads/feature
+! git show-ref --verify --quiet refs/heads/attachable
+
+bash "$PACKAGE_DIR/bin/pi-worktree" create --json batch-dirty >/dev/null
+bash "$PACKAGE_DIR/bin/pi-worktree" create --json batch-later >/dev/null
+echo dirty >> .worktrees/batch-dirty/tracked.txt
+if printf 'n\n' | bash "$PACKAGE_DIR/bin/pi-worktree" rm batch-dirty batch-later; then
+  echo "remove ignored a declined confirmation" >&2
+  exit 1
+fi
+test -d .worktrees/batch-dirty && test -d .worktrees/batch-later
+printf 'y\n' | bash "$PACKAGE_DIR/bin/pi-worktree" -r batch-dirty batch-later
+test ! -d .worktrees/batch-dirty && test ! -d .worktrees/batch-later
+
+bash "$PACKAGE_DIR/bin/pi-worktree" create --json batch-first >/dev/null
+bash "$PACKAGE_DIR/bin/pi-worktree" create --json batch-last >/dev/null
+if bash "$PACKAGE_DIR/bin/pi-worktree" --remove batch-first missing-name batch-last; then
+  echo "remove ignored a missing worktree" >&2
+  exit 1
+fi
+test ! -d .worktrees/batch-first && test -d .worktrees/batch-last
+bash "$PACKAGE_DIR/bin/pi-worktree" create --json batch-unmerged >/dev/null
+git -C .worktrees/batch-unmerged commit --allow-empty -qm unmerged
+if printf 'n\n' | bash "$PACKAGE_DIR/bin/pi-worktree" remove batch-unmerged batch-last; then
+  echo "remove ignored an unmerged branch confirmation" >&2
+  exit 1
+fi
+test -d .worktrees/batch-unmerged && test -d .worktrees/batch-last
+printf 'y\n' | bash "$PACKAGE_DIR/bin/pi-worktree" remove batch-unmerged batch-last
+! git show-ref --verify --quiet refs/heads/batch-unmerged
+test ! -d .worktrees/batch-last
+
+if bash "$PACKAGE_DIR/bin/pi-worktree" remove >/dev/null 2>&1; then
+  echo "remove accepted no names" >&2
+  exit 1
+fi
+source "$PACKAGE_DIR/bin/pi-worktree-completion.bash"
+COMP_WORDS=(pi-worktree remove prepared f)
+COMP_CWORD=3
+_pi_worktree
+[[ " ${COMPREPLY[*]} " == *" from-subdir "* ]]
 if bash "$PACKAGE_DIR/bin/pi-worktree" prepare feature >/dev/null 2>&1; then
   echo "removed prepare command is still accepted" >&2
   exit 1

@@ -1,3 +1,7 @@
+## Unreleased
+
+- Allow bundled pi-worktree to remove multiple worktrees in one command.
+
 ## 2026-10-26 - v0.13.14
 
 - herdr-subagents v0.7.6: Esc in a child waits abortGraceSeconds (default 30) for a correction before publishing child_aborted

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Allow removing multiple worktrees in order, retaining individual safety confirmations and stopping on failure.
+
 ## 2026-10-23 - v0.4.1
 
 - return the worktree root from already-active nested directories
