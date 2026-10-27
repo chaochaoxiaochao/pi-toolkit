@@ -1,3 +1,7 @@
+## 2026-10-27 - v0.13.16
+
+- refine global verification and skill-boundary guidance; require independent evaluation and direct correction of flawed premises
+
 ## 2026-10-27 - v0.13.15
 
 - worktree v0.4.2: support removing multiple worktrees in order
