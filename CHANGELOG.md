@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-27 - v0.13.15
 
+- worktree v0.4.2: support removing multiple worktrees in order
 - Allow bundled pi-worktree to remove multiple worktrees in one command.
 
 ## 2026-10-26 - v0.13.14

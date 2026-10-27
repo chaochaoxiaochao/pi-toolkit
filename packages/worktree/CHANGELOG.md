@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2026-10-27 - v0.4.2
 
+- support removing multiple worktrees in order
 - Allow removing multiple worktrees in order, retaining individual safety confirmations and stopping on failure.
 
 ## 2026-10-23 - v0.4.1
