@@ -67,6 +67,9 @@
 
 ## Unreleased
 
+- Global instructions: add cognitive objectivity and anti-sycophancy rules for leading questions, independent verification, and direct correction.
+- Global instructions: consolidate verification and completion criteria, clarify skill inspection exceptions, and remove duplicate simplicity guidance while preserving ASD-STE100 requirements.
+
 - Background Tasks: fix tool exposure to `model-only` and shorten startup guidance to English, emphasizing automatic notification without sleep or polling.
 
 - OpenAI Account Pool: clear stranded `openai-codex` references after deleting the last real account and on startup, including stale membership left by external credential deletion.

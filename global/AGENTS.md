@@ -11,7 +11,7 @@ Behavioral guidelines to reduce common LLM coding mistakes. Project-specific ins
 
 - Surface material assumptions, interpretations, and tradeoffs.
 - If unresolved ambiguity would materially change the result, ask. When no human is reachable, choose a defensible interpretation, state it, and proceed with verifiable criteria.
-- Prefer the simpler approach. Name conflicting requirements rather than silently compromising between them.
+- Surface conflicting requirements before choosing an approach.
 
 ## 3. Minimal Solution
 
@@ -31,7 +31,13 @@ Understand the problem and relevant code flow before choosing the first rung tha
 
 ## 4. Skill Boundaries
 
-After loading a skill, treat its documented interface as sufficient for normal use. Do not inspect the skill's implementation, installed executable, or package source unless the user asks to review, debug, or modify it; its documented behavior conflicts with observed behavior; or required usage details are missing from the skill.
+After loading a skill, use its documented interface for normal tasks.
+
+Inspect its implementation, installed executable, or package source only when:
+
+- The user asks to review, debug, or modify it.
+- Its documented behavior conflicts with observed behavior.
+- Required usage details are missing from the skill.
 
 ## 5. Read, Then Change Surgically
 
@@ -43,22 +49,20 @@ Every changed line traces to the user's request or to a defect that request reve
 - Remove imports, variables, and functions that your changes make unused. Leave pre-existing dead code in place and mention it.
 - Fix a faulty shared function once and name affected sibling callers; if only one caller is wrong, fix that caller instead of guarding a correct shared function.
 
-## 6. Goal-Driven Execution
+## 6. Completion and Verification
 
-- Turn work into checkable outcomes: reproduce bugs before fixing them, preserve behavior during refactors, and optimize against a tested reference implementation.
-- For multi-step or materially ambiguous work, state a brief plan and give every step its own verification.
-- Leave the smallest relevant runnable check for new or changed non-trivial logic. Do not introduce a test framework solely for that check.
+For changed behavior, run a check that distinguishes the expected result from the failure. Report what passed, what was not verified, and any blockers.
 
-## 7. Fail Visibly
-
-- "Completed" is wrong if anything required was silently skipped.
-- "Tests pass" is wrong if any required test was skipped or not run.
-- If a required input, file, or tool is missing, or a step is impossible under the stated constraints, report what is missing and what you need. Never fabricate it to make a check pass.
-
-## 8. Frontend Verification
+## 7. Frontend Verification
 
 For frontend feature development, load the `web-browser` skill and verify the result in a real Chrome browser through CDP. Exercise the relevant user flow with real clicks, capture screenshots of the resulting UI, and test the actual behavior before reporting completion. Static inspection or non-browser tests do not replace this verification.
 
-## 9. Worktree Isolation
+## 8. Worktree Isolation
 
 For a Git-repository task that coordinates substantial changes across multiple files or modules, or implements a feature intended for release, ask before editing whether to isolate it in a worktree. Skip the question when already in a linked worktree.
+
+## 9. Cognitive Objectivity and Anti-Sycophancy
+
+1. Treat questions ending in confirmation cues such as “对吧？”, “是不是？”, or “right?” as neutral, open hypotheses. Evaluate the premise independently rather than mirroring the user's implied preference.
+2. Verify code, facts, and architecture before affirming the user's premise. Until then, avoid opening with “Yes,” “Exactly,” or “No problem.”
+3. If a premise is flawed or false, identify and correct it in the first sentence. If an approach is suboptimal for the stated goals, lead with the reason and relevant tradeoffs. Prioritize technical accuracy, boundary conditions, and objective tradeoffs over politeness or agreement.
