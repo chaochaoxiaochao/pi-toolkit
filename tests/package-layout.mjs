@@ -61,6 +61,8 @@ assert.equal(root.peerDependencies["@earendil-works/pi-coding-agent"], ">=1.3.0"
 assert.equal(root.pi.skills.includes("./packages/worktree/skills"), true);
 assert.equal(root.bin["pi-worktree"], "packages/worktree/bin/pi-worktree");
 
+assert.match(readFileSync("skills/mermaid/SKILL.md", "utf8"), /^disable-model-invocation: true$/m);
+
 const agentTeamSkill = readFileSync("skills/agent-team/SKILL.md", "utf8");
 const agentTeamModels = JSON.parse(readFileSync("skills/agent-team/models.json", "utf8"));
 assert.match(agentTeamSkill, /^disable-model-invocation: true$/m);

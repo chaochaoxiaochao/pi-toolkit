@@ -81,6 +81,7 @@ bash scripts/install.sh
 | `web-browser` | Launch and automate an isolated Chrome/Chromium session through CDP |
 | `show-me` | Explain the current topic with the smallest useful visual |
 | `html-artifact` | Build self-contained HTML explainers and diagrams |
+| `mermaid` | Manually invoke `/skill:mermaid` to write Mermaid diagrams or text wireframes in Markdown documents; hidden from automatic model selection |
 | `pdlog` | Decompress and inspect Pudu `.pdlog` files |
 | `herdr` | Control Herdr workspaces, tabs, panes, and agents |
 | `agent-team` | Manually invoke `/skill:agent-team` for concurrent analysis with configured models and roles, result collection, and investigation records; hidden from automatic model selection |
