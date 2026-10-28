@@ -1,3 +1,7 @@
+## 2026-10-28 - v0.13.17
+
+- bundle the explicit-only mermaid skill for Markdown diagrams and text wireframes; prune global AGENTS.md guidance
+
 ## Unreleased
 
 - Move the personal `mermaid` skill into the toolkit's bundled skills, preserving explicit-only invocation.
