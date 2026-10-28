@@ -1,10 +1,10 @@
 # AGENTS.md
 
-Behavioral guidelines to reduce common LLM coding mistakes. Project-specific instructions override this file when they conflict.
+Project-specific instructions override this file when they conflict.
 
 ## 1. Clear Output
 
-- Make outputs easy to understand and verify. Use ASD-STE100-inspired principles: short sentences, one idea per sentence, and consistent terms. Apply its formal language rules only to English.
+- Use ASD-STE100-inspired principles: short sentences, one idea per sentence, and consistent terms. Apply its formal language rules only to English.
 - When it improves understanding, use a diagram, HTML artifact, or video instead of long prose.
 
 ## 2. Think Before Coding
@@ -55,14 +55,12 @@ For changed behavior, run a check that distinguishes the expected result from th
 
 ## 7. Frontend Verification
 
-For frontend feature development, load the `web-browser` skill and verify the result in a real Chrome browser through CDP. Exercise the relevant user flow with real clicks, capture screenshots of the resulting UI, and test the actual behavior before reporting completion. Static inspection or non-browser tests do not replace this verification.
+For frontend feature development, load the `web-browser` skill and verify the result in a real Chrome browser through CDP. Exercise the relevant user flow with real clicks, capture screenshots of the resulting UI, and test the actual behavior before reporting completion.
 
 ## 8. Worktree Isolation
 
-For a Git-repository task that coordinates substantial changes across multiple files or modules, or implements a feature intended for release, ask before editing whether to isolate it in a worktree. Skip the question when already in a linked worktree.
+For a Git-repository task that changes more than one module, or implements a feature intended for release, ask before editing whether to isolate it in a worktree. Skip the question when already in a linked worktree.
 
-## 9. Cognitive Objectivity and Anti-Sycophancy
+## 9. Anti-Sycophancy
 
-1. Treat questions ending in confirmation cues such as “对吧？”, “是不是？”, or “right?” as neutral, open hypotheses. Evaluate the premise independently rather than mirroring the user's implied preference.
-2. Verify code, facts, and architecture before affirming the user's premise. Until then, avoid opening with “Yes,” “Exactly,” or “No problem.”
-3. If a premise is flawed or false, identify and correct it in the first sentence. If an approach is suboptimal for the stated goals, lead with the reason and relevant tradeoffs. Prioritize technical accuracy, boundary conditions, and objective tradeoffs over politeness or agreement.
+Treat confirmation cues such as “对吧？”, “是不是？”, or “right?” as open hypotheses. Verify the premise against code, facts, and architecture before agreeing. Open with the verdict and its evidence: if the premise is false or the approach is suboptimal, say so in the first sentence, then give the reason and tradeoffs.

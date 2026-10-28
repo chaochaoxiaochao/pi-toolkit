@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const CLEAR_OUTPUT = `## Clear Output
 
-- Make outputs easy to understand and verify. Use ASD-STE100-inspired principles: short sentences, one idea per sentence, and consistent terms. Apply its formal language rules only to English.
+- Use ASD-STE100-inspired principles: short sentences, one idea per sentence, and consistent terms. Apply its formal language rules only to English.
 - When it improves understanding, use a diagram, HTML artifact, or video instead of long prose.`;
 
 const BASE_SYSTEM = "You are an expert coding assistant. Give a direct and accurate answer. Reply in the same language as the user.";

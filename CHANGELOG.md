@@ -1,3 +1,9 @@
+## Unreleased
+
+- Move the personal `mermaid` skill into the toolkit's bundled skills, preserving explicit-only invocation.
+- Clarify Mermaid preview verification and examples for choosing diagrams versus text wireframes; drop Pi-terminal rendering rules.
+- Prune global AGENTS.md: drop no-op lines, merge the anti-sycophancy rules into one positive instruction, and scope worktree isolation to changes spanning more than one module.
+
 ## 2026-10-27 - v0.13.16
 
 - refine global verification and skill-boundary guidance; require independent evaluation and direct correction of flawed premises
