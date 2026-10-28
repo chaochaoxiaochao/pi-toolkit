@@ -51,3 +51,21 @@ _Avoid_: Full history, all todos
 **Plan History**:
 The done and cancelled steps retained on the active conversation branch and shown by `/todos` together with the Current Plan.
 _Avoid_: Current Plan
+
+### Ticket Loop
+
+**Ticket Loop**:
+The automated implementation of every ticket under one approved spec, ending when all tickets are Accepted or the loop pauses for the user.
+_Avoid_: Impl loop, implements
+
+**Coordinator**:
+The main Pi session that selects unblocked tickets, dispatches Ticket Sessions, judges their results, and merges them.
+_Avoid_: Main agent, orchestrator, scheduler
+
+**Ticket Session**:
+A full interactive Pi session in Herdr that implements exactly one ticket in a fresh context and may use its own subagents.
+_Avoid_: Subagent, worker
+
+**Accepted**:
+The state of a ticket whose evidence the Coordinator has verified and whose branch is merged. Only Accepted tickets unblock their dependents.
+_Avoid_: Done, finished, completed
