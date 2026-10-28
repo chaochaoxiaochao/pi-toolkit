@@ -28,6 +28,7 @@ render = os.environ.get('BG_SMOKE_RENDER') == '1'
 capture = os.environ.get('BG_SMOKE_CAPTURE') == '1'
 env = dict(os.environ, PI_CODING_AGENT_DIR=str(work), PI_OFFLINE='1', BG_SMOKE_EVENTS=str(events_path), TERM='xterm-256color', COLORTERM='truecolor')
 env.pop('PI_HERDR_SUBAGENTS_CHILD', None)
+env.pop('HERDR_ENV', None)  # Keep this smoke run's widget-only path; Herdr views are covered by viewer.mjs.
 (work / 'settings.json').write_text(json.dumps({'quietStartup': True}))
 args = ['--no-extensions', '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-session', '--offline',
         '-e', 'builtin:codemode', '-e', str(PKG / 'extensions/background-tasks.ts'),

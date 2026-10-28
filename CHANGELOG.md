@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- Herdr Subagents: click a Fleet task row to focus its exact pane; retain keyboard navigation. Consolidate stale legacy tests into the maintained suite and verify silent-child completion by explicit report/exit events instead of idle status or added delays.
+- Background Tasks: inside Herdr, show each task's command and live output in a read-only pane of one per-session tab that closes when no task runs; click a widget task row or run `/bg watch <id>` to jump to its pane. Execution stays local and unchanged.
 - Move the personal `mermaid` skill into the toolkit's bundled skills, preserving explicit-only invocation.
 - Clarify Mermaid preview verification and examples for choosing diagrams versus text wireframes; drop Pi-terminal rendering rules.
 - Prune global AGENTS.md: drop no-op lines, merge the anti-sycophancy rules into one positive instruction, and scope worktree isolation to changes spanning more than one module.

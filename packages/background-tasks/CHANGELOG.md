@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Inside Herdr, show each background task in a read-only pane of one per-session **Background tasks** tab: command header, live log via `tail -f`, and a final result line. Execution, logs, limits and notifications are unchanged.
+- Open the tab without focus on the first start, reuse finished panes, and close the tab when no task runs, waiting while the user looks at it. Close it immediately on session shutdown, reload and replacement.
+- Add `/bg watch <id>`, and in fullscreen mode a click on a widget task row, to reopen a closed pane and focus that task's pane. Closing a pane never cancels its task. Herdr subagent children and non-Herdr sessions open no view; Herdr failures warn once and leave tasks running.
+
 ## 2026-10-26 - v0.1.2
 
 - restrict background tasks to model-only and use concise automatic-notification guidance

@@ -48,6 +48,14 @@ _Avoid_: Todo list, internal checklist
 The unfinished portion of an Execution Plan: exactly one doing step followed by zero or more todo steps. Model-facing Todo results and the widget show only this snapshot.
 _Avoid_: Full history, all todos
 
+**Background Task**:
+A local shell command owned by one Pi session that runs after the model's turn and reports its completion to the main agent.
+_Avoid_: Subagent, background job pane
+
+**Task View**:
+A read-only Herdr pane that shows one Background Task's command and live output. Closing it never affects the task.
+_Avoid_: Task pane, terminal task
+
 **Plan History**:
 The done and cancelled steps retained on the active conversation branch and shown by `/todos` together with the Current Plan.
 _Avoid_: Current Plan

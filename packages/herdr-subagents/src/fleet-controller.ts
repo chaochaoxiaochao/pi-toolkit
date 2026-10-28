@@ -2,7 +2,7 @@ import { watch } from "node:fs";
 import { basename, dirname } from "node:path";
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { Container, isKeyRelease, matchesKey, type Component, type TUI } from "@earendil-works/pi-tui";
+import { Container, isKeyRelease, matchesKey, type Component, type TUI, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 import type { HerdrAutomation } from "./herdr.ts";
 import { fleetEditorHasFocus, FleetSelection, fleetLines, readSessionTokens, type FleetTaskMetrics } from "./fleet.ts";
 import { focusActiveTask } from "./monitor.ts";
@@ -47,14 +47,27 @@ export class FleetWidget implements Component {
 	private generation = 0;
 	private disposed = false;
 	private sourceKey = "";
+	private readonly onSelect?: (taskNumber: number) => void;
+	private renderedTasks: number[] = [];
 
-	constructor(tui: TUI, theme: Theme, batch: HerdrSubagentsBatchDetails, selection: FleetSelection, runtime: FleetWidgetRuntime = defaultFleetWidgetRuntime) {
+	/** With `onSelect`, a primary click on a task row selects that task (fullscreen mode only). */
+	constructor(tui: TUI, theme: Theme, batch: HerdrSubagentsBatchDetails, selection: FleetSelection, runtime: FleetWidgetRuntime = defaultFleetWidgetRuntime, onSelect?: (taskNumber: number) => void) {
 		this.tui = tui;
 		this.theme = theme;
 		this.selection = selection;
 		this.runtime = runtime;
 		this.batch = batch;
+		this.onSelect = onSelect;
 		this.configureLiveUpdates();
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (this.disposed || !this.onSelect || event.type !== "click" || event.button !== "left") return undefined;
+		// Row 0 is the title; each following row is one task in activity order.
+		const taskNumber = this.renderedTasks[event.y - 1];
+		if (taskNumber === undefined) return undefined;
+		this.onSelect(taskNumber);
+		return { handled: true, render: false };
 	}
 
 	update(batch: HerdrSubagentsBatchDetails): void {
@@ -65,6 +78,7 @@ export class FleetWidget implements Component {
 	}
 
 	render(width: number): string[] {
+		this.renderedTasks = this.batch.activity.map((task) => task.index + 1);
 		return fleetLines(this.batch, this.selection, { width, metrics: this.metrics, theme: this.theme });
 	}
 
@@ -213,7 +227,10 @@ export class FleetController {
 		if (this.widget) { this.widget.update(this.activeBatch); return; }
 		this.ui.setWidget("herdr-subagents", (tui, theme) => {
 			this.tui = tui;
-			this.widget = new FleetWidget(tui, theme, this.activeBatch as HerdrSubagentsBatchDetails, this.selection, this.widgetRuntime);
+			this.widget = new FleetWidget(tui, theme, this.activeBatch as HerdrSubagentsBatchDetails, this.selection, this.widgetRuntime, (taskNumber) => {
+				// A click is best effort: a pane closed meanwhile must not surface as an unhandled rejection.
+				void focusActiveTask(this.activeBatch, taskNumber, this.herdr).catch(() => {});
+			});
 			return this.widget;
 		}, { placement: "belowEditor" });
 	}

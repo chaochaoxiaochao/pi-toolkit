@@ -48,7 +48,7 @@ pi-toolkit/
 - Herdr Subagents 必须运行全部确定性测试、加载 `packages/herdr-subagents/extensions/herdr-subagents.ts`，并在真实 Herdr 中验证只读并发批次和 tab 清理；媒体必须通过 `HERDR_MEDIA_WINDOW_ID=<window-id> node scripts/capture-package-media.mjs` 录制父 Pi 对话、逐一聚焦三个真实 Agent pane 和最终父会话结果，同时保留截图和完整 WebM 视频。
 - OpenAI Account Pool 必须运行全部确定性测试，并通过 `npm --prefix packages/openai-account-pool run load-test` 加载 `packages/openai-account-pool/extensions/openai-account-pool.ts`（该子包不在主包默认 loadout 和根 load-test 中），并验证：只有结构化 `usage_limit_reached` 或明确授权失效才切账号、向外输出后不重放、auth.json 仍是凭据权威来源且主条目只存非秘密引用。测试夹具凭据只限隔离临时目录，仓库、媒体和 tarball 不得包含真实令牌或授权 callback URL。
 - Scheduler 必须运行确定性 fake-clock 与 extension 集成测试、加载 `packages/scheduler/extensions/scheduler.ts`，并验证定时/手动触发统一使用 followUp、同一 schedule 最多积压一次、取消与 session shutdown 清理 timer；媒体展示真实核心状态机输出。
-- Background Tasks 验收见 `packages/background-tasks/TESTING.md`：覆盖原生 Bash 双层输出对照、超时/进程树清理与真实 Pi TUI；主包默认内嵌并启用，根 load-test 验证完整组合包只注册一次；不向全局 promptGuidelines 添加工具规则。
+- Background Tasks 验收见 `packages/background-tasks/TESTING.md`：覆盖原生 Bash 双层输出对照、超时/进程树清理与真实 Pi TUI；主包默认内嵌并启用，根 load-test 验证完整组合包只注册一次；不向全局 promptGuidelines 添加工具规则。Herdr 只用于 Task View 显示，不执行命令（见 ADR 0003）；修改 viewer 时在真实 Herdr 中验证 tab 创建、复用与关闭。
 - Cache Export 只表述服务商/Pi 报告的 usage；主请求与辅助调用分列，时间用 message timestamp/duration，不用落盘间隔冒充空闲。历史缓存参数只存非秘密白名单；缺证据写未知，不能用 Pi 推断校准服务端状态。
 - Herdr 漏报补救只在子侧：before-settle 最多一次持久化提醒，重复漏报/最终错误写未确认诊断；用户 Esc 跳过该边界，agent_settled 启动 `abortGraceSeconds`（默认 30）宽限计时；期间有新一轮或 session 关闭则取消计时，超时才写 `child_aborted` 未确认诊断，不唤醒模型、不新增父侧补报监控。
 - Cache Export 的发布验收要求确定性测试通过，并在有 Chrome 的环境中跑浏览器 E2E；skip 不算发布验收通过。

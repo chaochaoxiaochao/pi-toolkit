@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 import type { Clock, TaskSnapshot } from "./background-tasks.ts";
 
 export const WIDGET_KEY = "background-tasks";
@@ -22,11 +22,23 @@ export class BackgroundWidget {
 	private readonly getTasks: () => TaskSnapshot[];
 	private readonly clock: Clock;
 	private readonly theme: Theme;
+	private readonly onSelect?: (id: string) => void;
+	private rows: string[] = [];
 
-	constructor(getTasks: () => TaskSnapshot[], clock: Clock, theme: Theme) {
+	/** With `onSelect`, a primary click on a task row selects it (fullscreen mode only). */
+	constructor(getTasks: () => TaskSnapshot[], clock: Clock, theme: Theme, onSelect?: (id: string) => void) {
 		this.getTasks = getTasks;
 		this.clock = clock;
 		this.theme = theme;
+		this.onSelect = onSelect;
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (!this.onSelect || event.type !== "click" || event.button !== "left") return;
+		const id = this.rows[event.y - 1];
+		if (!id) return;
+		this.onSelect(id);
+		return { handled: true, render: false };
 	}
 
 	render(width: number): string[] {
@@ -34,6 +46,7 @@ export class BackgroundWidget {
 		const tasks = visibleTasks(this.getTasks(), this.clock.now());
 		const active = tasks.filter((task) => task.status === "running").length;
 		const { theme } = this;
+		this.rows = tasks.map((task) => task.id);
 		this.lines = [
 			truncateToWidth(theme.fg("accent", `Background tasks ${active}/2`), width),
 			...tasks.map((task) => {

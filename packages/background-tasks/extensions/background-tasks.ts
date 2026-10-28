@@ -4,6 +4,8 @@ import { Text } from "@earendil-works/pi-tui";
 import { stripVTControlCharacters } from "node:util";
 import { Type } from "typebox";
 import { BackgroundTasks, errorText, summary, systemClock, type Clock, type TaskSnapshot } from "../src/background-tasks.ts";
+import { cliHerdr, type HerdrCall } from "../src/herdr.ts";
+import { HerdrViewer } from "../src/viewer.ts";
 import { BackgroundWidget, FINISHED_VISIBLE_MS, WIDGET_KEY, duration, visibleTasks } from "../src/widget.ts";
 
 const actions = ["start", "list", "output", "cancel"] as const;
@@ -51,14 +53,20 @@ function validate(params: Params): void {
 function formatTask(task: TaskSnapshot): string {
 	return `${task.id} · ${task.status} · ${duration(task.elapsed_seconds)} / ${duration(task.timeout)}${task.exit_code === undefined ? "" : ` · exit ${task.exit_code}`} · ${JSON.stringify(task.description)}`;
 }
-function parseCommand(input: string): Params {
+function parseCommand(input: string): Params | { action: "watch"; id: string } {
 	const parts = input.trim().split(/\s+/).filter(Boolean);
 	if (parts.length === 0 || (parts.length === 1 && parts[0] === "list")) return { action: "list" };
-	if (parts.length === 2 && (parts[0] === "output" || parts[0] === "cancel")) return { action: parts[0], id: parts[1] };
-	throw new Error("usage: /bg [list | output <id> | cancel <id>]");
+	if (parts.length === 2 && (parts[0] === "output" || parts[0] === "cancel" || parts[0] === "watch")) return { action: parts[0], id: parts[1] };
+	throw new Error("usage: /bg [list | output <id> | cancel <id> | watch <id>]");
 }
 
-export default function (pi: ExtensionAPI, dependencies: { operations?: BashOperations; clock?: Clock; logRoot?: string } = {}) {
+/** Herdr panes are a view for the user's own Pi session; subagent children keep only their widget. */
+function herdrWorkspace(env: NodeJS.ProcessEnv): string | undefined {
+	if (env.HERDR_ENV !== "1" || env.PI_HERDR_SUBAGENTS_CHILD === "1") return;
+	return env.HERDR_WORKSPACE_ID?.trim() || undefined;
+}
+
+export default function (pi: ExtensionAPI, dependencies: { operations?: BashOperations; clock?: Clock; logRoot?: string; herdr?: HerdrCall; env?: NodeJS.ProcessEnv; sleep?: (ms: number) => Promise<void> } = {}) {
 	const clock = dependencies.clock ?? systemClock;
 	let manager: BackgroundTasks | undefined;
 	let context: ExtensionContext | undefined;
@@ -69,6 +77,7 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 	let interrupted = false;
 	const pending = new Map<string, TaskSnapshot>();
 	let mounted: { widget: BackgroundWidget; tui: { requestRender(): void } } | undefined;
+	let viewer: HerdrViewer | undefined;
 
 	const clearNotificationTimer = () => {
 		if (notificationTimer !== undefined) clock.clearTimeout(notificationTimer);
@@ -136,6 +145,11 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 		if (!event.aborted && completedNormally) scheduleNotification();
 	});
 
+	const watch = (id: string) => {
+		const current = context;
+		if (!manager || !viewer || !current) return;
+		viewer.watch(manager.get(id)).catch((error) => current.ui.notify(`Cannot show task ${id}: ${errorText(error)}`, "error"));
+	};
 	const clearTimer = () => {
 		if (timer !== undefined) clock.clearTimeout(timer);
 		timer = undefined;
@@ -162,7 +176,7 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 			mounted.tui.requestRender();
 		} else {
 			context.ui.setWidget(WIDGET_KEY, (tui, theme) => {
-				const widget = new BackgroundWidget(() => manager?.list().tasks ?? [], clock, theme);
+				const widget = new BackgroundWidget(() => manager?.list().tasks ?? [], clock, theme, viewer ? watch : undefined);
 				mounted = { widget, tui };
 				return widget;
 			}, { placement: "aboveEditor" });
@@ -176,8 +190,10 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 		generation++;
 		const previous = manager;
 		const previousContext = context;
+		const previousViewer = viewer;
 		manager = undefined;
 		context = undefined;
+		viewer = undefined;
 		clearTimer();
 		clearNotificationTimer();
 		pending.clear();
@@ -189,17 +205,27 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 				if (previousContext.mode === "tui") previousContext.ui.setWidget(WIDGET_KEY, undefined);
 			}
 			mounted = undefined;
-		} finally { await previous?.shutdown(); }
+		} finally {
+			// Cancel tasks first and synchronously; closing the view tab must not delay that.
+			await Promise.all([previous?.shutdown(), previousViewer?.dispose()]);
+		}
 	};
 	pi.on("session_start", async (_event, ctx) => {
 		await dispose();
 		context = ctx;
 		const epoch = generation;
+		const workspaceId = ctx.mode === "tui" && ctx.hasUI ? herdrWorkspace(dependencies.env ?? process.env) : undefined;
+		viewer = workspaceId ? new HerdrViewer({
+			call: dependencies.herdr ?? cliHerdr(), workspaceId, sleep: dependencies.sleep,
+			tasks: () => manager?.list().tasks ?? [],
+			warn: (message) => { if (generation === epoch) ctx.ui.notify(message, "warning"); },
+		}) : undefined;
 		manager = new BackgroundTasks({
 			operations: dependencies.operations ?? createLocalBashOperations(), clock, logRoot: dependencies.logRoot,
 			onChange() { if (generation === epoch) refresh(); },
 			onComplete(task) {
 				if (generation !== epoch || !context) return;
+				viewer?.finished(task);
 				pending.set(task.id, task);
 				scheduleNotification();
 			},
@@ -212,6 +238,7 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 		if (!manager) throw new Error("Background tasks session is not ready");
 		if (params.action === "start") {
 			const task = manager.start({ command: params.command!, description: params.description, cwd: params.cwd, timeout: params.timeout }, cwd);
+			void viewer?.show(task, params.command!);
 			return {
 				text: `Started ${formatTask(task)}\n${startGuidance}\nLog: ${task.log_path}\nAt most 2 tasks run at once. Tasks stop on session changes, reload, or exit; captured logs are then removed.`,
 				data: { action: params.action, task, guidance: startGuidance }, details: { action: params.action, task }, isError: false,
@@ -270,10 +297,18 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 		},
 	});
 	pi.registerCommand("bg", {
-		description: "List background shell tasks, read output, or cancel a task",
+		description: "List background shell tasks, read output, cancel a task, or watch it in Herdr",
 		handler: async (args, ctx) => {
 			try {
-				const result = await perform(parseCommand(args), ctx.cwd);
+				const params = parseCommand(args);
+				if (params.action === "watch") {
+					if (!manager) throw new Error("Background tasks session is not ready");
+					const task = manager.get(params.id);
+					if (!viewer) throw new Error("/bg watch needs this Pi session to run inside Herdr");
+					await viewer.watch(task);
+					return;
+				}
+				const result = await perform(params, ctx.cwd);
 				pi.sendMessage({ customType: "background-task-inspect", content: result.text, display: true, details: result.details }, { triggerTurn: false });
 			} catch (error) { ctx.ui.notify(errorText(error), "error"); }
 		},

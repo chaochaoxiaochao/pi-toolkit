@@ -10,7 +10,7 @@ Run shell commands in the background, then notify the main agent when they finis
 
 A command such as `sleep 60; python3 ...` can spend most of its time waiting to check a build log. A normal Bash call keeps waiting for that command. This package returns a task ID immediately so the main agent can do other work.
 
-It uses Pi's public `createLocalBashOperations()` backend for shell execution and process-group cancellation. It adds session ownership, bounded logs, status, and completion messages. It neither replaces Bash nor starts another model or Herdr pane.
+It uses Pi's public `createLocalBashOperations()` backend for shell execution and process-group cancellation. It adds session ownership, bounded logs, status, and completion messages. It neither replaces Bash nor starts another model. Inside Herdr, it also opens a read-only pane per task so the user can watch the command and its live output; the command still runs locally, not in that pane.
 
 Completion delivery follows [oh-my-pi's yield-queue approach](https://github.com/can1357/oh-my-pi/blob/3a2758b68f7c8e6bdf22c3a76b86c8675e5e0c9e/packages/coding-agent/src/session/yield-queue.ts): retain results, combine them at a safe boundary, and filter consumed results before delivery. This package uses Pi's public extension API, not patched host code; a local idle retry covers busy operations that expose no final agent boundary.
 
@@ -69,11 +69,26 @@ List shows running tasks and the latest 20 finished tasks, with total and omitte
 /bg list
 /bg output <returned-task-id>
 /bg cancel <returned-task-id>
+/bg watch <returned-task-id>
 ```
 
 The commands inspect the same jobs without asking a model to perform the operation. Start a command through the agent tool; there is no second shell parser in `/bg`.
 
 A fixed widget **above the editor** shows each task's ID, status, elapsed time, runtime limit and description. It coexists with Scheduler, Todo, and Herdr widgets. Finished rows remain for five seconds; hiding a row does not delete its record. RPC gets a compact active count; non-interactive tools work without the widget.
+
+## Herdr task view
+
+When Pi runs inside Herdr (`HERDR_ENV=1` and `HERDR_WORKSPACE_ID` set), each started task also gets a pane in one **Background tasks** tab:
+
+- The tab is created on the first start without taking focus, and holds at most two panes, one per running task. A new task reuses the pane of a finished one.
+- Each pane prints the command (`$ ...`), cwd and runtime limit, then follows the task's captured log with `tail -f`. Line output and `\r` progress updates appear live. When the task ends, the pane prints a result line such as `[failed · exit 4 · 6s]`.
+- The pane is a **viewer only**. The task runs through the same local backend as outside Herdr, with the same logs, limits, status and notifications. The command has no TTY, so tools that detect one may drop colour or animated progress bars.
+- Closing a pane, or the whole tab, does not cancel the task. Clicking a task row in the widget (Pi 1.4+ fullscreen mode) or `/bg watch <id>` reopens the pane if needed and focuses that tab and pane; use `/bg cancel <id>` to stop the task.
+- When no task runs any more, the tab closes. If the user is looking at it, it closes after focus moves to another tab. Session shutdown, reload and replacement close it immediately, together with the logs.
+- Herdr subagent children (`PI_HERDR_SUBAGENTS_CHILD=1`) open no view; their tasks remain visible in the child's own widget. RPC and print modes open no view either.
+- A failed Herdr call shows one warning. Tasks keep running and the widget stays current.
+
+There is no setting to turn the view off.
 
 Completion, failure, cancellation, timeout and output-limit termination update the widget immediately. The extension holds pending completion metadata until it can deliver it safely:
 

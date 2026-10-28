@@ -34,7 +34,7 @@
     "typebox": "*"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --import ./tests/runtime.mjs --test tests/tasks.mjs tests/output.mjs tests/processes.mjs tests/extension.mjs tests/notifications.mjs tests/compaction.mjs tests/interruptions.mjs",
+    "test": "node --experimental-strip-types --import ./tests/runtime.mjs --test tests/tasks.mjs tests/output.mjs tests/processes.mjs tests/extension.mjs tests/notifications.mjs tests/compaction.mjs tests/interruptions.mjs tests/viewer.mjs",
     "load-test": "node --experimental-strip-types tests/load.mjs"
   },
   "publishConfig": {

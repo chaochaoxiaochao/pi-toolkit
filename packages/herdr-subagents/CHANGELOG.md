@@ -1,3 +1,8 @@
+## Unreleased
+
+- In Pi 1.4+ fullscreen mode, left-click a Fleet task row to focus the matching subagent pane. Reuse existing focus navigation, preserve keyboard navigation and semantic colours, and map clicks to the last rendered task identity.
+- Replace the obsolete lifecycle monolith behind `test:legacy` with the maintained test entry point. Retain Fleet keyboard, usage, timing, rendering and cleanup regressions. Removed queue/respond/resume expectations are not current contracts; silent children are tested with explicit process-exit and report events, not idle states or grace sleeps. Both test commands now run the same isolated test files, with a per-file watchdog that only detects stuck tests.
+
 ## 2026-10-26 - v0.7.6
 
 - Esc in a child waits abortGraceSeconds (default 30) for a correction before publishing child_aborted

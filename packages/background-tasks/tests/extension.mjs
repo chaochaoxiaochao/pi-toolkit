@@ -35,7 +35,7 @@ function harness(mode = "tui", hasUI = true) {
 		registerCommand(name, value) { commands.set(name, value); },
 		sendMessage(message, options) { messages.push({ message, options }); },
 	};
-	register(pi, { operations: f.operations, clock: f.clock, logRoot: f.root });
+	register(pi, { operations: f.operations, clock: f.clock, logRoot: f.root, env: {} });
 	return {
 		...f, handlers, commands, messages, notices, widgets, placements, statuses, idleChecks, ctx,
 		setIdle(value) { idle = value; },

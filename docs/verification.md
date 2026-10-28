@@ -293,3 +293,27 @@ Thus the formerly deferred real-Herdr concurrency, focus-aware cleanup and three
 Chrome also loaded all 15 gallery images/animations and played the current Herdr WebM via a real control click (42.59284-second duration, advancing currentTime, unpaused). Capture: `/tmp/pi-toolkit-review-tests.zUBSZ9/release/herdr-gallery-playback.png`. The real media run additionally exercised report recovery: API completed with zero reminders; Recovery and Tests each used exactly one reminder and then submitted a completed report. No extra parent-side prompt monitor was involved.
 
 The final pre-merge root regression, complete loadout, isolated Chrome profile regression and whitespace checks all passed after the recording change. The published Pi 1.3.0 type declarations were also checked for the required `agent_before_settle` hook; no minimum-version claim was inferred merely from testing Pi 1.4.0.
+
+## Background task views and Fleet clicks (2026-10-28, worktree bg-herdr-pane)
+
+### Scope and the legacy-test hang
+
+Background tasks retain the local Bash backend. Herdr is a read-only log view, with one per-session tab, reusable task panes and focus-aware tab cleanup. Background task widget clicks reopen/focus the matching pane. Fleet widget clicks reuse `focusActiveTask` and retain keyboard navigation and existing theme colours. Fleet hit-testing captures task identity at paint time rather than resolving the current, possibly unpainted, row order.
+
+The old `test:legacy` hung after `structured child failure` in the next `silent` case. The fake wrote no attempt report and returned process-alive forever. Idle/done telemetry and prompt acknowledgement no longer settle a business task; the current parent correctly kept waiting. The unchanged baseline reproduced the same hang and five stale assertions: missing required Persona, removed respond/resume actions, and exact call sequences that excluded normal process checks. No production timeout, grace sleep or idle-as-success fallback was added.
+
+The obsolete lifecycle monolith has been replaced by one maintained test entry point. Its independent Fleet regressions were retained in `tests/fleet.mjs`; current lifecycle/configuration/source-loading tests own the supported contracts. `tests/live-agent.mjs` advances via explicit event gates and checks living-child waiting, explicit report completion, process-exit missing-report failure and cancellation without fixed delays. `test:legacy` aliases the same maintained suite. A 120-second process watchdog names a stuck test file; it is not a business-completion timeout.
+
+### Real Herdr verification
+
+The background-task view was tested with two real commands and live `\r` progress, success/failure summaries, manually closed panes, exact left/right pane focus through real fullscreen Pi mouse input, and focus-aware tab removal. These checks used the worktree extension, not the older extension installed in the ongoing parent conversation.
+
+For Fleet, a fullscreen parent Pi loaded the worktree extension and dispatched three real read-only Explorer child Pi processes. An isolated offline provider held each child's actual Bash tool behind a filesystem release event. Primary SGR mouse press/release input on the parent's visible Fleet rows selected:
+
+- alpha: row 48 → persisted pane `wB:p14`, focused.
+- beta: row 49 → persisted pane `wB:p15`, focused.
+- gamma: row 50 → persisted pane `wB:p16`, focused.
+
+`herdr pane list` confirmed each exact target. Releasing the event completed all three durable reports, and run tab `wB:tR` was removed automatically. Parent test tab `wB:tP` was then removed; only pre-existing tabs remained. No credentials were copied. The first setup attempt accidentally inherited the user's Explorer model override because Persona settings outrank defaults; it was cancelled and is not counted as the offline pass. The successful retry explicitly overrode the Explorer model/thinking/extensions in the isolated project configuration. Evidence: `/tmp/pi-fleet-click-_80nw_4r/` and `.cache/verification/fleet-click/click-results.json` (local, not packed).
+
+Full package/root test, load and pack-check logs are under `.cache/verification/fleet-click/`. Checks select the actual Pi 1.4.0 executable through `PI_TEST_BINARY`, since the personal `pi` shell launcher is not a Node package entry. No npm versions were changed or published. Existing PNG/GIF/WebM media were not regenerated in this iteration; the current visual interactions were verified through real Pi/Herdr rather than claiming an old recording demonstrates the new clicks. Non-Linux and Pi <1.4 mouse handling remain untested; mouse support is documented as Pi 1.4+ fullscreen only.

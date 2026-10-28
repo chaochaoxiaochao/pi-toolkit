@@ -58,6 +58,25 @@ This preserves authentication extensions such as `npm:@maxiaochao/pi-openai-acco
 
 For real smoke testing, verify that each child appears in a visible pane and can be focused and inspected. An early-finishing child must remain visible while sibling tasks continue. After the whole run settles, a focused child must remain at its restored Pi UI until focus leaves the run tab; the tab must then close automatically. Verify that the parent returns only after all requested tasks settle. Also verify cancellation closes the run tab and does not overwrite a report already atomically published.
 
+## Maintained suite and legacy migration
+
+`npm test` runs `tests/run-tests.mjs`. Each file runs with the installed Pi peer resolver in an isolated process. A 120-second per-file watchdog terminates a stuck test and names the file; it does not delay or decide task completion. `npm run test:legacy` is a compatibility alias for the same suite.
+
+The former monolithic legacy suite encoded removed contracts: background queues, `respond`/`resume`, and interpreting an idle child as final. Its `silent` fake returned `isTaskRunning() === true` forever without publishing an attempt report. The parent correctly waited for that still-live child. Separate stale validation assertions omitted the required Persona and allowed removed actions; exact CLI-call assertions omitted normal process-liveness observations. These were stale expectations, not grounds for changing production completion semantics.
+
+Current coverage is in focused suites:
+
+- `core-state-machine.mjs`: required Personas, serial/read-only parallel work, transport recovery, report/exit completion, cancellation, immutable terminal tasks, tool exposure and startup isolation.
+- `live-agent.mjs`: a live silent child keeps waiting after prompt acknowledgement failure; an explicit report completes it, explicit process exit without a report fails it, and explicit cancellation ends the wait. Event gates advance these cases without fixed sleeps.
+- `fleet.mjs`: retained Fleet keyboard selection, usage accounting, elapsed-time compatibility, widths/colours, watcher cleanup and stale-update regressions from the old monolith.
+- `fleet-click.mjs`: select task rows, not the header or blank rows; ignore non-primary clicks; focus exact panes; handle queued/missing panes; preserve the last painted row's identity across an unpainted update; ignore disposed widgets.
+- `cleanup-timing.mjs`: retained abort, restart and pending-cleanup checks.
+- `config.mjs`, `report-boundary.mjs`, `report-lifecycle.mjs`, `standalone-package.mjs` and `real-herdr-config.test.mjs`: configuration, native child settlement, standalone lifecycle and smoke configuration. `load-test` also runs `extension-sources-load.mjs` against native Pi package loading.
+
+## Real Fleet click check
+
+Use a fullscreen parent Pi loaded from `extensions/herdr-subagents.ts`. Run three read-only Explorer tasks concurrently in real child Pi panes. Hold each child's real Bash tool behind an explicit release event, then read the parent's visible Fleet rows. Send primary SGR press/release events to each row through `herdr pane send-text`. After each click, check `herdr pane list`: the focused pane must equal that task's persisted `paneId`. Release the tasks, verify all three reports complete, and verify the child tab is removed. An isolated offline provider makes this repeatable; override the Persona's model and extensions explicitly, since Persona settings outrank defaults. Restore focus and remove only test-owned tabs.
+
 ## Missing-report regressions
 
 `tests/report-boundary.mjs` checks completed/failed report idempotency, one durable reminder across rounds and extension reload, conflicting report rejection, unconfirmed diagnostics with a session path, Esc grace period (timer cancelled by steering or shutdown, `child_aborted` after expiry), and error without continuation.
