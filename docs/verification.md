@@ -1,5 +1,12 @@
 # Package split verification
 
+## Merged-main release preflight (2026-10-29)
+
+- Merged `bg-herdr-pane` into `main`, preserving the existing glossary/Ticket Loop documentation commit. The Background Tasks decision is ADR 0004, avoiding the main branch's ADR 0003. No unrelated worktree was modified.
+- The user manually confirmed the real terminal behavior before authorizing release. The minimal-source launch requires explicitly loading Account Pool when `-ne` is used; that is a launch dependency, not a Herdr-specific Account Pool defect. An isolated native Pi registration probe under `HERDR_ENV=1` confirmed `codex_pool`, `bg` and `herdr-subagents` together without reading real credentials.
+- On merged main, passed full `npm test` (including 21 browser E2E checks with zero failures/skips, 16 Herdr files and 85 Background Tasks checks), root load, both affected package loads, both child dry-run packs, root dry-run pack and the clean-worktree check. Evidence: `.cache/verification/bg-herdr-release/` in the main worktree.
+- The existing linked-release scripts will additionally validate final versioned contents and run the real Herdr child-Agent smoke before creating/pushing tags. Each child is released with its own root-tag commit; no local npm publication is used. Exact npm versions and tarballs must be checked with the existing post-release verifier after each workflow.
+
 ## Herdr regression restoration: minimal scope after default review (2026-10-28)
 
 - Restored `src/tool.ts` and `src/live-agent.ts` exactly to `2b6841a`. No damaged-record recovery mode or extra cancel/exit prompt-join guarantee remains. Only `src/history.ts` retains an internal simplification: read the durable run directly instead of scanning the error-tolerant display projection. There is no new fallback. Public cleanup still rejects corrupt active and terminal task records; the new public-entry tests confirm this safe failure.
