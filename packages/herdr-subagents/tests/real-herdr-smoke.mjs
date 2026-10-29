@@ -95,7 +95,7 @@ async function waitForCleanup(result) {
 	}, `cleanup of ${result.tabId}`, 5_000);
 }
 
-async function runCase(label, names, concurrency, extraExtensions = []) {
+async function runCase(label, names, concurrency, extraExtensions = [], taskOverrides = {}) {
 	const extensions = [...runtimePersona.extensions, ...extraExtensions];
 	writeFileSync(configurationPaths.globalConfig, JSON.stringify({ defaultExtensions: extensions, personas: { analyst: { model: runtimePersona.model, thinking: runtimePersona.thinking } } }));
 	if (concurrency > 1 && process.env.HERDR_SUBAGENTS_E2E_FOCUS_CLEANUP === "1") {
@@ -112,6 +112,7 @@ async function runCase(label, names, concurrency, extraExtensions = []) {
 			name,
 			agent: "analyst",
 			prompt: `Do not inspect files. Call subagent_report with status completed, summary '${name} completed', and result 'hello'.`,
+			...taskOverrides,
 		})),
 	}, timeout, (update) => {
 		if (update.details?.tabId) tabIds.add(update.details.tabId);
@@ -148,6 +149,12 @@ async function runCase(label, names, concurrency, extraExtensions = []) {
 		assert.equal(task.status, "completed");
 		assert.deepEqual(task.extensions, extensions);
 		if (runtimePersona.model) assert.equal(task.model, runtimePersona.model);
+		const expectedThinking = taskOverrides.thinking ?? runtimePersona.thinking;
+		if (expectedThinking) {
+			assert.equal(task.thinking, expectedThinking);
+			const entries = readFileSync(task.sessionFile, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+			assert.ok(entries.some((entry) => entry.type === "thinking_level_change" && entry.thinkingLevel === expectedThinking), "The real child did not select the requested thinking level");
+		}
 		if (extraExtensions.length) {
 			const commands = JSON.parse(readFileSync(join(taskResult.recordDirectory, "extension-loaded.json"), "utf8"));
 			assert.ok(commands.includes("skill:smoke-package-skill"), "Explicit package skill did not load in the real child");
@@ -171,7 +178,10 @@ try {
 		export default function (pi) {
 			pi.on("session_start", () => writeFileSync(join(process.env.PI_HERDR_SUBAGENTS_TASK_DIR, "extension-loaded.json"), JSON.stringify(pi.getCommands().map((command) => command.name))));
 		}`);
-	await runCase("real-concurrent", ["hello-one", "hello-two"], 2, [packageSource]);
+	await runCase("real-concurrent", ["hello-one", "hello-two"], 2, [packageSource], {
+		...(runtimePersona.model ? { model: runtimePersona.model } : {}),
+		thinking: "low",
+	});
 } catch (error) {
 	failed = true;
 	const snapshots = [];

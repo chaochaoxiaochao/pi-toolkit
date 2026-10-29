@@ -12,6 +12,7 @@
 
 ## Unreleased
 
+- Herdr Subagents: accept an optional per-task `thinking` override; `model` and `thinking` remain independently optional, and invalid thinking levels fail before child startup.
 - Herdr Subagents: restore omitted current-contract regression coverage and simplify internal cleanup eligibility checks without adding damaged-record recovery.
 - Background Tasks: replace the old widget-only media with a real Pi/Herdr recording of two jobs, click-to-pane navigation, live output and focus-aware tab cleanup.
 - Herdr Subagents: click a Fleet task row to focus its exact pane; retain keyboard navigation. Consolidate stale legacy tests into the maintained suite and verify silent-child completion by explicit report/exit events instead of idle status or added delays.

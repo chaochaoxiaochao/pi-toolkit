@@ -147,10 +147,22 @@ try {
 	assert.deepEqual(Object.keys(schema.properties).sort(), ["concurrency", "label", "tasks"]);
 	assert.ok(schema.required.includes("tasks"));
 	for (const property of Object.values(schema.properties) as any[]) assert.ok(property.description);
-	for (const name of ["name", "prompt", "agent", "model"]) assert.ok(schema.properties.tasks.items.properties[name].description);
+	for (const name of ["name", "prompt", "agent", "model", "thinking"]) assert.ok(schema.properties.tasks.items.properties[name].description);
+	assert.deepEqual(schema.properties.tasks.items.required, ["name", "prompt", "agent"], "model and thinking are independently optional");
+	assert.equal(schema.properties.tasks.items.properties.model.description, "User-requested model override; otherwise omit.");
+	assert.equal(schema.properties.tasks.items.properties.thinking.description, "User-requested thinking-level override; otherwise omit.");
+	assert.match(inside.tool.description, /serial execution and read-only parallelism/);
+	assert.match(schema.properties.concurrency.description, /Values above 1 require read-only Personas; write-capable Personas require 1/);
 	assert.deepEqual(inside.tool.prepareArguments({ prompt: "inspect", agent: "explorer", label: "probe" }), {
 		tasks: [{ name: "probe", prompt: "inspect", agent: "explorer" }], label: "probe",
 	});
+	for (const overrides of [{ model: "provider/model" }, { thinking: "high" }, { model: "provider/model", thinking: "off" }]) {
+		assert.deepEqual(inside.tool.prepareArguments({ prompt: "inspect", agent: "explorer", ...overrides }), {
+			tasks: [{ name: "task", prompt: "inspect", agent: "explorer", ...overrides }],
+		});
+		const batch = { tasks: [{ name: "inspect", prompt: "inspect", agent: "explorer", ...overrides }] };
+		assert.equal(inside.tool.prepareArguments(batch), batch);
+	}
 	const controlSchema = inside.controlTool.parameters;
 	assert.deepEqual(Object.keys(controlSchema.properties).sort(), ["action", "runId"]);
 	assert.ok(controlSchema.required.includes("action"));

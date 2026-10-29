@@ -8,6 +8,7 @@ const cwd = dirname(dirname(fileURLToPath(import.meta.url)));
 const files = [
 	"config.mjs",
 	"config-resolution.mjs",
+	"task-overrides.mjs",
 	"core-state-machine.mjs",
 	"live-agent.mjs",
 	"batch-contracts.mjs",

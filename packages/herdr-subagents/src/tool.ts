@@ -7,7 +7,7 @@ import type { OwnerIdentity } from "./ownership.ts";
 import { cancelActiveSubagentRuns } from "./reconcile.ts";
 import { getSubagentRunStatus, runStatusText } from "./status.ts";
 
-export interface HerdrSubagentsTaskParams { name: string; prompt: string; agent: string; model?: string; }
+export interface HerdrSubagentsTaskParams { name: string; prompt: string; agent: string; model?: string; thinking?: string; }
 
 export interface HerdrSubagentsRunParams {
 	tasks: HerdrSubagentsTaskParams[];
@@ -140,7 +140,7 @@ async function executeBatch({ params, signal, onUpdate, ctx, dependencies, disco
 		const personaName = task.agent.trim();
 		const persona = discovery.personas.find((candidate) => candidate.name === personaName);
 		if (!persona) return errorResponse(`Unknown persona '${personaName}'.\n\n${listText(discovery)}`);
-		resolved.push({ name: task.name, prompt: task.prompt, agent: persona.name, access: persona.access, model: task.model?.trim() || persona.model, thinking: persona.thinking ?? (persona.modelSource === "parent session" && !task.model ? ctx.thinkingLevel : undefined), tools: persona.tools, skills: persona.skills, extensions: persona.extensions, systemPrompt: persona.systemPrompt });
+		resolved.push({ name: task.name, prompt: task.prompt, agent: persona.name, access: persona.access, model: task.model?.trim() || persona.model, thinking: task.thinking?.trim() ?? persona.thinking ?? (persona.modelSource === "parent session" && !task.model ? ctx.thinkingLevel : undefined), tools: persona.tools, skills: persona.skills, extensions: persona.extensions, systemPrompt: persona.systemPrompt });
 	}
 	try {
 		const result = await runHerdrSubagentsBatch(resolved, {

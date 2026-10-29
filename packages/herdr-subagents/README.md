@@ -119,6 +119,23 @@ Starts one ordered batch and waits until every task reaches a terminal state. It
 | `tasks[].prompt` | Yes | — | Self-contained task instructions. |
 | `tasks[].agent` | Yes | — | Effective Persona name; use control `list` to inspect available Personas. |
 | `tasks[].model` | No | Persona/default model | Model override for this task. |
+| `tasks[].thinking` | No | Persona/default thinking | Thinking level override for this task; model support varies. |
+
+`model` and `thinking` are independently optional. Omit them unless the user explicitly requests a task-specific override. A task override takes precedence over Persona settings and defaults. For example, when the user requests this model and thinking level:
+
+```json
+{
+  "tasks": [{
+    "name": "review",
+    "prompt": "Review the API boundary.",
+    "agent": "reviewer",
+    "model": "openai/gpt-5.2",
+    "thinking": "high"
+  }]
+}
+```
+
+Omit either field to keep its existing resolution. Without configured thinking, the parent thinking level is inherited only when the model is inherited from the parent and the task does not specify `model`; otherwise child Pi selects its default. An explicit task `thinking` must be one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` after trimming. Invalid task values are rejected before creating a run; child Pi still resolves model-specific compatibility.
 
 A batch containing a write-capable Persona must explicitly or effectively use `concurrency: 1`; an unsafe parallel request is rejected.
 

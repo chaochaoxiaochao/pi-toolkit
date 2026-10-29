@@ -1,3 +1,9 @@
+## Unreleased
+
+- Add optional per-task `thinking` overrides alongside optional `model`; preserve existing inheritance when omitted and support both fields in single-task argument normalization.
+- Describe model/thinking overrides as user-requested exceptions. Keep the overall serial/read-only-parallel guidance and the full concurrency restrictions in the field description.
+- Reject unknown task thinking levels in runtime validation before creating a run, rather than allowing Pi to warn and ignore a misspelled override.
+
 ## 2026-10-29 - v0.8.0
 
 - Add exact Fleet row click navigation and retain supported regression coverage with verified extension load completion

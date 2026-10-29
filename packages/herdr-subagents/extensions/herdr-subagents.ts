@@ -36,7 +36,7 @@ export function normalizeHerdrSubagentsArguments(args: unknown): HerdrSubagentsR
 	if (!args || typeof args !== "object") return args as HerdrSubagentsRunParams;
 	const legacy = args as Record<string, unknown>;
 	if (Array.isArray(legacy.tasks) || typeof legacy.prompt !== "string" || legacy.action !== undefined) return args as HerdrSubagentsRunParams;
-	if (Object.keys(legacy).some((key) => !["prompt", "agent", "label", "model"].includes(key))) return args as HerdrSubagentsRunParams;
+	if (Object.keys(legacy).some((key) => !["prompt", "agent", "label", "model", "thinking"].includes(key))) return args as HerdrSubagentsRunParams;
 	const label = typeof legacy.label === "string" ? legacy.label : undefined;
 	return {
 		tasks: [{
@@ -44,6 +44,7 @@ export function normalizeHerdrSubagentsArguments(args: unknown): HerdrSubagentsR
 			prompt: legacy.prompt,
 			agent: legacy.agent as string,
 			...(typeof legacy.model === "string" ? { model: legacy.model } : {}),
+			...(legacy.thinking !== undefined ? { thinking: legacy.thinking as string } : {}),
 		}],
 		...(label ? { label } : {}),
 	};
@@ -148,7 +149,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 		name: "herdr_subagents",
 		...(exposure ? { exposure } : {}),
 		label: "Herdr Subagents",
-		description: "Run ordered tasks in visible Herdr Pi panes, with an explicit agent for each task. Choose reviewer for independent reviews, explorer for codebase investigation, worker for file changes, or analyst for agent-team tasks with a supplied role charter; use control list to inspect effective and custom Personas. concurrency 1 is serial; higher values require read-only Personas. Returns after all tasks complete, fail, or cancel; full results and sessions remain in project-local records.",
+		description: "Run ordered tasks in visible Herdr Pi panes, with an explicit agent for each task. Choose reviewer for independent reviews, explorer for codebase investigation, worker for file changes, or analyst for agent-team tasks with a supplied role charter; use control list to inspect effective and custom Personas. Supports serial execution and read-only parallelism. Returns after all tasks complete, fail, or cancel; full results and sessions remain in project-local records.",
 		promptSnippet: "Run focused work in visible Herdr subagents",
 		parameters: HerdrSubagentsParams,
 		prepareArguments: normalizeHerdrSubagentsArguments,

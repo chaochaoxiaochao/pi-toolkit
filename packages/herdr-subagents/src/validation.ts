@@ -1,5 +1,7 @@
 import type { HerdrSubagentsControlToolParams, HerdrSubagentsRunParams } from "./tool.ts";
 
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
 export const HERDR_ACTIONS = {
 	list: { allowed: ["action"], includeRunId: false },
 	history: { allowed: ["action"], includeRunId: false },
@@ -12,6 +14,8 @@ export function validateRunParams(params: HerdrSubagentsRunParams): string | und
 	if (!params.tasks?.length) return "Provide a non-empty tasks list.";
 	for (const [index, task] of params.tasks.entries()) {
 		if (typeof task.agent !== "string" || !task.agent.trim()) return `tasks[${index}].agent is required; select a Persona explicitly (use herdr_subagents_control action=list).`;
+		if (task.thinking !== undefined && (typeof task.thinking !== "string" || !task.thinking.trim())) return `tasks[${index}].thinking must be a non-empty string when provided.`;
+		if (task.thinking !== undefined && !THINKING_LEVELS.includes(task.thinking.trim())) return `tasks[${index}].thinking must be one of: ${THINKING_LEVELS.join(", ")}.`;
 	}
 	return undefined;
 }
