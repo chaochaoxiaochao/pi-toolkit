@@ -1,3 +1,7 @@
+## 2026-10-29 - v0.14.0
+
+- herdr-subagents v0.8.0: Add exact Fleet row click navigation and retain supported regression coverage with verified extension load completion
+
 ## 2026-10-28 - v0.13.17
 
 - bundle the explicit-only mermaid skill for Markdown diagrams and text wireframes; prune global AGENTS.md guidance

@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-10-29 - v0.8.0
 
+- Add exact Fleet row click navigation and retain supported regression coverage with verified extension load completion
 - Update the extension load fixture to the current foreground-only contract. Require an explicit completion marker so an unfinished top-level await cannot pass merely because Pi exits zero.
 - Restore current configuration/execution, report-first prompt cancellation, report-validation, cancellation/owner isolation, cleanup, history/storage and CLI-adapter regression coverage. Use event/fake-clock fixtures without source-text mutation tests or global file-API patches.
 - Simplify internal cleanup eligibility checks to use the durable run record instead of the history display. Public cleanup retains its existing safe failure on damaged task/report records.
