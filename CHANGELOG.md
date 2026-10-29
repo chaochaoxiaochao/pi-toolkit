@@ -1,3 +1,7 @@
+## 2026-10-29 - v0.14.2
+
+- herdr-subagents v0.9.0: Add optional task thinking overrides with validated levels and user-requested override guidance
+
 ## 2026-10-29 - v0.14.1
 
 - background-tasks v0.2.0: Add live read-only Herdr task views, exact widget navigation and real two-task terminal media
