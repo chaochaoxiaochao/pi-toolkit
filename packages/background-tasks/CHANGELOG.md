@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2026-10-29 - v0.2.0
 
+- Add live read-only Herdr task views, exact widget navigation and real two-task terminal media
 - Re-record the real Pi/Herdr walkthrough with two live jobs, widget-row clicks focusing each pane, command headers, streaming progress, terminal results and automatic tab cleanup. Publish parent/task-pane screenshots, an animated GIF and the full WebM; use isolated offline fixtures without credentials.
 - Inside Herdr, show each background task in a read-only pane of one per-session **Background tasks** tab: command header, live log via `tail -f`, and a final result line. Execution, logs, limits and notifications are unchanged.
 - Open the tab without focus on the first start, reuse finished panes, and close the tab when no task runs, waiting while the user looks at it. Close it immediately on session shutdown, reload and replacement.

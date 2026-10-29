@@ -1,3 +1,7 @@
+## 2026-10-29 - v0.14.1
+
+- background-tasks v0.2.0: Add live read-only Herdr task views, exact widget navigation and real two-task terminal media
+
 ## 2026-10-29 - v0.14.0
 
 - herdr-subagents v0.8.0: Add exact Fleet row click navigation and retain supported regression coverage with verified extension load completion
