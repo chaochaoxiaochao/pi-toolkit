@@ -39,7 +39,7 @@
   "scripts": {
     "test": "node tests/run-tests.mjs",
     "test:real-herdr": "node --experimental-strip-types tests/real-herdr-smoke.mjs",
-    "load-test": "env -u PI_HERDR_SUBAGENTS_CHILD \"${PI_TEST_BINARY:-pi}\" -ne -ns --no-session -e ./tests/extension-contract.ts && env -u PI_HERDR_SUBAGENTS_CHILD \"${PI_TEST_BINARY:-pi}\" -ne -ns --no-session -e ./extensions/herdr-subagents.ts && node --experimental-strip-types tests/extension-sources-load.mjs",
+    "load-test": "node tests/load-extension-contract.mjs && env -u PI_HERDR_SUBAGENTS_CHILD \"${PI_TEST_BINARY:-pi}\" -ne -ns --no-session -e ./extensions/herdr-subagents.ts && node --experimental-strip-types tests/extension-sources-load.mjs",
     "test:legacy": "npm test"
   },
   "publishConfig": {

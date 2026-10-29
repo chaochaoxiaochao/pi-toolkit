@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Update the extension load fixture to the current foreground-only contract. Require an explicit completion marker so an unfinished top-level await cannot pass merely because Pi exits zero.
+- Restore current configuration/execution, report-first prompt cancellation, report-validation, cancellation/owner isolation, cleanup, history/storage and CLI-adapter regression coverage. Use event/fake-clock fixtures without source-text mutation tests or global file-API patches.
+- Simplify internal cleanup eligibility checks to use the durable run record instead of the history display. Public cleanup retains its existing safe failure on damaged task/report records.
 - In Pi 1.4+ fullscreen mode, left-click a Fleet task row to focus the matching subagent pane. Reuse existing focus navigation, preserve keyboard navigation and semantic colours, and map clicks to the last rendered task identity.
 - Replace the obsolete lifecycle monolith behind `test:legacy` with the maintained test entry point. Retain Fleet keyboard, usage, timing, rendering and cleanup regressions. Removed queue/respond/resume expectations are not current contracts; silent children are tested with explicit process-exit and report events, not idle states or grace sleeps. Both test commands now run the same isolated test files, with a per-file watchdog that only detects stuck tests.
 

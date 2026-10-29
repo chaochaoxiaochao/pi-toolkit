@@ -40,6 +40,9 @@ pi-toolkit/
 
 ## 开发与验证
 
+- 发布任何功能前，必须执行该功能及受影响共享模块的完整测试与验收；失败或未执行项均阻塞发布，不能只跑新增用例。
+- 保留的测试必须接入明确的测试或发布入口。不再执行的测试，须确认其契约已退役或有效断言已有等效覆盖后删除，并同步清理入口与文档，不保留失修的旁路旧套件。
+- 开发中发现测试失败必须定位并处理；“改动前也失败”不是跳过验收、删除有效断言或宣告通过的依据。测试迁移须逐类核对覆盖去向。
 - 修改子包时先运行 `npm --prefix packages/<slug> test`，再运行其 README/TESTING 指定的 load test 和 `npm pack ./packages/<slug> --dry-run`。
 - 运行 `node scripts/capture-package-media.mjs` 后通过 `docs/package-media-gallery.html` 检查全部真实截图与动画；完整验收结果记录在 `docs/verification.md`。
 - 修改根入口、BTW、主题、全局指令或组合清单时运行 `npm test`、`npm run load-test` 和根目录 `npm pack --dry-run`。

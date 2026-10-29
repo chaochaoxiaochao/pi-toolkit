@@ -2,9 +2,15 @@
 
 Run shell commands in the background, then notify the main agent when they finish. These are local processes, not subagents.
 
-![Two real background jobs beside Scheduler](docs/screenshot.png)
+![Real parent Pi: click either background task row to watch it in Herdr](docs/screenshot.png)
 
-![Real Pi: start, cancel, completion and output](docs/demo.gif)
+![Real Herdr task panes: command headers and streaming build/test output](docs/task-panes.png)
+
+![Real Pi and Herdr: start two jobs, click each task, watch live output, then automatic tab cleanup](docs/demo.gif)
+
+[Watch the full recording (WebM)](docs/demo.webm).
+
+The recording uses an offline fixture provider to start two real local demo jobs: an in-place build counter and a streaming test log. It captures the production extension in a real Pi TUI and a temporary Herdr workspace, including clicks on both widget rows, the exact pane focus, success/failure results, and automatic tab cleanup. No paid model or user credentials are used.
 
 ## Why
 

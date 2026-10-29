@@ -84,12 +84,13 @@ export function historyText(history: HistoricalRun[]): string {
 export async function cleanSubagentRun(cwd: string, runId: string): Promise<boolean> {
 	const runDirectory = await findRunDirectory(join(cwd, ".pi", "herdr-subagents", "runs"), runId);
 	if (!runDirectory) return false;
-	const canonicalRunId = (await readRunRecord(join(runDirectory, "run.json"))).id;
-	const run = (await listSubagentHistory(cwd)).find((candidate) => candidate.id === canonicalRunId);
-	if (!run) return false;
+	// History may project damaged tasks as failed for display. Deletion authority
+	// must come from the durable run, never that error-tolerant presentation.
+	const run = await readRunRecord(join(runDirectory, "run.json"));
+	const canonicalRunId = run.id;
 	if (isActiveStatus(run.status)) throw new Error(`Subagent run '${canonicalRunId}' is still active and cannot be cleaned.`);
 	if (run.cleanupPendingTabIds?.length) throw new Error(`Subagent run '${canonicalRunId}' is still waiting to clean up Herdr tabs ${run.cleanupPendingTabIds.join(", ")}.`);
-	await rm(run.recordDirectory, { recursive: true, force: false });
+	await rm(runDirectory, { recursive: true, force: false });
 	return true;
 }
 

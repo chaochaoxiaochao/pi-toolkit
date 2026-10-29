@@ -1,5 +1,22 @@
 # Package split verification
 
+## Herdr regression restoration: minimal scope after default review (2026-10-28)
+
+- Restored `src/tool.ts` and `src/live-agent.ts` exactly to `2b6841a`. No damaged-record recovery mode or extra cancel/exit prompt-join guarantee remains. Only `src/history.ts` retains an internal simplification: read the durable run directly instead of scanning the error-tolerant display projection. There is no new fallback. Public cleanup still rejects corrupt active and terminal task records; the new public-entry tests confirm this safe failure.
+- Removed the source-text lifecycle mutation suite, its maintained entry point, global file-API monkeypatches, and artificial cancel/exit resource-release gates. Retained current configuration, report validation/attempt isolation, ordinary prompt cancellation, owner/shutdown, cleanup, history/storage and real CLI-adapter regressions. A public failed-plus-cancelled batch checks `partial` plus matching durable results using explicit events.
+- Reduced `tests/extension-contract.ts` to current registration gates, schemas, single-task compatibility, foreground waiting, Fleet keyboard focus, result rendering and no duplicate follow-up. Removed only retired background/early-handoff/respond/resume/startup-recovery expectations. Current owner/shutdown tests remain in `ownership-cleanup.mjs`; Fleet tests remain in the maintained runner.
+- Fixed a false-green load gate, not a confirmed product load failure: Pi can exit zero before an unsettled top-level await completes. `load-extension-contract.mjs` now requires the real fixture's completion marker. A zero-exit/no-marker negative control is rejected. Both the default suite and package load test execute this guard; the production-extension and extension-source load probes remain.
+- Independent default `reviewer` (`claude-code/claude-opus-5-5`, `medium`, verified in task.json) approved the reduced diff with no blockers. Report: `.pi/herdr-subagents/runs/20261028T145323238Z-d50ba7d6/tasks/01-3265b2d4/attempt-results/cc53dff7-e1c6-4569-909e-5d015f5f2a22.md`. No temporary Persona override remains.
+- Final checks passed: Herdr default and legacy-alias commands (16 files each), Herdr load/pack, Background Tasks tests (85 passed, zero failures/skips), Background Tasks load/pack, full root `npm test` (including 21 browser E2E checks, zero failures/skips), root load/pack, and `git diff --check`. Evidence: `.cache/verification/review-scope-reduction/`. Pi runtime: 1.4.0 via explicit `PI_TEST_BINARY`.
+- No version bump, tag, commit or publication was performed for this follow-up. Real Herdr click behavior was not re-exercised during this scope reduction; the changes do not alter either widget or task-view implementation.
+
+## Background Tasks: accepted real Herdr media (2026-10-28)
+
+- Re-recorded two real local jobs in an isolated offline Pi/Herdr workspace. The recording checks non-focus-stealing tab creation, clicks into both task panes, live output, success/failure results, focus retention and eventual tab cleanup. All five recording checks passed. The test-owned workspace was removed and the original workspace restored.
+- Published the actual parent screenshot, live-pane screenshot, animated GIF and complete WebM under `packages/background-tasks/docs/`. Desktop lock is now a hard recording failure; earlier stale/blank captures were discarded and are not accepted evidence.
+- Inspected the screenshots and representative GIF frames. Real Chrome CDP clicks opened the screenshot link and played the video through its native control. Final WebM is VP8, 1280×728, square pixels, about 22.39 seconds; the GIF has 46 frames, about 23 seconds. No synthetic UI was substituted.
+- The four media files are present in standalone and root dry-run packs. Recording evidence: `.cache/package-media/background-herdr/result.json`; browser playback and media-check evidence: `.cache/verification/background-media/`. The gallery was served locally for playback verification; the temporary server was stopped afterward.
+
 ## Background Tasks: model-only exposure and English guidance
 
 - Fixed `background_task` registration to `exposure: "model-only"` without a configuration file. Guidance is now `Notifies automatically on completion. Do not sleep or poll; continue other work or end the turn.` Notifications, job ownership and output limits are unchanged.

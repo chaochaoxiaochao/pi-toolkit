@@ -34,7 +34,7 @@ It verifies:
 - preserving the configured smoke model, thinking level, and authentication extensions while isolating unrelated settings;
 - project-over-global smoke configuration, explicit extension clearing, model overrides, and local-source paths after moving to a temporary directory.
 
-The previous broad lifecycle suite remains available temporarily as `npm run test:legacy --workspace @maxiaochao/pi-herdr-subagents` for migration auditing. Scenarios for background queues, blocked/respond, and historical resume intentionally no longer describe the public contract.
+For the current test entry point and the disposition of the former lifecycle suite, see [Maintained suite and legacy migration](#maintained-suite-and-legacy-migration).
 
 Run extension source loading. The direct-Pi fixture resolves global `defaultExtensions` and validates real file/package loading; Herdr's `builtin:codemode` alias is validated by the real-Herdr smoke because the alias is translated by `herdr agent start`:
 
@@ -70,8 +70,27 @@ Current coverage is in focused suites:
 - `live-agent.mjs`: a live silent child keeps waiting after prompt acknowledgement failure; an explicit report completes it, explicit process exit without a report fails it, and explicit cancellation ends the wait. Event gates advance these cases without fixed sleeps.
 - `fleet.mjs`: retained Fleet keyboard selection, usage accounting, elapsed-time compatibility, widths/colours, watcher cleanup and stale-update regressions from the old monolith.
 - `fleet-click.mjs`: select task rows, not the header or blank rows; ignore non-primary clicks; focus exact panes; handle queued/missing panes; preserve the last painted row's identity across an unpainted update; ignore disposed widgets.
-- `cleanup-timing.mjs`: retained abort, restart and pending-cleanup checks.
+- `cleanup-timing.mjs`: focused deferred cleanup under a held state lock, then successful/failed durable cleanup commits. It does not test retired restart/recovery workflows.
 - `config.mjs`, `report-boundary.mjs`, `report-lifecycle.mjs`, `standalone-package.mjs` and `real-herdr-config.test.mjs`: configuration, native child settlement, standalone lifecycle and smoke configuration. `load-test` also runs `extension-sources-load.mjs` against native Pi package loading.
+
+The `extension-contract.ts` load fixture now checks registration gates, the current schemas and single-task normalization, foreground waiting through a failed sibling, Fleet keyboard focus, historical blocked rendering, and no duplicate background notification. `load-extension-contract.mjs` requires its explicit completion marker: a zero Pi exit without finishing the fixture is a failure. Both the default suite and `load-test` execute this check.
+
+Removed fixture scenarios asserted retired background queues, early handoff, public respond/resume and automatic startup recovery. They are not restored. Current owner cancellation and shutdown coverage lives in `ownership-cleanup.mjs`; keyboard/rendering coverage remains in `fleet.mjs` and `fleet-click.mjs`. No retained current contract is dropped to make the fixture complete.
+
+## Restored regression coverage after migration review
+
+The default runner also executes these retained current-contract checks:
+
+- `config-resolution.mjs`: package/global/project whole-Persona replacement; model/thinking/skills/extensions merge, diagnostics and sources; Markdown precedence; effective values, per-task model overrides, CLI tool boundaries, isolated child environment, no focus theft, system prompts, durable records and history through public batch execution.
+- `live-agent.mjs`: normal idle/done acknowledgements and transient process observation errors remain nonterminal; a final report stops an outstanding prompt acknowledgement. These checks use real temporary files and explicit events, without patching Node file APIs or imposing additional cancellation/join guarantees.
+- `batch-contracts.mjs`: current control allow/deny table, Herdr-required zero-side-effect rejection, exact cancel dispatch, uncertain create/split/start failures without duplicate execution, invalid JSON/status/documents/attempt reports and archived failure records, stale canonical report rejection, cross-attempt result isolation, cleanup warnings preserving business results, and a fake-clock stalled warning that does not terminate live work.
+- `history-storage.mjs`: selected status/history without full results or stale running-task reports; damaged record isolation; positive-integer task order; active/blocked/pending-cleanup deletion refusal including an internal active-run invariant with a corrupt task; public selected-only removal and safe failure on damaged records; atomic snapshots; explicit lock publication/release gates, cancelled lock waits and concurrent field preservation; idempotent runtime ignore rules that retain Persona sources.
+- `ownership-cleanup.mjs`: durable owner/run isolation; registered control cancel and session shutdown abort/join only their owned in-flight work; immediate/deferred cancellation, missing tabs, focus/close errors, preserved business outcomes and concurrent run fields. It exercises current shutdown, not automatic startup restoration of historical work.
+- `herdr-cli.mjs`: actual local executable/JSON adapter for shell versus native/Node-hosted Pi, temporary query failures versus confirmed missing panes, malformed replies, command argv, and abort-listener disposal. Focus-poll timers are advanced by a fake clock; no real Herdr or paid model is needed.
+
+Background queues, public blocked/respond/resume, early detach, automatic startup reconciliation and historical restart remain retired per the README. They are not counted as missing current execution coverage. Historical read/status/cleanup compatibility and shared locking remain supported and are covered above. No fixed grace sleep was added to decide business completion.
+
+The corrupt-task deletion case checks an internal invariant of `cleanSubagentRun`: deletion eligibility comes from the durable run, not the error-tolerant history display. This is not evidence of a public-tool deletion bug. The public cleanup action still rejects damaged task/report records during status loading; it does not gain a damaged-record recovery mode.
 
 ## Real Fleet click check
 

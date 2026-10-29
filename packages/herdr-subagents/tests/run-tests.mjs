@@ -7,8 +7,14 @@ import { fileURLToPath } from "node:url";
 const cwd = dirname(dirname(fileURLToPath(import.meta.url)));
 const files = [
 	"config.mjs",
+	"config-resolution.mjs",
 	"core-state-machine.mjs",
 	"live-agent.mjs",
+	"batch-contracts.mjs",
+	"history-storage.mjs",
+	"ownership-cleanup.mjs",
+	"herdr-cli.mjs",
+	"load-extension-contract.mjs",
 	"fleet.mjs",
 	"fleet-click.mjs",
 	"cleanup-timing.mjs",

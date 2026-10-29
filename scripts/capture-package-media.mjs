@@ -25,6 +25,9 @@ if (wanted("background-tasks")) {
   ], { cwd: root, stdio: "inherit", timeout: 90_000 });
   const result = JSON.parse(readFileSync(join(output, "result.json"), "utf8"));
   if (result.passed !== true) throw new Error("Background Tasks real-TUI capture did not pass");
+  execFileSync(process.execPath, [join(root, "scripts/capture-background-tasks-media.mjs"), captureDir], {
+    cwd: root, stdio: "inherit", timeout: 120_000,
+  });
 }
 
 function freePort() {
