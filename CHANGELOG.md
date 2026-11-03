@@ -1,3 +1,7 @@
+## 2026-11-03 - v0.14.6
+
+- herdr-subagents v0.10.1: Fail tasks whose prompt was never accepted instead of waiting forever
+
 ## 2026-11-03 - v0.14.5
 
 - background-tasks v0.3.0: Report completion status and log paths for progressive inspection with bounded explicit output
