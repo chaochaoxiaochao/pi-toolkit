@@ -1,3 +1,7 @@
+## 2026-11-03 - v0.14.4
+
+- worktree v0.5.0: Support sibling creation, preserve active sessions and safely resolve force removal by Git registration
+
 ## 2026-11-03 - v0.14.3
 
 - herdr-subagents v0.10.0: Page compact run history with stable cursors and on-demand task summaries

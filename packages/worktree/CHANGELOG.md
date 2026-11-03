@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2026-11-03 - v0.5.0
 
+- Support sibling creation, preserve active sessions and safely resolve force removal by Git registration
 - Add `remove --force` / `-f` to skip dirty/unmerged prompts while retaining main/current/locked guards and stop-on-error batch semantics.
 - Detect untracked submodule files and confirm unmerged detached HEADs before removal.
 
