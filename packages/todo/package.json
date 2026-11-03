@@ -18,7 +18,7 @@
     "typebox": "*"
   },
   "scripts": {
-    "test": "node --experimental-strip-types tests/todo-state.mjs && node --experimental-strip-types tests/todo-extension.mjs",
+    "test": "node --experimental-strip-types --import ../background-tasks/tests/runtime.mjs tests/todo-state.mjs && node --experimental-strip-types --import ../background-tasks/tests/runtime.mjs tests/todo-extension.mjs",
     "load-test": "pi -ne -e ./extensions/todo.ts"
   },
   "publishConfig": { "access": "public" }

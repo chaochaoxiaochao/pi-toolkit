@@ -40,7 +40,7 @@
     "typebox": "*"
   },
   "scripts": {
-    "test": "node --test tests/install.test.mjs tests/cli.test.mjs && node --experimental-strip-types --test tests/extension.test.mjs && bash tests/run-tests.sh",
+    "test": "node --import ../background-tasks/tests/runtime.mjs --test tests/install.test.mjs tests/cli.test.mjs && node --experimental-strip-types --import ../background-tasks/tests/runtime.mjs --test tests/extension.test.mjs && bash tests/run-tests.sh",
     "postinstall": "node scripts/install.mjs"
   },
   "publishConfig": {
