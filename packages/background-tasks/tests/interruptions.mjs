@@ -19,6 +19,7 @@ for (const timing of ["before interrupt", "after interrupt", "after active compa
 		const release = join(directory, "release");
 		const exited = join(directory, "exited");
 		const requests = [], settlements = [], errors = [];
+		const warmupRequests = timing === "after active compaction" ? 1 : 0;
 		let session, task, output, holding = false, summaries = 0;
 		const waitFor = async (check, label) => {
 			for (let i = 0; i < 1000; i++) {
@@ -43,11 +44,14 @@ for (const timing of ["before interrupt", "after interrupt", "after active compa
 						if (compacting) {
 							message.stopReason = "stop";
 							message.content.push({ type: "text", text: "## Goal\nKeep the interrupted agent stopped. A shell job remains owned by this session." });
-						} else if (requests.length === 1) message.content.push({ type: "toolCall", id: "start-job", name: "background_task", arguments: {
-							action: "start", command: "while [ ! -f release ]; do sleep 0.01; done; printf 'late shell result\\n'; printf done > exited; exit 7", timeout: 10,
+						} else if (requests.length <= warmupRequests) {
+							message.stopReason = "stop";
+							message.content.push({ type: "text", text: "WARMUP_ACK" });
+						} else if (requests.length === warmupRequests + 1) message.content.push({ type: "toolCall", id: "start-job", name: "background_task", arguments: {
+							action: "start", command: "while [ ! -f release ]; do sleep 0.01; done; printf 'late shell result\\n'; printf done > exited; exit 7", description: "Interrupted shell fixture", timeout: 10,
 						} });
-						else if (requests.length === 2) message.content.push({ type: "toolCall", id: "hold-turn", name: "interrupt_fixture", arguments: {} });
-						else if (requests.length === 3) message.content.push({ type: "toolCall", id: "read-result", name: "background_task", arguments: { action: "output", id: task.id } });
+						else if (requests.length === warmupRequests + 2) message.content.push({ type: "toolCall", id: "hold-turn", name: "interrupt_fixture", arguments: {} });
+						else if (requests.length === warmupRequests + 3) message.content.push({ type: "toolCall", id: "read-result", name: "background_task", arguments: { action: "output", id: task.id } });
 						else {
 							message.stopReason = "stop";
 							message.content.push({ type: "text", text: "RESUMED_RESULT_ACK" });
@@ -87,6 +91,9 @@ for (const timing of ["before interrupt", "after interrupt", "after active compa
 				else if (event.result.structuredContent.action === "output") output = event.result.structuredContent;
 			});
 			await session.bindExtensions({});
+			// Native compaction needs an earlier completed turn; do not depend
+			// on how verbose the background tool's start result happens to be.
+			if (warmupRequests) await session.prompt("Warmup history to summarize. ".repeat(200));
 			const prompting = session.prompt("Start a job and hold the agent so the user can interrupt. " + "Prior history to compact. ".repeat(200));
 			await waitFor(() => holding, "the real blocking tool");
 			assert.equal(task.status, "running");
@@ -102,32 +109,34 @@ for (const timing of ["before interrupt", "after interrupt", "after active compa
 			} else await session.abort();
 			await prompting;
 			const interruptedAt = Date.now();
-			assert.deepEqual(settlements, [true], "native settlement must confirm the user interrupt");
+			assert.deepEqual(settlements, [...Array(warmupRequests).fill(false), true], "native settlement must confirm the user interrupt");
 			assert.equal(session.isIdle, true);
 			writeFileSync(release, "finish after user interruption");
 			await waitFor(() => existsSync(exited), "the background shell surviving the interrupt");
 			await delay(1250);
-			assert.equal(requests.length, 2, "late completion must not start a model request");
+			assert.equal(requests.length, warmupRequests + 2, "late completion must not start a model request");
 			assert.match(readFileSync(task.log_path, "utf8"), /late shell result/);
 			assert.equal(session.isIdle, true);
 			await session.prompt("Continue and inspect the completed job.");
-			assert.equal(requests.length, 4);
-			const resumedContext = JSON.stringify(requests[2]);
+			assert.equal(requests.length, warmupRequests + 4);
+			const resumedContext = JSON.stringify(requests[warmupRequests + 2]);
 			assert.equal((resumedContext.match(/\[Background task finished\]/g) ?? []).length, 1, "retained completion enters context before the resumed model request");
 			assert.ok(resumedContext.includes(task.id));
 			assert.equal(output.task.exit_code, 7);
 			assert.equal(output.output, "late shell result\n");
 			await delay(50);
-			assert.equal(requests.length, 4, "consumed completion must not trigger another turn");
+			assert.equal(requests.length, warmupRequests + 4, "consumed completion must not trigger another turn");
 			const notifications = session.sessionManager.getBranch().filter((entry) => entry.type === "custom_message" && entry.customType === "background-task-finished");
 			assert.equal(notifications.length, 1);
+			assert.doesNotMatch(notifications[0].content, /late shell result/);
+			assert.ok(notifications[0].content.includes(task.log_path));
 			assert.equal(notifications[0].details.tasks[0].id, task.id);
 			assert.equal(notifications[0].details.tasks[0].status, "failed");
 			if (timing === "before interrupt") assert.ok(notifications[0].details.tasks[0].ended_at <= interruptRequestedAt);
 			else assert.ok(notifications[0].details.tasks[0].ended_at >= interruptedAt);
 			assert.equal(session.getLastAssistantText(), "RESUMED_RESULT_ACK");
 			assert.deepEqual(errors, []);
-			t.diagnostic(JSON.stringify({ timing, requestsBeforeResume: 2, requestsAfterResume: 4, pendingDeliveredOnce: true, lateResultRecovered: true }));
+			t.diagnostic(JSON.stringify({ timing, warmupRequests, requestsBeforeResume: warmupRequests + 2, requestsAfterResume: warmupRequests + 4, pendingDeliveredOnce: true, lateResultRecovered: true }));
 		} finally {
 			if (session) {
 				await session.abort();

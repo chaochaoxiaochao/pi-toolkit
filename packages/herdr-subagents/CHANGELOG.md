@@ -1,3 +1,8 @@
+## Unreleased
+
+- Return cursor-paged history indexes (10 by default, maximum 50), without task summaries or session/document paths; status remains the on-demand detail interface.
+- Page the history slash command too; inspect run metadata without scanning every task/report.
+
 ## 2026-10-29 - v0.9.0
 
 - Add optional task thinking overrides with validated levels and user-requested override guidance

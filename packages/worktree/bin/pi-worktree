@@ -6,7 +6,7 @@
 #   pi-worktree -l | --list                # list worktrees (main checkout marked "main checkout")
 #   pi-worktree -i <name>                  # show base commit, ahead/behind, unique commits
 #   pi-worktree -o | --out                 # cd back to the main checkout
-#   pi-worktree -r <name> [<name> ...]     # remove worktrees (confirms dirty or unmerged)
+#   pi-worktree -r [--force] <name> [<name> ...] # remove; force skips dirty/unmerged prompts
 #   pi-worktree -p | --prune               # drop stale worktree registrations
 set -euo pipefail
 
@@ -29,15 +29,74 @@ main_checkout() {
   git rev-parse --path-format=absolute --git-common-dir | sed 's|/.git$||'
 }
 
-in_linked_worktree() {
-  local git_dir common_dir
-  git_dir=$(git rev-parse --git-dir 2>/dev/null) || return 1
-  common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || return 1
-  [[ "$(cd "$git_dir" && pwd -P)" != "$(cd "$common_dir" && pwd -P)" ]] \
-    && [[ -z "$(git rev-parse --show-superproject-working-tree 2>/dev/null)" ]]
+# Git <2.36 cannot emit NUL-delimited worktree paths. Its porcelain output
+# leaves newlines unescaped, so read that version's registration files instead.
+worktree_records() {
+  local common root
+  common=$(git rev-parse --path-format=absolute --git-common-dir) || return
+  root=$(main_checkout) || return
+  node - "$common" "$root" <<'NODE'
+const { execFileSync } = require("node:child_process");
+const { existsSync, readFileSync, readdirSync } = require("node:fs");
+const { join, dirname } = require("node:path");
+try {
+  process.stdout.write(execFileSync("git", ["worktree", "list", "--porcelain", "-z"], { env: { ...process.env, LC_ALL: "C" }, stdio: ["ignore", "pipe", "pipe"] }));
+} catch (error) {
+  if (!error.stderr?.toString().includes("unknown switch `z'")) throw error;
+  const [common, root] = process.argv.slice(2);
+  const entries = [{ directory: common, path: root }];
+  const linked = join(common, "worktrees");
+  if (existsSync(linked)) for (const name of readdirSync(linked)) {
+    const directory = join(linked, name);
+    const gitdir = readFileSync(join(directory, "gitdir"), "utf8").replace(/\n$/, "");
+    entries.push({ directory, path: dirname(gitdir) });
+  }
+  for (const entry of entries) {
+    const head = readFileSync(join(entry.directory, "HEAD"), "utf8").trim();
+    const fields = ["worktree " + entry.path];
+    if (head.startsWith("ref: refs/heads/")) fields.push("branch " + head.slice(5));
+    else if (/^[0-9a-f]{40,64}$/.test(head)) fields.push("HEAD " + head);
+    if (existsSync(join(entry.directory, "locked"))) fields.push("locked");
+    process.stdout.write(fields.join("\0") + "\0\0");
+  }
+}
+NODE
 }
 
-wt_dir() { echo ".worktrees/$1"; }
+# Resolve names against Git's registration, not a guessed directory. Managed
+# directory names remain usable after a branch rename or detached checkout.
+resolve_worktree() {
+  local name="$1" expected field path="" branch="" head="" locked=0
+  git check-ref-format --branch "$name" >/dev/null 2>&1 || die "invalid worktree/branch name: $name"
+  expected="$(main_checkout)/.worktrees/$name"
+  RESOLVED_DIR="" RESOLVED_BRANCH="" RESOLVED_HEAD="" RESOLVED_LOCKED=0
+  while IFS= read -r -d '' field; do
+    case "$field" in
+      registration-error) die "cannot read worktree registrations" ;;
+      "worktree "*) path=${field#worktree } ;;
+      "branch "*) branch=${field#branch refs/heads/} ;;
+      "HEAD "*) head=${field#HEAD } ;;
+      locked|"locked "*) locked=1 ;;
+      "")
+        if [[ "$branch" == "$name" || "$path" == "$expected" ]]; then
+          [[ -z "$RESOLVED_DIR" ]] || die "ambiguous worktree name: $name"
+          RESOLVED_DIR="$path" RESOLVED_BRANCH="$branch" RESOLVED_HEAD="$head" RESOLVED_LOCKED="$locked"
+        fi
+        path="" branch="" head="" locked=0
+        ;;
+    esac
+  done < <(worktree_records || printf 'registration-error\0')
+}
+
+verify_worktree() {
+  local dir="$1" root common
+  [[ ! -L "$dir" ]] || die "worktree must not be a symlink: $dir"
+  root=$(git -C "$dir" rev-parse --show-toplevel) || die "invalid worktree: $dir"
+  common=$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir)
+  [[ "$(cd "$dir" && pwd -P)" == "$(cd "$root" && pwd -P)" \
+    && "$common" == "$(git rev-parse --path-format=absolute --git-common-dir)" ]] \
+    || die "worktree registration does not match checkout: $dir"
+}
 
 validate_name() {
   local name="$1"
@@ -116,8 +175,10 @@ cmd_out() {
 cmd_info() {
   require_repo
   [[ $# -eq 1 ]] || die "usage: pi-worktree -i <name>"
-  local dir; dir="$(wt_dir "$1")"
-  [[ -d "$dir" ]] || die "worktree not found: $dir"
+  resolve_worktree "$1"
+  local dir="$RESOLVED_DIR"
+  [[ -n "$dir" && -d "$dir" ]] || die "worktree not found: $1"
+  verify_worktree "$dir"
   local branch; branch=$(git -C "$dir" branch --show-current)
   echo "worktree: $dir"
   if git -C "$dir" diff --quiet 2>/dev/null && git -C "$dir" diff --cached --quiet 2>/dev/null \
@@ -150,65 +211,73 @@ cmd_info() {
 
 cmd_remove() {
   require_repo
-  [[ $# -ge 1 ]] || die "usage: pi-worktree -r <name> [<name> ...]"
-  local name
-  for name in "$@"; do
-    remove_one "$name"
+  local name remove_force=0
+  local names=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --force|-f) remove_force=1 ;;
+      --) shift; names+=("$@"); break ;;
+      -*) die "unknown remove option: $1" ;;
+      *) names+=("$1") ;;
+    esac
+    shift
+  done
+  [[ ${#names[@]} -ge 1 ]] || die "usage: pi-worktree remove [--force] <name> [<name> ...]"
+  for name in "${names[@]}"; do
+    remove_one "$name" "$remove_force"
   done
 }
 
 remove_one() {
-  local dir; dir="$(wt_dir "$1")"
-  local branch registered rm_anyway=0 force=0
-  if [[ ! -d "$dir" ]]; then
-    # Directory already gone but possibly still registered (prunable), or a
-    # stale branch left behind by an earlier prune: clean the registration,
-    # then fall through to the branch cleanup.
-    local registered
-    registered=$(git worktree list --porcelain | awk -v p="$(pwd -P)/$dir" '
-      $0=="worktree "p {f=1; next}
-      f && /^branch /  {print substr($0,8); exit}
-      f && /^detached/ {print "-"; exit}
-      f && /^$/        {exit}')
-    if [[ "$registered" == "-" ]]; then
-      git worktree prune
-      ok "pruned stale registration: $dir (directory already gone)"
-      return 0  # detached HEAD, nothing else to clean up
-    fi
-    if [[ -n "$registered" ]]; then
-      branch=${registered#refs/heads/}
-    elif git show-ref --verify --quiet "refs/heads/$1"; then
-      branch=$1  # registration already pruned; only the stale branch remains
-    else
-      die "worktree not found: $dir"
-    fi
-    if [[ -n "$registered" ]]; then
-      git worktree prune
-      ok "pruned stale registration: $dir (directory already gone)"
-    fi
+  resolve_worktree "$1"
+  local dir="$RESOLVED_DIR" branch="$RESOLVED_BRANCH" merged=0 force="$2"
+  local skip_confirmation="$2" merge_ref
+  if [[ -n "$dir" ]]; then
+    [[ "$dir" != "$(main_checkout)" ]] || die "cannot remove the main checkout"
+    [[ "$dir" != "$(git rev-parse --show-toplevel)" ]] || die "cannot remove the current worktree"
+    [[ "$RESOLVED_LOCKED" == 0 ]] || die "worktree is locked: $dir"
+  elif git show-ref --verify --quiet "refs/heads/$1"; then
+    branch="$1"
   else
+    die "worktree not found: $1"
+  fi
+  merge_ref="${branch:-$RESOLVED_HEAD}"
+  if [[ -n "$dir" && -d "$dir" ]]; then
+    verify_worktree "$dir"
     # dirty worktree: removing discards modified/untracked files, which git
     # refuses to do without --force — so confirm the loss explicitly
-    if ! git -C "$dir" diff --quiet 2>/dev/null \
-       || ! git -C "$dir" diff --cached --quiet 2>/dev/null \
-       || [[ -n "$(git -C "$dir" ls-files --others --exclude-standard)" ]]; then
+    local dirty_status
+    dirty_status=$(git -C "$dir" status --porcelain --untracked-files=all --ignore-submodules=none) \
+      || die "cannot inspect worktree changes: $dir"
+    if [[ -n "$dirty_status" ]]; then
       warn "worktree contains modified/untracked files that will be discarded:"
-      git -C "$dir" status --short | head -10
-      read -rp "Discard and remove anyway? [y/N] " ans
-      [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
+      printf '%s\n' "$dirty_status" | sed -n '1,10p'
+      if [[ "$skip_confirmation" == 0 ]]; then
+        read -rp "Discard and remove anyway? [y/N] " ans
+        [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
+      fi
       force=1
     fi
-    branch=$(git -C "$dir" branch --show-current)
-    # refuse to remove if the branch is not merged into main
-    if [[ -n "$branch" ]] && ! git merge-base --is-ancestor "$branch" main 2>/dev/null; then
-      warn "branch '$branch' does not appear merged into 'main' (or no main branch exists)."
-      read -rp "Remove anyway? [y/N] " ans
-      [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
-      rm_anyway=1
+  fi
+  # Use the same reference for the warning and the deletion decision.
+  # branch -d alone checks upstream/HEAD, which can disagree with main.
+  if [[ -n "$merge_ref" ]]; then
+    if git merge-base --is-ancestor "$merge_ref" main 2>/dev/null; then
+      merged=1
+    else
+      warn "checkout '${branch:-detached HEAD}' does not appear merged into 'main' (or no main branch exists)."
+      if [[ "$skip_confirmation" == 0 ]]; then
+        read -rp "Remove checkout and its branch (if any) anyway? [y/N] " ans
+        [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
+      fi
     fi
+  elif [[ -n "$dir" ]]; then
+    die "cannot determine checkout HEAD: $dir"
+  fi
+  if [[ -n "$dir" ]]; then
     local out
     if [[ "$force" == 1 ]]; then
-      git worktree remove --force "$dir" && ok "removed: $dir (discarded changes as confirmed)"
+      git worktree remove --force "$dir" && ok "removed: $dir (forced or discarded changes as confirmed)"
     elif out=$(git worktree remove "$dir" 2>&1); then
       ok "removed: $dir"
     elif [[ "$out" == *"submodules cannot be moved or removed"* ]]; then
@@ -221,21 +290,14 @@ remove_one() {
       die "failed to remove worktree: $dir"
     fi
   fi
-  # The branch survives `git worktree remove`; recreating the same name would
-  # silently reuse this stale branch. Delete merged branches automatically.
+  # Only remove the selected registration, including when its directory is
+  # already gone. Never prune unrelated stale worktrees as a side effect.
   if [[ -n "$branch" ]] && git show-ref --verify --quiet "refs/heads/$branch"; then
-    if git branch -d "$branch" 2>/dev/null; then
-      ok "deleted merged branch: $branch"
-    elif [[ "$rm_anyway" == 1 ]]; then
-      git branch -D "$branch" && ok "deleted unmerged branch: $branch (confirmed above)"
+    git branch -D -- "$branch"
+    if [[ "$merged" == 1 ]]; then
+      ok "deleted branch: $branch (merged into main)"
     else
-      warn "branch '$branch' has unmerged commits."
-      read -rp "Delete anyway? [y/N] " ans
-      if [[ "$ans" =~ ^[Yy]$ ]]; then
-        git branch -D "$branch" && ok "deleted branch: $branch"
-      else
-        warn "branch '$branch' kept; 'pi-worktree create $branch' will reuse it as-is"
-      fi
+      ok "deleted branch: $branch (not merged into main; $([[ "$skip_confirmation" == 1 ]] && echo forced || echo confirmed))"
     fi
   fi
 }
@@ -245,13 +307,11 @@ create_wt() {
   require_repo
   validate_name "$name"
 
-  # A linked checkout cannot safely create another `.worktrees/` tree relative
-  # to itself. Re-entering the active branch is nevertheless idempotent.
-  if in_linked_worktree; then
-    local current_branch
-    current_branch=$(git branch --show-current)
-    [[ "$current_branch" == "$name" ]] \
-      || die "already inside linked worktree '$current_branch'; return to the main checkout first"
+  # Re-entering the active branch is idempotent, including from a subdirectory.
+  # New siblings live under the main checkout but branch from this checkout.
+  local current_branch
+  current_branch=$(git branch --show-current)
+  if [[ "$current_branch" == "$name" && "$(git rev-parse --show-toplevel)" != "$(main_checkout)" ]]; then
     CREATE_STATUS="already-active"
     CREATE_DIR=$(cd "$(git rev-parse --show-toplevel)" && pwd -P)
     CREATE_BRANCH="$current_branch"

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { piBinary } from "./runtime.mjs";
 
-test("native model receives concise start guidance without Codemode instructions", () => {
+test("native model receives distinct declaration and start guidance without Codemode instructions", () => {
 	const directory = mkdtempSync(join(tmpdir(), "pi-bg-guidance-"));
 	try {
 		const events = join(directory, "events.jsonl");
@@ -22,13 +22,16 @@ test("native model receives concise start guidance without Codemode instructions
 		const records = readFileSync(events, "utf8").trim().split("\n").map((line) => JSON.parse(line));
 		const started = records.find((entry) => entry.event === "tool_end" && entry.name === "background_task");
 		assert.equal(started.isError, false);
-		const guidance = started.result.structuredContent.guidance;
-		assert.equal(guidance, "Notifies automatically on completion. Do not sleep or poll; continue other work or end the turn.");
+		const notice = "Completion is reported automatically. Continue other work or end the turn; do not repeatedly query just to wait for completion.";
+		assert.equal(started.result.structuredContent.guidance, undefined);
 		assert.equal(records.some((entry) => entry.event === "tool_end" && entry.name === "codemode"), false);
 		const requests = records.filter((entry) => entry.event === "request");
-		assert.ok(requests[0].backgroundDescription.includes(guidance));
+		assert.match(requests[0].backgroundDescription, /automatic completion notifications/);
+		assert.match(requests[0].backgroundDescription, /session changes, reload, or exit/);
+		assert.ok(!requests[0].backgroundDescription.includes(notice));
 		assert.ok(!requests[0].backgroundDescription.includes("Codemode:"));
-		assert.ok(requests[1].text.includes(guidance), "the next model request sees the startup guidance");
+		assert.ok(requests[1].text.includes(notice), "the next model request sees the task-specific reminder");
+		assert.ok(!started.result.content[0].text.includes(started.result.structuredContent.task.log_path));
 	} finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
@@ -89,6 +92,11 @@ for (const mode of ["codemode", "direct"]) {
 				assert.equal(tasks.length, 4 - reads);
 				assert.ok(tasks.every((task) => task.status === "failed" && task.exit_code === 7));
 				assert.ok(tasks.every((task) => !returned.consumed.includes(task.id)));
+				for (const task of tasks) assert.ok(message.content.includes(task.log_path), "completion provides the captured output location");
+				assert.doesNotMatch(message.content, /RESULT wave/, "command output is not injected automatically");
+				assert.match(message.content, /Inspect logs progressively as needed/);
+				for (const task of returned.tasks.filter((task) => returned.consumed.includes(task.id))) assert.ok(!message.content.includes(`RESULT ${task.description}`), "consumed output is not delivered twice");
+				assert.ok(Buffer.byteLength(message.content) <= 16384);
 				assert.deepEqual([...returned.consumed, ...tasks.map((task) => task.id)].sort(), returned.tasks.map((task) => task.id).sort());
 				const toolEnd = transcript.findLastIndex((entry) => entry.type === "tool_execution_end" && ["synchronous_subagent_fixture", "codemode"].includes(entry.toolName));
 				assert.ok(toolEnd >= 0 && transcript.indexOf(notifications[0]) > toolEnd, "the notification cannot interrupt the synchronous tool");
@@ -99,7 +107,10 @@ for (const mode of ["codemode", "direct"]) {
 				assert.equal((nextContext.match(/\[Background task finished\]/g) ?? []).length, 1);
 				assert.doesNotMatch(nextContext, /FINAL_REPORT/, "completion is delivered before, not after, the final report");
 				const contextText = requests.at(-1).messages.flatMap((message) => typeof message.content === "string" ? [message.content] : (message.content ?? []).filter((block) => block.type === "text").map((block) => block.text)).join("\n");
-				for (const task of returned.tasks.filter((task) => !returned.consumed.includes(task.id))) assert.ok(contextText.includes(task.id));
+				for (const task of returned.tasks.filter((task) => !returned.consumed.includes(task.id))) {
+					assert.ok(contextText.includes(task.id));
+					assert.ok(contextText.includes(task.log_path), "the next model request can locate output for on-demand inspection");
+				}
 			} finally { rmSync(directory, { recursive: true, force: true }); }
 		});
 	}

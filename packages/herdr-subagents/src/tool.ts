@@ -1,7 +1,8 @@
 import { CliHerdrAutomation, type HerdrAutomation } from "./herdr.ts";
 import { loadSubagentConfiguration, type ConfigurationPaths, type SubagentConfiguration } from "./config.ts";
 import { runHerdrSubagentsBatch, type BatchResult, type BatchTask } from "./batch-runner.ts";
-import { cleanSubagentRun, historyText, listSubagentHistory } from "./history.ts";
+import { cleanSubagentRun } from "./history.ts";
+import { historyPageText, listSubagentHistoryPage } from "./history-page.ts";
 import { HERDR_ACTIONS, validateControlParams, validateRunParams } from "./validation.ts";
 import type { OwnerIdentity } from "./ownership.ts";
 import { cancelActiveSubagentRuns } from "./reconcile.ts";
@@ -18,6 +19,8 @@ export interface HerdrSubagentsRunParams {
 export interface HerdrSubagentsControlToolParams {
 	action: "list" | "status" | "history" | "cancel" | "cleanup";
 	runId?: string;
+	limit?: number;
+	cursor?: string;
 }
 
 /** Internal superset used by shared execution helpers. */
@@ -27,6 +30,8 @@ export interface HerdrSubagentsToolParams {
 	tasks?: HerdrSubagentsTaskParams[];
 	concurrency?: number;
 	runId?: string;
+	limit?: number;
+	cursor?: string;
 }
 
 export interface HerdrSubagentsToolContext {
@@ -94,9 +99,13 @@ const actionHandlers = {
 			return errorResponse(error instanceof Error ? error.message : String(error), { action: "status", runId: params.runId });
 		}
 	},
-	async history({ ctx }: ToolExecutionContext) {
-		const history = await listSubagentHistory(ctx.cwd);
-		return { content: [{ type: "text", text: historyText(history) }], details: { action: "history", runs: history } };
+	async history({ params, ctx }: ToolExecutionContext) {
+		try {
+			const page = await listSubagentHistoryPage(ctx.cwd, params);
+			return { content: [{ type: "text", text: historyPageText(page) }], details: { action: "history", ...page } };
+		} catch (error) {
+			return errorResponse(error instanceof Error ? error.message : String(error), { action: "history" });
+		}
 	},
 	async cleanup({ params, ctx }: ToolExecutionContext) {
 		try {

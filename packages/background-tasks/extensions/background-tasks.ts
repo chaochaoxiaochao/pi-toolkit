@@ -9,7 +9,9 @@ import { HerdrViewer } from "../src/viewer.ts";
 import { BackgroundWidget, FINISHED_VISIBLE_MS, WIDGET_KEY, duration, visibleTasks } from "../src/widget.ts";
 
 const actions = ["start", "list", "output", "cancel"] as const;
-const startGuidance = "Notifies automatically on completion. Do not sleep or poll; continue other work or end the turn.";
+const startNotice = "Completion is reported automatically. Continue other work or end the turn; do not repeatedly query just to wait for completion.";
+// Bound model-visible status text when many completions accumulate.
+const NOTIFICATION_MAX_BYTES = 16 * 1024;
 type Action = typeof actions[number];
 interface Params {
 	action: Action;
@@ -20,12 +22,12 @@ interface Params {
 	id?: string;
 }
 const Parameters = Type.Object({
-	action: StringEnum(actions, { description: "start returns a task ID immediately; list checks tasks; output reads a bash-limited snapshot; cancel stops one task" }),
+	action: StringEnum(actions, { description: "start returns a task ID immediately; list checks status; output reads a bounded tail; cancel stops one task. list and output also work while tasks are running." }),
 	command: Type.Optional(Type.String({ description: "Shell command for start; may be multi-line. Runs locally, with stdin closed." })),
 	description: Type.Optional(Type.String({ description: "Short display label for start" })),
 	cwd: Type.Optional(Type.String({ description: "Working directory for start; defaults to the session directory. Relative paths resolve from it." })),
 	timeout: Type.Optional(Type.Integer({ minimum: 1, maximum: 7200, description: "Runtime limit for start, in seconds: default 1800 (30 minutes), maximum 7200 (2 hours); no unlimited mode" })),
-	id: Type.Optional(Type.String({ description: "Task ID for output or cancel; output shows the last 2000 lines or 50 KiB, plus a log path." })),
+	id: Type.Optional(Type.String({ description: "Task ID for output or cancel; output returns a bounded snapshot (last 100 lines or 8 KiB) and the captured log path." })),
 }, { additionalProperties: false });
 const TaskSchema = Type.Object({
 	id: Type.String(), status: StringEnum(["running", "succeeded", "failed", "cancelled", "timed_out", "output_limit"] as const),
@@ -37,7 +39,6 @@ const OutputSchema = Type.Object({
 	action: Type.Optional(StringEnum(actions)), task: Type.Optional(TaskSchema), tasks: Type.Optional(Type.Array(TaskSchema)),
 	running: Type.Optional(Type.Number()), total: Type.Optional(Type.Number()), omitted: Type.Optional(Type.Number()),
 	output: Type.Optional(Type.String()), truncated: Type.Optional(Type.Boolean()), full_output_path: Type.Optional(Type.String()),
-	guidance: Type.Optional(Type.String()),
 	error: Type.Optional(Type.String()),
 });
 
@@ -53,6 +54,15 @@ function validate(params: Params): void {
 function formatTask(task: TaskSnapshot): string {
 	return `${task.id} · ${task.status} · ${duration(task.elapsed_seconds)} / ${duration(task.timeout)}${task.exit_code === undefined ? "" : ` · exit ${task.exit_code}`} · ${JSON.stringify(task.description)}`;
 }
+
+function completionText(task: TaskSnapshot): string {
+	const lines = [formatTask(task), `Ended at: ${new Date(task.ended_at!).toISOString()}`];
+	if (task.reason) lines.push(`Reason: ${task.reason}`);
+	lines.push(`Captured log: ${task.log_path}`);
+	if (!task.capture_complete) lines.push("Output capture is incomplete.");
+	return lines.join("\n");
+}
+
 function parseCommand(input: string): Params | { action: "watch"; id: string } {
 	const parts = input.trim().split(/\s+/).filter(Boolean);
 	if (parts.length === 0 || (parts.length === 1 && parts[0] === "list")) return { action: "list" };
@@ -86,14 +96,25 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 	const takeNotification = () => {
 		clearNotificationTimer();
 		if (pending.size === 0) return;
+		if (!manager) throw new Error("Cannot deliver background results without their session manager");
 		const tasks = [...pending.values()].sort((a, b) => a.ended_at! - b.ended_at!);
-		pending.clear();
+		const selected: TaskSnapshot[] = [];
+		const parts = ["[Background task finished]"];
+		const guidance = "\n\nInspect logs progressively as needed: search for relevant terms or read bounded ranges; avoid loading the whole log by default.";
+		const more = "\n\nMore completed task results remain pending.";
+		for (const record of tasks) {
+			const task = manager.get(record.id);
+			const text = completionText(task);
+			if (Buffer.byteLength([...parts, text].join("\n\n") + guidance + more) > NOTIFICATION_MAX_BYTES) break;
+			parts.push(text);
+			selected.push(task);
+		}
+		if (!selected.length) throw new Error("A background completion exceeds the notification byte limit");
+		for (const task of selected) pending.delete(task.id);
 		return {
 			customType: "background-task-finished", display: true,
-			details: { tasks, ...(tasks.length === 1 ? { task: tasks[0] } : {}) },
-			content: `[Background task finished]\n${tasks.map((task) =>
-				`${formatTask(task)}\nEnded at: ${new Date(task.ended_at!).toISOString()}${task.reason ? `\nReason: ${task.reason}` : ""}\nCaptured log: ${task.log_path}${task.capture_complete ? "" : "\nOutput capture is incomplete."}`
-			).join("\n\n")}`,
+			details: { tasks: selected, ...(selected.length === 1 ? { task: selected[0] } : {}) },
+			content: parts.join("\n\n") + guidance + (pending.size ? more : ""),
 		};
 	};
 	const scheduleNotification = (delay = 0) => {
@@ -240,8 +261,8 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 			const task = manager.start({ command: params.command!, description: params.description, cwd: params.cwd, timeout: params.timeout }, cwd);
 			void viewer?.show(task, params.command!);
 			return {
-				text: `Started ${formatTask(task)}\n${startGuidance}\nLog: ${task.log_path}\nAt most 2 tasks run at once. Tasks stop on session changes, reload, or exit; captured logs are then removed.`,
-				data: { action: params.action, task, guidance: startGuidance }, details: { action: params.action, task }, isError: false,
+				text: `Started ${formatTask(task)}\n${startNotice}`,
+				data: { action: params.action, task }, details: { action: params.action, task }, isError: false,
 			};
 		}
 		if (params.action === "list") {
@@ -268,7 +289,7 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 	pi.registerTool({
 		name: "background_task", label: "Background task",
 		exposure: "model-only",
-		description: `Start shell commands as background tasks and return task IDs immediately. Supports status, output, and cancellation. After start: ${startGuidance}`,
+		description: "Run up to two concurrent background shell tasks with automatic completion notifications. Tasks stop and captured logs are deleted on session changes, reload, or exit.",
 		parameters: Parameters, outputSchema: OutputSchema,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
 		async execute(_id, params, signal, _onUpdate, ctx) {

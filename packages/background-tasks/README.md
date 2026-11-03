@@ -1,6 +1,6 @@
 # Pi Background Tasks
 
-Run shell commands in the background, then notify the main agent when they finish. These are local processes, not subagents.
+Run shell commands in the background, then notify the main agent of completion and the captured log location. These are local processes, not subagents.
 
 ![Real parent Pi: click either background task row to watch it in Herdr](docs/screenshot.png)
 
@@ -18,7 +18,7 @@ A command such as `sleep 60; python3 ...` can spend most of its time waiting to 
 
 It uses Pi's public `createLocalBashOperations()` backend for shell execution and process-group cancellation. It adds session ownership, bounded logs, status, and completion messages. It neither replaces Bash nor starts another model. Inside Herdr, it also opens a read-only pane per task so the user can watch the command and its live output; the command still runs locally, not in that pane.
 
-Completion delivery follows [oh-my-pi's yield-queue approach](https://github.com/can1357/oh-my-pi/blob/3a2758b68f7c8e6bdf22c3a76b86c8675e5e0c9e/packages/coding-agent/src/session/yield-queue.ts): retain results, combine them at a safe boundary, and filter consumed results before delivery. This package uses Pi's public extension API, not patched host code; a local idle retry covers busy operations that expose no final agent boundary.
+Completion delivery follows [oh-my-pi's yield-queue approach](https://github.com/can1357/oh-my-pi/blob/3a2758b68f7c8e6bdf22c3a76b86c8675e5e0c9e/packages/coding-agent/src/session/yield-queue.ts): retain results, combine them at a safe boundary, and filter consumed results before delivery. This package uses Pi's public extension API, not patched host code; a local idle retry covers busy operations that expose no final agent boundary. Prompt timing is informed by [OMP’s background-start notice](https://github.com/can1357/oh-my-pi/blob/256b3211bca7458391866a8bcc9369902664be55/packages/tui/src/tools/bash.ts#L36-L48), but delivery is deliberately different: this package sends status and log paths only, not OMP-style automatic command-output injection. Agents inspect captured logs progressively when needed.
 
 ## Install and update
 
@@ -39,24 +39,26 @@ background_task({ action: "start", command: "sleep 10; printf 'checks complete\\
 
 The tool is fixed to `exposure: "model-only"`: the model calls it directly; Codemode and other tools cannot call it. There is no exposure setting.
 
-Each accepted start includes this guidance in the tool description, result text and `structuredContent.guidance`:
+The tool declaration describes automatic completion notifications, concurrency and session lifetime. The action parameter explicitly permits `list` and `output` while tasks are still running. Each accepted start returns only its task data and this short, task-specific reminder:
 
-> Notifies automatically on completion. Do not sleep or poll; continue other work or end the turn.
+> Completion is reported automatically. Continue other work or end the turn; do not repeatedly query just to wait for completion.
 
-After the completion notification, read the result:
+The whole reminder is not duplicated in the tool description or a `structuredContent.guidance` field. Start text does not advertise a full-log path; structured task metadata still retains `log_path`.
+
+Inspect a running or finished task whenever its output is needed; no completion or timeout notification is required:
 
 ```text
 background_task({ action: "output", id: "<returned-task-id>" })
 ```
 
-The tool also supports listing and cancellation:
+Use `list` to inspect task status at any time, including while tasks are running. These are agent-callable actions, not only user `/bg` commands. Query on demand rather than repeatedly checking just to wait. After completion, use the reported log path to search relevant terms or read selected ranges; avoid loading the entire log by default. The tool also supports cancellation:
 
 ```text
 background_task({ action: "list" })
 background_task({ action: "cancel", id: "<returned-task-id>" })
 ```
 
-Start returns a running task's ID, log path and runtime limit, not the command's final output. An invalid start is rejected before execution. A later execution error becomes a failed task.
+Start returns a running task's ID and runtime limit, not the command's final output. An invalid start is rejected before execution. A later execution error becomes a failed task.
 
 - `command`: unchanged multi-line shell script; only for start.
 - `description`: optional display label, shortened to 200 characters.
@@ -98,8 +100,8 @@ There is no setting to turn the view off.
 
 Completion, failure, cancellation, timeout and output-limit termination update the widget immediately. The extension holds pending completion metadata until it can deliver it safely:
 
-- While the main agent is busy, completions are combined into one message after the current tool batch returns, before the next model request. This includes waiting for a synchronous Herdr subagent; it does not cancel or interrupt that subagent.
-- While idle, pending completions are combined on the next event-loop tick and wake the main agent once. Jobs that finish after that batch can produce another notification. Pi's global steering/follow-up queue settings are unchanged.
+- While the main agent is busy, completions are combined into a bounded message after the current tool batch returns, before the next model request. This includes waiting for a synchronous Herdr subagent; it does not cancel or interrupt that subagent.
+- While idle, pending completions are combined on the next event-loop tick and wake the main agent once. Oversized metadata batches remain pending for later safe boundaries rather than being dropped. Jobs that finish after that batch can produce another notification. Pi's global steering/follow-up queue settings are unchanged.
 - If another operation such as manual compaction keeps the session busy without an agent boundary, one local timer retries after 1, 2, 4, 8, 16, then 30 seconds, staying at 30 seconds thereafter. There is no retry-count limit or expiry that discards unread results. This does not call a model or poll shell output.
 - Normal tool/settlement boundaries still deliver immediately, without waiting for the retry timer. Without a boundary, an idle session can wait up to the current retry interval (at most 30 seconds, subject to native timer delays). Once a batch is delivered or fully consumed, the next batch starts with an immediate check and fresh backoff.
 - A successful tool `output` read of a finished task consumes its pending reminder, including failed tasks. A running snapshot, `list`, a failed log read, or a user `/bg output` inspection does not consume the main agent's reminder. Consumption does not mean the task passed validation.
@@ -109,7 +111,15 @@ Completion, failure, cancellation, timeout and output-limit termination update t
 
 Pi's public interrupted-run event does not include the abort reason. In particular, starting `/compact` during an active run first interrupts that run. This package preserves that interruption until the next user-message run; it does not infer that compaction grants permission to restart the agent. Compaction started while already idle does not create this interrupted-run state.
 
-Each message includes actual completion times, statuses and log paths, **not the output body**. The agent can call output when it needs details. Completions that arrive near final settlement are checked again before the run settles. No per-task `followUp` messages are left behind the main agent's final report.
+Each completion message includes task status, exit code when available, actual end time, reason when applicable and **the captured log path**, followed by:
+
+> Inspect logs progressively as needed: search for relevant terms or read bounded ranges; avoid loading the whole log by default.
+
+No stdout/stderr body, automatic preview or generated log summary is included. Building a notification does not open the log file. Agents may filter the reported file directly or call `output` for a bounded snapshot; no notification is required for running-task inspection either. Missing log files are reported only when an inspection is requested, not by silently changing task status during notification.
+
+Status/path batches have a defensive **16-KiB model-visible text cap**. Tasks that cannot fit remain pending for the next safe boundary; this is a metadata backlog guard, not a log-preview allowance. There is no automatic log-output budget because no log bodies are attached. Captured files remain until session cleanup.
+
+Completions that arrive near final settlement are checked again before the run settles. No per-task `followUp` messages are left behind the main agent’s final report.
 
 Pi reports asynchronous message/run-start failures through its extension error channel. This extension does not automatically replay a message after such a failure; task metadata and captured logs remain queryable for the lifetime of the session.
 
@@ -117,19 +127,21 @@ Pi reports asynchronous message/run-start failures through its extension error c
 
 | View | Limit |
 | --- | --- |
-| Model-visible output | Last 2000 lines or 50 KiB, whichever is reached first, like Bash |
-| Internal `structuredContent.output` | Up to 1 MiB of raw log bytes; larger logs keep their first and last 512 KiB with an omission marker |
+| Model-visible output body | Last 100 lines or 8 KiB, whichever is reached first |
+| `structuredContent.output` | The same bounded tail; no separate 1 MiB program view |
+| Automatic completion log bodies | None; only status, log paths and progressive-inspection guidance |
+| Completion status/path text | 16 KiB defensive batch cap; remaining tasks stay pending |
 | Disk capture | 32 MiB per task, 256 MiB total per session |
 
-Display/program-view truncation does **not** stop the command. Disk limits **do** stop the overflowing task with `output_limit`; a full session budget rejects new starts. Nothing silently evicts old logs.
+Preview truncation does **not** stop the command. Disk limits **do** stop the overflowing task with `output_limit`; a full session budget rejects new starts. Nothing silently evicts old logs.
 
-Output includes a log path for further reads. `truncated` describes the program view, not disk capture. `task.capture_complete` is false while running or when log data was lost. The states are `running`, `succeeded`, `failed`, `cancelled`, `timed_out` and `output_limit`.
+Output includes a log path for further reads. `truncated` describes the shared preview, not disk capture. The preview includes omission information and total lines/bytes; the task includes captured byte count and a full-log path for targeted follow-up reads. A smaller preview can miss an earlier root cause; use a focused search when it does. `task.capture_complete` is false while running or when log data was lost. The states are `running`, `succeeded`, `failed`, `cancelled`, `timed_out` and `output_limit`.
 
-Output streams to private temporary logs (directory 0700, files 0600 on Unix), with bounded memory and range-limited reads. Log errors stop the task and are reported. Stdout and stderr are merged; strict ordering across the two streams is not promised. Logs and command arguments can contain secrets: choose commands accordingly.
+Output streams to private temporary logs (directory 0700, files 0600 on Unix), with bounded memory and range-limited reads. Log errors stop the task and are reported. Stdout and stderr are merged; strict ordering across the two streams is not promised. Logs and command arguments can contain secrets: avoid commands that print credentials or other sensitive data, and inspect captured content only when needed.
 
 ## Bash and background execution
 
-Use Bash when you need a command's result before proceeding. Use `background_task` directly when the command should keep running after the model's turn ends. Completion notifies the model automatically; do not add sleep or polling calls to wait for it.
+Use Bash when you need a command's result before proceeding. Use `background_task` directly when the command should keep running after the model's turn ends. Completion notifies the model automatically. Inspect status with `list` or logs with `output` on demand, including while running and before any notification; do not add sleep or repeated polling to wait for completion.
 
 Codemode cannot call this model-only tool. Starting an unawaited Bash call in Codemode is not a substitute: Codemode cancels unfinished nested calls when its script ends.
 

@@ -90,7 +90,7 @@ test("native large output truncates display, then stops at the 32 MiB disk budge
 		assert.equal(result.bytes, 32 * 1024 * 1024);
 		assert.equal(result.capture_complete, false);
 		assert.equal(result.truncated, true);
-		assert.ok(result.truncation.outputBytes <= 51200);
-		assert.ok(Buffer.byteLength(result.output) < 1024 * 1024 + 100);
+		assert.ok(result.truncation.outputBytes <= 8192);
+		assert.ok(Buffer.byteLength(result.output) <= 8192);
 	} finally { await tasks.shutdown(); }
 });

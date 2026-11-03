@@ -60,7 +60,7 @@ export default function (pi: ExtensionAPI) {
 					const wave = requests - 1;
 					if (requests === 2) message.content.push({ type: "toolCall", id: "wait-first-wave", name: "synchronous_subagent_fixture", arguments: { wave: 0 } });
 					for (let i = 0; i < 2; i++) message.content.push({ type: "toolCall", id: `start-${wave}-${i}`, name: "background_task", arguments: {
-						action: "start", command: `while [ ! -f release-${wave} ]; do sleep 0.01; done; printf 'wave ${wave}\\n'; touch exited-${wave}-${i}; exit 7`, description: `wave ${wave} job ${i}`, timeout: 10,
+						action: "start", command: `while [ ! -f release-${wave} ]; do sleep 0.01; done; printf 'RESULT wave ${wave} job ${i}\\n'; touch exited-${wave}-${i}; exit 7`, description: `wave ${wave} job ${i}`, timeout: 10,
 					} });
 					if (requests === 2) {
 						if (process.env.BG_NOTIFICATION_MODE === "codemode") message.content.push({ type: "toolCall", id: "wait-second-wave", name: "codemode", arguments: { code: "text(await tools.synchronous_subagent_fixture({ wave: 1 }));" } });

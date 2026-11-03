@@ -15,7 +15,7 @@ function harness(mode = "tui", hasUI = true) {
 	const placements = new Map();
 	const statuses = new Map();
 	const idleChecks = [];
-	let tool, renders = 0, idle = true;
+	let tool, renders = 0, idle = true, failSend = false;
 	const theme = { fg: (_color, text) => text, bold: (text) => text };
 	const ctx = {
 		cwd: f.root, mode, hasUI, isIdle: () => { idleChecks.push(f.clock.now()); return idle; },
@@ -33,12 +33,16 @@ function harness(mode = "tui", hasUI = true) {
 		on(name, handler) { handlers.set(name, handler); },
 		registerTool(value) { tool = value; },
 		registerCommand(name, value) { commands.set(name, value); },
-		sendMessage(message, options) { messages.push({ message, options }); },
+		sendMessage(message, options) {
+			if (failSend) { failSend = false; throw new Error("Fixture delivery rejected"); }
+			messages.push({ message, options });
+		},
 	};
 	register(pi, { operations: f.operations, clock: f.clock, logRoot: f.root, env: {} });
 	return {
 		...f, handlers, commands, messages, notices, widgets, placements, statuses, idleChecks, ctx,
 		setIdle(value) { idle = value; },
+		failNextSend() { failSend = true; },
 		get tool() { return tool; }, get renders() { return renders; },
 		async close() {
 			const closing = handlers.get("session_shutdown")({}, ctx);
@@ -68,6 +72,139 @@ test("completions during a synchronous tool are merged before the next model req
 		assert.equal(boundary.entries[1].details.tasks.length, 2);
 		assert.match(boundary.entries[1].content, /Ended at: 1970-01-01T00:00:01.000Z/);
 		assert.equal(h.handlers.get("agent_before_settle")({ entries: [], outcome: "completed" }, h.ctx), undefined);
+	} finally { await h.close(); }
+});
+
+test("completion sends only status and log location with progressive-inspection guidance", async () => {
+	const h = harness("print", false);
+	try {
+		await h.handlers.get("session_start")({}, h.ctx);
+		h.setIdle(false);
+		const task = (await h.tool.execute("start", { action: "start", command: "build" })).structuredContent.task;
+		h.calls[0].onData(Buffer.from("BUILD RESULT: done\n"));
+		h.calls[0].resolve();
+		await flush();
+		const message = h.handlers.get("turn_end")({ entries: [], outcome: "completed" }, h.ctx).entries[0];
+		assert.doesNotMatch(message.content, /BUILD RESULT: done|Untrusted shell output/);
+		assert.ok(message.content.includes(`Captured log: ${task.log_path}`));
+		assert.match(message.content, /Inspect logs progressively as needed/);
+		assert.match(message.content, /search for relevant terms or read bounded ranges/);
+		assert.doesNotMatch(message.content, /do not repeatedly|Do not sleep|Inspect:/);
+		const inspected = await h.tool.execute("inspect", { action: "output", id: task.id });
+		assert.equal(inspected.structuredContent.output, "BUILD RESULT: done\n");
+		assert.equal(h.handlers.get("agent_before_settle")({ entries: [], outcome: "completed" }, h.ctx), undefined);
+	} finally { await h.close(); }
+});
+
+test("status-only completion batches stay bounded without reading or injecting large UTF-8 logs", async () => {
+	const h = harness("print", false);
+	try {
+		await h.handlers.get("session_start")({}, h.ctx);
+		h.setIdle(false);
+		const ids = [];
+		const data = Buffer.from("🙂".repeat(3000));
+		for (let i = 0; i < 10; i++) {
+			const task = (await h.tool.execute(`start-${i}`, { action: "start", command: `build-${i}`, description: "界".repeat(200) })).structuredContent.task;
+			ids.push(task.id);
+			h.calls[i].onData(data);
+			h.calls[i].reject(new Error("错".repeat(500)));
+			await flush();
+		}
+		const delivered = [];
+		let batches = 0;
+		for (;;) {
+			const boundary = h.handlers.get("turn_end")({ entries: [], outcome: "completed" }, h.ctx);
+			if (!boundary) break;
+			assert.ok(++batches <= ids.length, "every batch must make progress");
+			const message = boundary.entries[0];
+			assert.ok(Buffer.byteLength(message.content) <= 16384);
+			assert.ok(!message.content.includes("\uFFFD"), "budget cuts must preserve UTF-8");
+			assert.ok(!message.content.includes("🙂"), "captured log bodies must not enter notifications");
+			assert.doesNotMatch(message.content, /Untrusted shell output|Output preview/);
+			delivered.push(...message.details.tasks.map((task) => task.id));
+		}
+		assert.ok(batches > 1, "long metadata must split the pending batch");
+		assert.deepEqual(delivered, ids);
+		assert.equal(h.messages.length, 0);
+		const inspected = await h.tool.execute("inspect", { action: "output", id: ids[0] });
+		assert.equal(inspected.structuredContent.task.bytes, data.length);
+		assert.equal(inspected.structuredContent.task.capture_complete, true);
+	} finally { await h.close(); }
+});
+
+test("notification does not open missing logs; later explicit inspections report errors independently", async () => {
+	const h = harness("print", false);
+	try {
+		await h.handlers.get("session_start")({}, h.ctx);
+		h.setIdle(false);
+		const broken = (await h.tool.execute("broken", { action: "start", command: "broken" })).structuredContent.task;
+		const healthy = (await h.tool.execute("healthy", { action: "start", command: "healthy" })).structuredContent.task;
+		h.calls[0].onData(Buffer.from("unavailable log\n"));
+		h.calls[1].onData(Buffer.from("healthy result\n"));
+		h.calls[0].resolve(7);
+		h.calls[1].resolve();
+		await flush();
+		unlinkSync(broken.log_path);
+		const message = h.handlers.get("turn_end")({ entries: [], outcome: "completed" }, h.ctx).entries[0];
+		assert.deepEqual(message.details.tasks.map((task) => task.id), [broken.id, healthy.id]);
+		assert.equal(message.details.tasks[0].status, "failed");
+		assert.equal(message.details.tasks[0].capture_complete, true, "notification must not inspect the file or mutate capture state");
+		assert.ok(message.content.includes(broken.log_path));
+		assert.ok(message.content.includes(healthy.log_path));
+		assert.doesNotMatch(message.content, /healthy result|unavailable log|Output unavailable/);
+		const missing = await h.tool.execute("read-broken", { action: "output", id: broken.id });
+		assert.equal(missing.isError, true);
+		assert.match(missing.structuredContent.error, /Cannot read task log/);
+		const present = await h.tool.execute("read-healthy", { action: "output", id: healthy.id });
+		assert.equal(present.structuredContent.output, "healthy result\n");
+		assert.equal(h.handlers.get("agent_before_settle")({ entries: [], outcome: "completed" }, h.ctx), undefined);
+	} finally { await h.close(); }
+});
+
+test("a rejected idle delivery retains its result for the next safe boundary", async () => {
+	const h = harness("print", false);
+	try {
+		await h.handlers.get("session_start")({}, h.ctx);
+		const task = (await h.tool.execute("start", { action: "start", command: "build" })).structuredContent.task;
+		h.calls[0].onData(Buffer.from("retained result\n"));
+		h.calls[0].resolve();
+		await flush();
+		h.failNextSend();
+		h.clock.advance(0);
+		assert.equal(h.messages.length, 0);
+		const message = h.handlers.get("turn_end")({ entries: [], outcome: "completed" }, h.ctx).entries[0];
+		assert.equal(message.details.tasks[0].id, task.id);
+		assert.ok(message.content.includes(task.log_path));
+		assert.doesNotMatch(message.content, /retained result/);
+		assert.equal((await h.tool.execute("inspect", { action: "output", id: task.id })).structuredContent.output, "retained result\n");
+		assert.equal(h.handlers.get("agent_before_settle")({ entries: [], outcome: "completed" }, h.ctx), undefined);
+	} finally { await h.close(); }
+});
+
+test("timeout and empty-result notifications contain status and paths, not captured output", async () => {
+	const h = harness("print", false);
+	try {
+		await h.handlers.get("session_start")({}, h.ctx);
+		h.setIdle(false);
+		await h.tool.execute("slow", { action: "start", command: "slow", timeout: 1 });
+		h.calls[0].onData(Buffer.from("partial before deadline\n"));
+		h.clock.advance(1000);
+		h.calls[0].reject(new Error("aborted"));
+		await flush();
+		const timedOut = h.handlers.get("turn_end")({ entries: [], outcome: "completed" }, h.ctx).entries[0];
+		assert.equal(timedOut.details.tasks[0].status, "timed_out");
+		assert.match(timedOut.content, /Runtime limit of 1 seconds reached/);
+		assert.doesNotMatch(timedOut.content, /partial before deadline/);
+		assert.ok(timedOut.content.includes(timedOut.details.tasks[0].log_path));
+		assert.equal((await h.tool.execute("read-slow", { action: "output", id: timedOut.details.tasks[0].id })).structuredContent.output, "partial before deadline\n");
+		await h.tool.execute("empty", { action: "start", command: "empty" });
+		h.calls[1].resolve();
+		await flush();
+		const empty = h.handlers.get("turn_end")({ entries: [], outcome: "completed" }, h.ctx).entries[0];
+		assert.ok(empty.content.includes(empty.details.tasks[0].log_path));
+		assert.doesNotMatch(empty.content, /\(no output\)/);
+		assert.equal((await h.tool.execute("read-empty", { action: "output", id: empty.details.tasks[0].id })).structuredContent.output, "");
+		assert.doesNotMatch(empty.content, /For logs:|For more logs:/);
 	} finally { await h.close(); }
 });
 
@@ -326,7 +463,8 @@ test("registration is compact, does not inject prompt rules or start session res
 	try {
 		assert.equal(h.tool.name, "background_task");
 		assert.equal(h.tool.exposure, "model-only");
-		assert.match(h.tool.description, /return task IDs immediately/);
+		assert.match(h.tool.description, /up to two concurrent background shell tasks/);
+		assert.match(h.tool.parameters.properties.action.description, /start returns a task ID immediately/);
 		assert.ok(h.tool.description.length < 500);
 		assert.equal(h.tool.promptGuidelines, undefined);
 		assert.ok(h.tool.outputSchema);
@@ -338,20 +476,28 @@ test("registration is compact, does not inject prompt rules or start session res
 	} finally { await h.close(); }
 });
 
-test("start provides non-blocking next steps in both model text and structured results", async () => {
+test("start keeps only task-specific guidance while the declaration describes lifecycle and running queries", async () => {
 	const h = harness();
 	try {
 		await h.handlers.get("session_start")({}, h.ctx);
 		const started = await h.tool.execute("start", { action: "start", command: "sleep 60" });
-		const { task, guidance } = started.structuredContent;
+		const { task } = started.structuredContent;
+		const notice = "Completion is reported automatically. Continue other work or end the turn; do not repeatedly query just to wait for completion.";
 		assert.equal(task.status, "running");
-		assert.equal(guidance, "Notifies automatically on completion. Do not sleep or poll; continue other work or end the turn.");
-		assert.ok(started.content[0].text.includes(guidance), "the start result must include the guidance");
-		assert.ok(h.tool.description.includes(guidance), "the tool description must include the same guidance");
-		assert.equal(h.tool.outputSchema.properties.guidance.type, "string");
-		assert.equal(h.tool.outputSchema.required?.includes("guidance") ?? false, false);
+		assert.ok(started.content[0].text.includes(notice));
+		assert.ok(!started.content[0].text.includes(task.log_path));
+		assert.ok(!started.content[0].text.includes("session changes"));
+		assert.ok(!h.tool.description.includes(notice), "declaration must not duplicate the whole start reminder");
+		assert.match(h.tool.description, /automatic completion notifications/);
+		assert.match(h.tool.description, /session changes, reload, or exit/);
+		assert.match(h.tool.parameters.properties.action.description, /list and output also work while tasks are running/);
+		assert.equal(started.structuredContent.guidance, undefined);
+		assert.equal(h.tool.outputSchema.properties.guidance, undefined);
 		const list = await h.tool.execute("list", { action: "list" });
 		const output = await h.tool.execute("output", { action: "output", id: task.id });
+		assert.equal(list.structuredContent.tasks[0].status, "running", "status inspection does not require a completion notification");
+		assert.equal(output.structuredContent.task.status, "running", "log inspection is allowed before completion");
+		assert.equal(h.messages.length, 0, "running-task inspection does not wait for or create a notification");
 		assert.equal(list.structuredContent.guidance, undefined);
 		assert.equal(output.structuredContent.guidance, undefined);
 		h.calls[0].resolve();
@@ -379,12 +525,12 @@ test("tools, commands, widget and idle notifications share the same session jobs
 		for (const width of [1, 8, 40, 80]) assert.ok(widget.render(width).every((line) => visibleWidth(line) <= width));
 		assert.ok(h.widgets.has("scheduler") && h.widgets.has("herdr-subagents"));
 
-		h.calls[0].onData(Buffer.from("logs only on explicit read\n"));
+		h.calls[0].onData(Buffer.from("captured build output\n"));
 		await h.commands.get("bg").handler(`output ${job.id}`, h.ctx);
-		assert.match(h.messages.at(-1).message.content, /logs only on explicit read/);
+		assert.match(h.messages.at(-1).message.content, /captured build output/);
 		assert.equal(h.messages.at(-1).options.triggerTurn, false);
 		const output = await h.tool.execute("output", { action: "output", id: job.id });
-		assert.equal(output.structuredContent.output, "logs only on explicit read\n");
+		assert.equal(output.structuredContent.output, "captured build output\n");
 		assert.equal(output.details.output, undefined);
 
 		h.calls[0].resolve(7);
@@ -394,7 +540,9 @@ test("tools, commands, widget and idle notifications share the same session jobs
 		assert.equal(completed.length, 1);
 		assert.deepEqual(completed[0].options, { triggerTurn: true, deliverAs: "steer" });
 		assert.match(completed[0].message.content, /failed.*exit 7/);
-		assert.ok(!completed[0].message.content.includes("logs only"));
+		assert.doesNotMatch(completed[0].message.content, /captured build output/);
+		assert.ok(!completed[0].message.content.includes(`background_task({action:"output",id:"${job.id}"})`), "complete small output needs no follow-up query");
+		assert.ok(completed[0].message.content.includes(job.log_path), "completion points at the log for progressive inspection");
 		assert.match(h.widgets.get("background-tasks").render(140).join("\n"), /failed/);
 		h.clock.advance(4999);
 		assert.ok(h.widgets.has("background-tasks"));

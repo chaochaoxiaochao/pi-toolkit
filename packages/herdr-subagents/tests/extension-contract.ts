@@ -164,7 +164,9 @@ try {
 		assert.equal(inside.tool.prepareArguments(batch), batch);
 	}
 	const controlSchema = inside.controlTool.parameters;
-	assert.deepEqual(Object.keys(controlSchema.properties).sort(), ["action", "runId"]);
+	assert.deepEqual(Object.keys(controlSchema.properties).sort(), ["action", "cursor", "limit", "runId"]);
+	assert.equal(controlSchema.properties.limit.minimum, 1);
+	assert.equal(controlSchema.properties.limit.maximum, 50);
 	assert.ok(controlSchema.required.includes("action"));
 	for (const property of Object.values(controlSchema.properties) as any[]) assert.ok(property.description);
 	const actions = controlSchema.properties.action.enum ?? controlSchema.properties.action.anyOf.map((entry: any) => entry.const);

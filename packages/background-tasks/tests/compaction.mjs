@@ -97,7 +97,9 @@ for (const outcome of ["success", "failure", "cancel"]) {
 			});
 			await session.bindExtensions({});
 			await session.prompt("Earlier context to summarize: " + "background verification history ".repeat(200));
-			await session.prompt("START_COMPACTION_JOB");
+			// Keep a complete earlier turn summarizable independently of the
+			// background tool's start-result length.
+			await session.prompt("START_COMPACTION_JOB " + "Recent context to keep. ".repeat(200));
 			assert.equal(startedTask?.status, "running");
 			assert.equal(session.isIdle, true);
 			const notifications = () => session.sessionManager.getBranch().filter((entry) => entry.type === "custom_message" && entry.customType === "background-task-finished");
@@ -134,6 +136,8 @@ for (const outcome of ["success", "failure", "cancel"]) {
 			assert.equal(notifications().length, 1);
 			assert.equal(conversationRequests().length, before + 1, "no user prompt is submitted after compact()");
 			const notification = notifications()[0];
+			assert.doesNotMatch(notification.content, /finished during compaction/);
+			assert.ok(notification.content.includes(notification.details.tasks[0].log_path));
 			const task = notification.details.tasks[0];
 			assert.equal(task.id, startedTask.id);
 			assert.equal(task.status, "failed");

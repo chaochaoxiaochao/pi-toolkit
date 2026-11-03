@@ -1,7 +1,8 @@
 import { closeSync, openSync, readSync, writeSync } from "node:fs";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateTail, type TruncationResult } from "@earendil-works/pi-coding-agent";
+import { formatSize, truncateTail, type TruncationResult } from "@earendil-works/pi-coding-agent";
 
-const PROGRAM_BYTES = 1024 * 1024;
+const OUTPUT_MAX_BYTES = 8 * 1024;
+const OUTPUT_MAX_LINES = 100;
 export type LogWrite = (fd: number, data: Buffer) => number;
 
 export interface OutputView {
@@ -23,6 +24,7 @@ export class TaskLog {
 	private lines = 0;
 	private openLine = false;
 	private lastLineBytes = 0;
+	private lastCompletedLineBytes = 0;
 
 	constructor(path: string, write: LogWrite = (fd, data) => writeSync(fd, data)) {
 		this.path = path;
@@ -55,7 +57,7 @@ export class TaskLog {
 		try {
 			// Keep a bounded working window comparable to Bash's rolling tail. This
 			// preserves an oversized last line that ends with a newline before trimming.
-			const start = Math.max(0, this.bytes - DEFAULT_MAX_BYTES * 4 - 4);
+			const start = Math.max(0, this.bytes - OUTPUT_MAX_BYTES * 4 - 4);
 			const tail = this.range(fd, start, this.bytes - start);
 			let first = 0;
 			while (first < tail.length && (tail[first] & 0xc0) === 0x80) first++;
@@ -64,14 +66,14 @@ export class TaskLog {
 				const previous = this.range(fd, start - 1, 1)[0];
 				if (first > 0 || previous !== 0x0a) {
 					const newline = snapshot.indexOf("\n");
-					if (newline !== -1) snapshot = snapshot.slice(newline + 1);
+					if (newline !== -1 && newline < snapshot.length - 1) snapshot = snapshot.slice(newline + 1);
 				}
 			}
-			const truncation = truncateTail(snapshot);
+			const truncation = truncateTail(snapshot, { maxLines: OUTPUT_MAX_LINES, maxBytes: OUTPUT_MAX_BYTES });
 			const totalLines = this.lines + (this.openLine ? 1 : 0);
-			truncation.truncated = totalLines > DEFAULT_MAX_LINES || this.decodedBytes > DEFAULT_MAX_BYTES;
+			truncation.truncated = totalLines > OUTPUT_MAX_LINES || this.decodedBytes > OUTPUT_MAX_BYTES;
 			truncation.truncatedBy = truncation.truncated
-				? (truncation.truncatedBy ?? (this.decodedBytes > DEFAULT_MAX_BYTES ? "bytes" : "lines")) : null;
+				? (truncation.truncatedBy ?? (this.decodedBytes > OUTPUT_MAX_BYTES ? "bytes" : "lines")) : null;
 			truncation.totalLines = totalLines;
 			truncation.totalBytes = this.decodedBytes;
 			let text = truncation.content || "(no output)";
@@ -79,27 +81,12 @@ export class TaskLog {
 				const end = totalLines;
 				const begin = end - truncation.outputLines + 1;
 				const detail = truncation.lastLinePartial
-					? `last ${formatSize(truncation.outputBytes)} of line ${end} (line is ${formatSize(this.lastLineBytes)})`
-					: `lines ${begin}-${end} of ${end}${truncation.truncatedBy === "bytes" ? ` (${formatSize(DEFAULT_MAX_BYTES)} limit)` : ""}`;
+					? `last ${formatSize(truncation.outputBytes)} of line ${end} (line is ${formatSize(this.openLine ? this.lastLineBytes : this.lastCompletedLineBytes)})`
+					: `lines ${begin}-${end} of ${end}${truncation.truncatedBy === "bytes" ? ` (${formatSize(OUTPUT_MAX_BYTES)} limit)` : ""}`;
 				text += `\n\n[Showing ${detail}. Full output: ${this.path}]`;
 			}
-			const program = this.readProgram(fd);
-			return { text, output: program.content, truncated: program.truncated, truncation };
+			return { text, output: truncation.content, truncated: truncation.truncated, truncation };
 		} finally { closeSync(fd); }
-	}
-
-	private readProgram(fd: number): { content: string; truncated: boolean } {
-		if (this.bytes <= PROGRAM_BYTES) {
-			return { content: new TextDecoder().decode(this.range(fd, 0, this.bytes), { stream: !this.closed }), truncated: false };
-		}
-		const half = PROGRAM_BYTES / 2;
-		const head = this.range(fd, 0, half);
-		const tail = this.range(fd, this.bytes - half, half);
-		const headText = new TextDecoder().decode(head, { stream: true });
-		let first = 0;
-		while (first < tail.length && (tail[first] & 0xc0) === 0x80) first++;
-		const tailText = new TextDecoder().decode(tail.subarray(first), { stream: !this.closed });
-		return { content: `${headText}\n\n[... ${this.bytes - PROGRAM_BYTES} bytes omitted ...]\n\n${tailText}`, truncated: true };
 	}
 
 	private range(fd: number, position: number, length: number): Buffer {
@@ -120,6 +107,8 @@ export class TaskLog {
 			if (text.length) this.openLine = true;
 			this.lastLineBytes += Buffer.byteLength(text);
 		} else {
+			const previous = last === 0 ? -1 : text.lastIndexOf("\n", last - 1);
+			this.lastCompletedLineBytes = Buffer.byteLength(text.slice(previous + 1, last)) + (previous === -1 ? this.lastLineBytes : 0);
 			for (let index = text.indexOf("\n"); index !== -1; index = text.indexOf("\n", index + 1)) this.lines++;
 			this.lastLineBytes = Buffer.byteLength(text.slice(last + 1));
 			this.openLine = last < text.length - 1;

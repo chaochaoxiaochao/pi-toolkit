@@ -1,3 +1,9 @@
+## Unreleased
+
+- Worktree: create siblings from linked checkouts, continue already-active sessions, resolve safe removal by Git registration, and add an explicit non-interactive `remove --force` while retaining protected-checkout guards.
+- Herdr Subagents: cursor-paged run-index history, with summaries fetched on demand.
+- Background Tasks: send status/log paths only with progressive-inspection guidance, separate declaration/start prompts, and preserve running-task inspection plus bounded explicit output; no automatic log injection.
+
 ## 2026-10-29 - v0.14.2
 
 - herdr-subagents v0.9.0: Add optional task thinking overrides with validated levels and user-requested override guidance
@@ -15,6 +21,7 @@
 - bundle the explicit-only mermaid skill for Markdown diagrams and text wireframes; prune global AGENTS.md guidance
 
 ## Unreleased
+
 
 - Herdr Subagents: accept an optional per-task `thinking` override; `model` and `thinking` remain independently optional, and invalid thinking levels fail before child startup.
 - Herdr Subagents: restore omitted current-contract regression coverage and simplify internal cleanup eligibility checks without adding damaged-record recovery.

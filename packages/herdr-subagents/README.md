@@ -145,9 +145,19 @@ A batch containing a write-capable Persona must explicitly or effectively use `c
 | --- | --- | --- |
 | `list` | Not accepted | List Persona names and descriptions for task selection, plus configuration diagnostics when present. |
 | `status` | Required | Show one run and its task states. |
-| `history` | Not accepted | List durable project-local run history. |
+| `history` | Not accepted | Page durable run metadata; default 10, maximum 50 via `limit`, newest first. |
 | `cancel` | Required | Cancel an active run. |
 | `cleanup` | Required | Remove one archived run. |
+
+History accepts optional `limit` (1–50, default 10) and `cursor` (the previous page’s `nextCursor`). It returns `runs`, `hasMore` and, when needed, `nextCursor`; run entries contain only ID, label, status, timestamps, task count and a compact diagnostic for unreadable metadata. It does not expand task summaries, documents or session paths. Use `status` with a `runId` to read task summaries on demand.
+
+```text
+herdr_subagents_control({action: "history", limit: 10})
+herdr_subagents_control({action: "history", cursor: "<nextCursor>"})
+herdr_subagents_control({action: "status", runId: "<selected-run-id>"})
+```
+
+Pages sort by start time and run ID, so adding a newer run between requests does not shift older pages. A cursor remains usable if its anchor run was removed. The index reads only run metadata, not every task/report. It still scans all small run records; a persistent index is deferred until that scan becomes a measured bottleneck. The index shows durable run status, not the task-corruption projection of detailed storage inspection.
 
 Settled tasks are immutable. Follow-up work starts a new task or run; there is no resume/respond lifecycle.
 
@@ -160,7 +170,7 @@ The model-facing `list` text does not expand tools, skills, extensions, models, 
 | Command | Purpose |
 | --- | --- |
 | `active` | Show the current run. This is also the default with no argument. |
-| `history` | Show project-local history. |
+| `history [cursor]` | Show 10 run-index entries; use the returned cursor for the next page. |
 | `focus <task-number>` | Focus a running task pane. |
 | `agents` | Show effective Persona source, access, model, thinking, tools, skills, and extensions. |
 | `models` | List authenticated Pi models. |

@@ -6,14 +6,14 @@ _pi_worktree() {
 
   local SUBS="create list ls info out remove rm prune -l --list -i --info -o --out -r --remove -p --prune -h --help"
 
-  # existing worktree names (only linked worktrees, i.e. under .worktrees/)
+  # Checked-out branch names also identify external worktrees and slash names.
   local wts=""
   if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    local main_dir
+    local main_dir main_branch
     main_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null | sed 's|/.git$||')
-    wts=$(git worktree list --porcelain 2>/dev/null \
-      | sed -n 's|^worktree ||p' \
-      | while read -r p; do [[ "$p" != "$main_dir" ]] && basename "$p"; done || true)
+    main_branch=$(git -C "$main_dir" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+    wts=$(git for-each-ref --format='%(if)%(worktreepath)%(then)%(refname:strip=2)%(end)' refs/heads 2>/dev/null \
+      | grep -vxF -- "$main_branch" || true)
   fi
 
   if (( COMP_CWORD == 1 )); then
@@ -24,7 +24,7 @@ _pi_worktree() {
 
   case "$first" in
     -r|--remove|remove|rm)
-      COMPREPLY=($(compgen -W "$wts" -- "$cur"))
+      COMPREPLY=($(compgen -W "--force -f $wts" -- "$cur"))
       ;;
     -i|--info|info|create)
       # info and create accept one name

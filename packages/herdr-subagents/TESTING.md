@@ -27,6 +27,7 @@ It verifies:
 - parent cancellation of running and queued tasks;
 - startup isolation: a new Pi session neither mutates historical records nor closes their recorded Herdr tabs;
 - omitted exposure delegates both tools to Pi's default, while project configuration can consistently select model-only exposure;
+- compact history pages (10 by default, maximum 50), stable cursors during newer inserts, invalid-page rejection, no task/report expansion, and on-demand status summaries;
 - immutable terminal task records;
 - idempotent duplicate reports and rejection of conflicting replacements;
 - keeping a settled child alive for focus-aware cleanup instead of force-exiting its TUI;

@@ -13,6 +13,7 @@ const files = [
 	"live-agent.mjs",
 	"batch-contracts.mjs",
 	"history-storage.mjs",
+	"history-pagination.mjs",
 	"ownership-cleanup.mjs",
 	"herdr-cli.mjs",
 	"load-extension-contract.mjs",

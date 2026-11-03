@@ -4,7 +4,7 @@ const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "ma
 
 export const HERDR_ACTIONS = {
 	list: { allowed: ["action"], includeRunId: false },
-	history: { allowed: ["action"], includeRunId: false },
+	history: { allowed: ["action", "limit", "cursor"], includeRunId: false },
 	status: { allowed: ["action", "runId"], includeRunId: true },
 	cancel: { allowed: ["action", "runId"], includeRunId: true },
 	cleanup: { allowed: ["action", "runId"], includeRunId: true },

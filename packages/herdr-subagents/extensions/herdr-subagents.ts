@@ -5,7 +5,7 @@ import { Container, Editor, Text } from "@earendil-works/pi-tui";
 import { loadSubagentConfiguration, type ConfigurationPaths } from "../src/config.ts";
 import { CliHerdrAutomation, type HerdrAutomation } from "../src/herdr.ts";
 import { activeRunText } from "../src/monitor.ts";
-import { historyText, listSubagentHistory } from "../src/history.ts";
+import { historyPageText, listSubagentHistoryPage } from "../src/history-page.ts";
 import { cancelActiveSubagentRuns } from "../src/reconcile.ts";
 import { executeHerdrSubagents, executeHerdrSubagentsControl, type HerdrSubagentsBatchDetails, type HerdrSubagentsControlToolParams, type HerdrSubagentsRunParams } from "../src/tool.ts";
 import { HerdrSubagentsControlParams, HerdrSubagentsParams } from "../src/parameters.ts";
@@ -69,8 +69,12 @@ async function handleHerdrCommand(args: string, ctx: ExtensionCommandContext, fl
 		ctx.ui.notify(fleet.active ? activeRunText(fleet.active) : "No active Subagent run.", "info");
 		return;
 	}
-	if (section === "history") {
-		ctx.ui.notify(historyText(await listSubagentHistory(ctx.cwd)), "info");
+	if (section === "history" || section.startsWith("history ")) {
+		try {
+			const cursor = section === "history" ? undefined : section.slice(8).trim();
+			const page = await listSubagentHistoryPage(ctx.cwd, { cursor });
+			ctx.ui.notify(`${historyPageText(page)}${page.nextCursor ? `\n/herdr-subagents history ${page.nextCursor}` : ""}`, "info");
+		} catch (error) { ctx.ui.notify(error instanceof Error ? error.message : String(error), "error"); }
 		return;
 	}
 	if (section.startsWith("focus ")) {
@@ -96,7 +100,7 @@ async function handleHerdrCommand(args: string, ctx: ExtensionCommandContext, fl
 		ctx.ui.notify(lines.join("\n"), "info");
 		return;
 	}
-	ctx.ui.notify("Usage: /herdr-subagents active|history|focus <task-number>|agents|models|settings", "warning");
+	ctx.ui.notify("Usage: /herdr-subagents active|history [cursor]|focus <task-number>|agents|models|settings", "warning");
 }
 
 export interface HerdrSubagentsExtensionDependencies {
@@ -190,7 +194,7 @@ export function registerHerdrSubagents(pi: ExtensionAPI, dependencies: HerdrSuba
 		name: "herdr_subagents_control",
 		...(exposure ? { exposure } : {}),
 		label: "Herdr Subagents Control",
-		description: "Inspect Herdr personas, query one run by ID, list run history, cancel active work, or remove an archived run. Use herdr_subagents to start new work.",
+		description: "Inspect Herdr personas, query one run by ID, page compact run history, cancel active work, or remove an archived run. Use status with runId for task summaries, and herdr_subagents to start new work.",
 		parameters: HerdrSubagentsControlParams,
 
 		async execute(_toolCallId, params: HerdrSubagentsControlToolParams, signal, onUpdate, ctx) {

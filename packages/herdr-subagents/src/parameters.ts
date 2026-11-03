@@ -18,4 +18,6 @@ export const HerdrSubagentsParams = Type.Object({
 export const HerdrSubagentsControlParams = Type.Object({
 	action: StringEnum(["list", "status", "history", "cancel", "cleanup"] as const, { description: "Control operation to perform." }),
 	runId: Type.Optional(Type.String({ minLength: 1, description: "Durable run ID used by status, cancel, or cleanup." })),
+	limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50, description: "History page size; default 10, maximum 50. History returns run metadata, not task summaries." })),
+	cursor: Type.Optional(Type.String({ minLength: 1, maxLength: 1024, description: "History nextCursor from a previous page; omit for the newest runs." })),
 }, { additionalProperties: false });

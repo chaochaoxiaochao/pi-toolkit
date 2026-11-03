@@ -132,7 +132,7 @@ export default function worktreeExtension(pi: ExtensionAPI) {
           const { name, base } = parseCommandArgs(input);
           created = await createWorktree(pi, ctx.cwd, name, base);
         }
-        if (resolve(ctx.cwd) === resolve(created.path)) {
+        if (created.status === "already-active" || resolve(ctx.cwd) === resolve(created.path)) {
           if (isPendingSwitch) {
             pendingSwitch = undefined;
             pendingDispatchScheduled = false;
@@ -198,7 +198,7 @@ export default function worktreeExtension(pi: ExtensionAPI) {
     exposure: "model-only",
     executionMode: "sequential",
     description:
-      "Create or reuse an isolated git worktree, then automatically move this current conversation into it after the current Agent run settles. Call this tool alone and do not call repository tools afterward.",
+      "Create or reuse an isolated git worktree from the current checkout. Call this tool alone. If a switch is scheduled, stop repository work until the conversation moves there automatically; if already active, continue in the current session.",
     parameters: Type.Object({
       name: Type.String({ description: "Single-segment worktree and branch name" }),
       base: Type.Optional(Type.String({ description: "Optional git ref used only when creating a new branch" })),
@@ -222,7 +222,7 @@ export default function worktreeExtension(pi: ExtensionAPI) {
         transitionReserved = false;
         throw error;
       }
-      const alreadyActive = resolve(ctx.cwd) === resolve(created.path);
+      const alreadyActive = created.status === "already-active" || resolve(ctx.cwd) === resolve(created.path);
       const result: EnterWorktreeResult = {
         switch: alreadyActive ? "already-active" : "scheduled",
         ...created,
@@ -234,12 +234,12 @@ export default function worktreeExtension(pi: ExtensionAPI) {
         content: [{
           type: "text",
           text: alreadyActive
-            ? `已经位于 worktree：${created.path}.${dirtyNote}`
+            ? `已经位于 worktree：${created.path}.${dirtyNote} 无需切换，请在当前 session 继续任务。`
             : `Worktree ${created.status}: ${created.path}.${dirtyNote} 当前 Agent run 结束后会自动切换到该目录；不要继续调用仓库工具。`,
         }],
         details: result,
         structuredContent: result,
-        terminate: true,
+        terminate: !alreadyActive,
       };
     },
   });

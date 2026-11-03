@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Add `remove --force` / `-f` to skip dirty/unmerged prompts while retaining main/current/locked guards and stop-on-error batch semantics.
+- Detect untracked submodule files and confirm unmerged detached HEADs before removal.
+
+- Allow linked-worktree creation from the caller’s HEAD and retain source sessions when forking.
+- Continue without termination or session replacement when already active, including nested directories.
+- Resolve info/removal through Git registration, including external slash-named branches; protect main/current/locked worktrees and use main consistently for merge confirmation.
+
 ## 2026-10-27 - v0.4.2
 
 - support removing multiple worktrees in order

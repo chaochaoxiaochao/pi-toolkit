@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Send only terminal status, timestamps, reason and captured log paths on completion, with guidance to search relevant terms or read bounded ranges progressively as needed. Do not automatically read, summarize or inject stdout/stderr.
+- Keep a defensive 16-KiB model-visible status/path batch cap and retain overflow tasks for later boundaries; remove the automatic log-preview pipeline and its separate output budget.
+- Keep a short task-specific completion-notification reminder separate from the capability/lifecycle declaration. Preserve running-task list/output inspection; remove start-text log paths and the redundant structured guidance field.
+- Preserve consumption filtering, interrupt/compaction behavior and synchronous send-failure retention. Verify that missing logs are not opened during notification and explicit inspections diagnose them independently.
+- Use one 100-line/8-KiB tail for explicit model and structured output, with truncation metadata and targeted full-log access; retire the separate 1-MiB program view.
+
 ## 2026-10-29 - v0.2.0
 
 - Add live read-only Herdr task views, exact widget navigation and real two-task terminal media

@@ -18,7 +18,7 @@ function sourceSession(path, cwd) {
   ].join("\n"));
 }
 
-async function fixture({ cancelled = false, switchError, customSessionDir = true, deferExec = false } = {}) {
+async function fixture({ cancelled = false, switchError, customSessionDir = true, deferExec = false, alreadyActive = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), "pi-worktree-extension-"));
   const cwd = join(root, "repo");
   const worktree = join(root, "feature");
@@ -43,12 +43,12 @@ async function fixture({ cancelled = false, switchError, customSessionDir = true
     registerTool(tool) { handlers.tool = tool; },
     async exec(command, args, options) {
       execCalls.push({ command, args, options });
-      assert.equal(options.cwd, cwd);
+      assert.equal(options.cwd, ctx.cwd);
       markExecStarted();
       if (deferExec) await new Promise(resolve => { releaseExec = resolve; });
       return {
         code: 0,
-        stdout: JSON.stringify({ status: "created", path: worktree, branch: "feature", dirty: false }),
+        stdout: JSON.stringify({ status: alreadyActive ? "already-active" : "created", path: alreadyActive ? cwd : worktree, branch: "feature", dirty: false }),
         stderr: "",
       };
     },
@@ -98,12 +98,14 @@ async function schedule(f) {
     f.ctx,
   );
   assert.equal(result.details.switch, "scheduled");
+  assert.equal(result.terminate, true);
   assert.equal(f.handlers.tool.executionMode, "sequential");
 }
 
 test("enter_worktree defers, forks the current session, and switches automatically", async () => {
   const f = await fixture();
   try {
+    const original = readFileSync(join(f.sessions, "source.jsonl"), "utf8");
     await schedule(f);
     await f.handlers.agent_settled({ aborted: false });
     assert.deepEqual(f.sent, [{
@@ -121,6 +123,7 @@ test("enter_worktree defers, forks the current session, and switches automatical
     assert.equal(header.cwd, f.worktree);
     assert.equal(header.parentSession, join(f.sessions, "source.jsonl"));
     assert.match(readFileSync(target, "utf8"), /"id":"history-1"/);
+    assert.equal(readFileSync(join(f.sessions, "source.jsonl"), "utf8"), original, "forking must not alter the source session");
     assert.deepEqual(f.sessionMessages, [{
       message: {
         customType: "worktree-switch",
@@ -146,6 +149,23 @@ test("public /worktree forwards --base to the CLI and switches", async () => {
   } finally {
     f.cleanup();
   }
+});
+
+test("already-active keeps the current session and allows the Agent to continue, including from a subdirectory", async () => {
+  const f = await fixture({ alreadyActive: true });
+  try {
+    f.ctx.cwd = join(f.cwd, "nested");
+    const result = await f.handlers.tool.execute("active", { name: "feature" }, new AbortController().signal, undefined, f.ctx);
+    assert.equal(result.structuredContent.switch, "already-active");
+    assert.notEqual(result.terminate, true);
+    assert.match(result.content[0].text, /继续/);
+    await f.handlers.agent_settled({ aborted: false });
+    assert.deepEqual(f.sent, []);
+    await f.handlers["command:worktree"]("start feature", f.ctx);
+    assert.equal(f.switchedTo(), undefined);
+    assert.equal(f.sessionMessages.length, 0);
+    assert.match(readFileSync(join(f.sessions, "source.jsonl"), "utf8"), /preserve me/);
+  } finally { f.cleanup(); }
 });
 
 test("aborted agent settlement discards the scheduled switch", async () => {
