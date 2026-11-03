@@ -1,3 +1,7 @@
+## 2026-11-03 - v0.14.5
+
+- background-tasks v0.3.0: Report completion status and log paths for progressive inspection with bounded explicit output
+
 ## 2026-11-03 - v0.14.4
 
 - worktree v0.5.0: Support sibling creation, preserve active sessions and safely resolve force removal by Git registration

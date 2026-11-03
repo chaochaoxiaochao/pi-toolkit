@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2026-11-03 - v0.3.0
 
+- Report completion status and log paths for progressive inspection with bounded explicit output
 - Send only terminal status, timestamps, reason and captured log paths on completion, with guidance to search relevant terms or read bounded ranges progressively as needed. Do not automatically read, summarize or inject stdout/stderr.
 - Keep a defensive 16-KiB model-visible status/path batch cap and retain overflow tasks for later boundaries; remove the automatic log-preview pipeline and its separate output budget.
 - Keep a short task-specific completion-notification reminder separate from the capability/lifecycle declaration. Preserve running-task list/output inspection; remove start-text log paths and the redundant structured guidance field.
