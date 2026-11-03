@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-11-03 - v0.10.0
 
+- Page compact run history with stable cursors and on-demand task summaries
 - Return cursor-paged history indexes (10 by default, maximum 50), without task summaries or session/document paths; status remains the on-demand detail interface.
 - Page the history slash command too; inspect run metadata without scanning every task/report.
 

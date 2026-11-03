@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-11-03 - v0.14.3
 
+- herdr-subagents v0.10.0: Page compact run history with stable cursors and on-demand task summaries
 - Worktree: create siblings from linked checkouts, continue already-active sessions, resolve safe removal by Git registration, and add an explicit non-interactive `remove --force` while retaining protected-checkout guards.
 - Herdr Subagents: cursor-paged run-index history, with summaries fetched on demand.
 - Background Tasks: send status/log paths only with progressive-inspection guidance, separate declaration/start prompts, and preserve running-task inspection plus bounded explicit output; no automatic log injection.
