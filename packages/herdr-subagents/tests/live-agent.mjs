@@ -18,6 +18,9 @@ async function scenario(finish, { acknowledgement = "error", observationFailure 
 	const herdr = {
 		async startAgent() {},
 		async promptAgent() {
+			// The child accepted the prompt: its before_agent_start wrote the attempt state.
+			const task = JSON.parse(readFileSync(join(directory, "task.json"), "utf8"));
+			writeFileSync(join(directory, "attempts", `${task.currentAttemptId}.json`), JSON.stringify({ attemptId: task.currentAttemptId, state: "working" }));
 			if (acknowledgement === "error") throw new Error("transport acknowledgement lost");
 			return { status: acknowledgement };
 		},
@@ -97,3 +100,26 @@ try {
 	rmSync(directory, { recursive: true, force: true });
 }
 console.log("PASS idle/done acknowledgements, observation errors and report-first prompt cancellation");
+
+// The former stuck-forever case: delivery failed and the child never started the
+// attempt (prompt left unsubmitted in the input box). It must fail with the cause.
+const unaccepted = mkdtempSync(join(tmpdir(), "herdr-prompt-unaccepted-"));
+writeFileSync(join(unaccepted, "task.json"), "{}");
+try {
+	let waits = 0;
+	const error = await promptLiveAgent({
+		task: { id: "unaccepted", sessionFile: join(unaccepted, "session.jsonl") }, paneId: "pane", prompt: "work", systemPromptFile: join(unaccepted, "system.md"),
+		herdr: {
+			async startAgent() {},
+			async promptAgent() { throw new Error("Herdr command failed: agent_prompt_stalled"); },
+			async isTaskRunning() { return true; },
+			// Never wakes on its own: only the delivery failure may end the wait.
+			async waitForAgentChange() { waits += 1; return new Promise(() => {}); },
+		},
+	}).then(() => assert.fail("an unaccepted prompt must not complete"), (error) => error);
+	assert.match(error.message, /did not accept the prompt: .*agent_prompt_stalled/);
+	assert.ok(waits <= 1, "the delivery failure must wake the wait loop");
+} finally {
+	rmSync(unaccepted, { recursive: true, force: true });
+}
+console.log("PASS unaccepted prompt delivery fails with the Herdr cause instead of waiting forever");

@@ -1,3 +1,7 @@
+## Unreleased
+
+- Fail a task with the Herdr cause when prompt delivery fails and the child never starts the attempt, instead of waiting forever with the prompt left in the input box. Delivery is still attempted once; a delivery error after the child started the attempt keeps waiting for its report.
+
 ## 2026-11-03 - v0.10.0
 
 - Page compact run history with stable cursors and on-demand task summaries

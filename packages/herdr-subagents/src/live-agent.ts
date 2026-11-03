@@ -96,11 +96,20 @@ export async function promptLiveAgent(options: {
 		name: agentName, kind: "pi", paneId: options.paneId,
 		args: childPiArgs(options.task, options.systemPromptFile), signal: options.signal,
 	});
-	// Delivery is attempted exactly once. Its acknowledgement is not a lifecycle
-	// signal: Pi can recover from a transport/provider error in the same process.
+	// Delivery is attempted exactly once; a retry could submit the text twice.
+	// A delivery error alone does not prove failure: the child may have accepted
+	// the prompt. Only the child's attempt state file proves acceptance.
+	const attemptStateFile = attemptStatePath(taskDirectory, attemptId);
 	const promptController = new AbortController();
 	const promptSignal = options.signal ? AbortSignal.any([options.signal, promptController.signal]) : promptController.signal;
-	const prompt = options.herdr.promptAgent({ target: agentName, prompt: options.prompt, signal: promptSignal }).catch(() => undefined);
+	let deliveryError: unknown;
+	const deliveryFailed = Promise.withResolvers<void>();
+	const prompt = options.herdr.promptAgent({ target: agentName, prompt: options.prompt, signal: promptSignal })
+		.then(() => undefined, (error: unknown) => {
+			if (promptSignal.aborted) return;
+			deliveryError = error;
+			deliveryFailed.resolve();
+		});
 	const stalledTimer = options.stalledWarningMs ? setTimeout(() => options.onStalled?.(), options.stalledWarningMs) : undefined;
 	try {
 		while (true) {
@@ -108,6 +117,10 @@ export async function promptLiveAgent(options: {
 			if (options.signal?.aborted) {
 				if (existsSync(attemptReportFile)) break;
 				throw options.signal.reason ?? new Error("Subagent attempt aborted.");
+			}
+			if (deliveryError !== undefined && !existsSync(attemptStateFile)) {
+				const detail = deliveryError instanceof Error ? deliveryError.message : String(deliveryError);
+				throw new Error(`Child Pi did not accept the prompt: ${detail}`);
 			}
 			let alive = true;
 			try { alive = await options.herdr.isTaskRunning(options.paneId, options.signal); }
@@ -118,8 +131,12 @@ export async function promptLiveAgent(options: {
 				if (existsSync(attemptReportFile)) break;
 				throw new Error("Child Pi exited without submitting a subagent_report.");
 			}
-			if (options.herdr.waitForAgentChange) await options.herdr.waitForAgentChange(agentName, options.signal).catch(() => undefined);
-			else await pause(options.signal);
+			const observed = options.herdr.waitForAgentChange
+				? options.herdr.waitForAgentChange(agentName, options.signal).catch(() => undefined)
+				: pause(options.signal);
+			// A delivery failure must also wake the loop. After the child accepted the
+			// prompt, the failure no longer matters, so do not spin on a settled promise.
+			await (existsSync(attemptStateFile) ? observed : Promise.race([observed, deliveryFailed.promise]));
 		}
 	} finally {
 		if (stalledTimer) clearTimeout(stalledTimer);

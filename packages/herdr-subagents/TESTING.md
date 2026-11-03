@@ -69,7 +69,7 @@ The former monolithic legacy suite encoded removed contracts: background queues,
 Current coverage is in focused suites:
 
 - `core-state-machine.mjs`: required Personas, serial/read-only parallel work, transport recovery, report/exit completion, cancellation, immutable terminal tasks, tool exposure and startup isolation.
-- `live-agent.mjs`: a live silent child keeps waiting after prompt acknowledgement failure; an explicit report completes it, explicit process exit without a report fails it, and explicit cancellation ends the wait. Event gates advance these cases without fixed sleeps.
+- `live-agent.mjs`: a live silent child that accepted the prompt keeps waiting after prompt acknowledgement failure; a delivery failure without an accepted attempt fails with the Herdr cause instead of waiting forever; an explicit report completes it, explicit process exit without a report fails it, and explicit cancellation ends the wait. Event gates advance these cases without fixed sleeps.
 - `fleet.mjs`: retained Fleet keyboard selection, usage accounting, elapsed-time compatibility, widths/colours, watcher cleanup and stale-update regressions from the old monolith.
 - `fleet-click.mjs`: select task rows, not the header or blank rows; ignore non-primary clicks; focus exact panes; handle queued/missing panes; preserve the last painted row's identity across an unpainted update; ignore disposed widgets.
 - `cleanup-timing.mjs`: focused deferred cleanup under a held state lock, then successful/failed durable cleanup commits. It does not test retired restart/recovery workflows.

@@ -61,6 +61,11 @@ function fakeHerdr() {
 			active += 1;
 			maxActive = Math.max(maxActive, active);
 			if (request.prompt.includes("transport retry")) {
+				// The child accepted the prompt before the acknowledgement was lost.
+				const record = JSON.parse(readFileSync(join(directory, "task.json"), "utf8"));
+				const state = join(directory, "attempts", `${record.currentAttemptId}.json`);
+				mkdirSync(dirname(state), { recursive: true });
+				writeFileSync(state, JSON.stringify({ attemptId: record.currentAttemptId, state: "working" }));
 				setTimeout(() => {
 					publish(directory, { status: "completed", summary: `${request.prompt} result` });
 					alive.set(paneId, false);
