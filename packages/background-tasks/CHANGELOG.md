@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2026-11-05 - v0.3.1
 
+- Use descriptive task views and clarify captured logs and automatic completion waiting
 - Name Herdr tabs `BG · <task description>` and panes `<number> · <task description>`, following Herdr Subagents. Update the shared tab name on start/watch/completion, retain task numbers across pane reuse/reopening, and print the task name above the command so it is visible with one pane.
 - Clarify in the command parameter that stdout/stderr are saved to a unique per-task log and the path is reported on completion.
 - Tighten the start reminder: when nothing else remains, end the turn instead of sleeping, tailing logs or querying just to wait.

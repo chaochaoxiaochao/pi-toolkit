@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-11-05 - v0.14.7
 
+- background-tasks v0.3.1: Use descriptive task views and clarify captured logs and automatic completion waiting
 - Background Tasks: use descriptive Herdr tab names, numbered pane names and visible task headers; clarify automatic per-task log capture before the first tool call.
 
 ## 2026-11-03 - v0.14.6
