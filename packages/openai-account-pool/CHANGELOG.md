@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-11-05 - v0.1.10
 
+- Reuse confirmed recovered accounts and wait once for concurrent recovery probes
 - Do not let another session's probe lease block an account whose recovery live usage or a successful request already confirmed. An exhausted session now switches back to it instead of reporting "另一个进程正在重试".
 - When only another process's probe of unconfirmed recovery blocks the request, wait once for that probe (bounded by the 30-second lease, cancellable, with a notice) and then select again, instead of failing immediately. Delivered output is still never replayed.
 

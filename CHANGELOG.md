@@ -1,3 +1,7 @@
+## 2026-11-05 - v0.14.8
+
+- openai-account-pool v0.1.10: Reuse confirmed recovered accounts and wait once for concurrent recovery probes
+
 ## 2026-11-05 - v0.14.7
 
 - background-tasks v0.3.1: Use descriptive task views and clarify captured logs and automatic completion waiting
