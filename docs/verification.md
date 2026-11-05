@@ -1,5 +1,12 @@
 # Package split verification
 
+## Verified Background Tasks and Account Pool publication (2026-11-05)
+
+- Source commit: `20b1cf3`. First coordinated release: `fc88566`, Background Tasks `0.3.1` and toolkit `0.14.7`; [publish workflow](https://github.com/chaochaoxiaochao/pi-toolkit/actions/runs/41959704620) succeeded. `npm run release:check -- v0.14.7` verified remote tags, integrity, file modes and all 30 child / 221 root files against the tag snapshots.
+- Second coordinated release: `b3c2b40`, OpenAI Account Pool `0.1.10` and toolkit `0.14.8`; [publish workflow](https://github.com/chaochaoxiaochao/pi-toolkit/actions/runs/41960047348) succeeded. The first checks reached a stale local npm metadata cache during `npm pack` and returned `ETARGET`, although registry metadata already listed `0.14.8`. Confirmed both public full and install-v1 metadata contain the version; no re-publication was attempted. `npm_config_prefer_online=true npm run release:check -- v0.14.8 --timeout 600 --interval 10` then passed, verifying all 34 child / 221 root files and integrity against their tag snapshots.
+- Saved the complete release log and successful recheck under `.cache/verification/release-bg-pool/`. The user's Mermaid file was restored after the release commands and its SHA-256 matches the pre-release file; only that pre-existing path remains modified.
+- Publication did not change the installed toolkit `0.14.6` or Account Pool `0.1.9`, and did not reload any running session. Update installed packages separately; reloading a session terminates that session's Background Tasks, so finish active builds first.
+
 ## Coordinated Background Tasks and Account Pool release preflight (2026-11-05)
 
 - User authorized two patch releases: Background Tasks `0.3.1` with toolkit `0.14.7`, followed by OpenAI Account Pool `0.1.10` with toolkit `0.14.8`. Each runs through `scripts/release-package.sh`; root tags alone trigger npm publication. Each publication must pass `npm run release:check` before continuing.
