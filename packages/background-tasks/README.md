@@ -41,7 +41,7 @@ The tool is fixed to `exposure: "model-only"`: the model calls it directly; Code
 
 The tool declaration describes automatic completion notifications, concurrency and session lifetime. The action parameter explicitly permits `list` and `output` while tasks are still running. Each accepted start returns only its task data and this short, task-specific reminder:
 
-> Completion is reported automatically. Continue other work or end the turn; do not repeatedly query just to wait for completion.
+> Completion is reported automatically. Continue other work, or end the turn if nothing else remains; do not sleep, tail logs or query just to wait.
 
 The whole reminder is not duplicated in the tool description or a `structuredContent.guidance` field. Start text does not advertise a full-log path; structured task metadata still retains `log_path`.
 
@@ -60,7 +60,7 @@ background_task({ action: "cancel", id: "<returned-task-id>" })
 
 Start returns a running task's ID and runtime limit, not the command's final output. An invalid start is rejected before execution. A later execution error becomes a failed task.
 
-- `command`: unchanged multi-line shell script; only for start.
+- `command`: unchanged multi-line shell script; only for start. Stdout/stderr are saved to a unique per-task log; its path is reported on completion.
 - `description`: optional display label, shortened to 200 characters.
 - `cwd`: optional directory, resolved relative to the current session directory.
 - `timeout`: integer seconds, **1800 by default**, from 1 through 7200. Zero and unlimited mode are rejected.
@@ -86,10 +86,12 @@ A fixed widget **above the editor** shows each task's ID, status, elapsed time, 
 
 ## Herdr task view
 
-When Pi runs inside Herdr (`HERDR_ENV=1` and `HERDR_WORKSPACE_ID` set), each started task also gets a pane in one **Background tasks** tab:
+When Pi runs inside Herdr (`HERDR_ENV=1` and `HERDR_WORKSPACE_ID` set), each started task also gets a pane in one per-session **BG · &lt;task description&gt;** tab:
 
 - The tab is created on the first start without taking focus, and holds at most two panes, one per running task. A new task reuses the pane of a finished one.
-- Each pane prints the command (`$ ...`), cwd and runtime limit, then follows the task's captured log with `tail -f`. Line output and `\r` progress updates appear live. When the task ends, the pane prints a result line such as `[failed · exit 4 · 6s]`.
+- Like Herdr Subagents, the tab has a descriptive name and panes use numbered task names (`01 · Release build`, `02 · Unit tests`). Starting or watching a task updates the shared tab's name to that task's description. When one task ends, the tab names the remaining running task. Task numbers stay stable when panes are closed, reopened or reused.
+- Each pane prints its numbered task name, the command (`$ ...`), cwd and runtime limit, then follows the task's captured log with `tail -f`. The task name remains visible even when the single-pane layout hides the pane label. Line output and `\r` progress updates appear live. When the task ends, the pane prints a result line such as `[failed · exit 4 · 6s]`.
+- The view follows the tool's captured stdout/stderr, not files chosen by the command. Redirecting all output to another file leaves this log empty. No extra redirection is needed merely to inspect output later; use the reported log path. If an extra copy is required, `set -o pipefail; command 2>&1 | tee <unique-path>` preserves live output and command failures. The copy still counts toward the capture limit.
 - The pane is a **viewer only**. The task runs through the same local backend as outside Herdr, with the same logs, limits, status and notifications. The command has no TTY, so tools that detect one may drop colour or animated progress bars.
 - Closing a pane, or the whole tab, does not cancel the task. Clicking a task row in the widget (Pi 1.4+ fullscreen mode) or `/bg watch <id>` reopens the pane if needed and focuses that tab and pane; use `/bg cancel <id>` to stop the task.
 - When no task runs any more, the tab closes. If the user is looking at it, it closes after focus moves to another tab. Session shutdown, reload and replacement close it immediately, together with the logs.

@@ -9,7 +9,7 @@ import { HerdrViewer } from "../src/viewer.ts";
 import { BackgroundWidget, FINISHED_VISIBLE_MS, WIDGET_KEY, duration, visibleTasks } from "../src/widget.ts";
 
 const actions = ["start", "list", "output", "cancel"] as const;
-const startNotice = "Completion is reported automatically. Continue other work or end the turn; do not repeatedly query just to wait for completion.";
+const startNotice = "Completion is reported automatically. Continue other work, or end the turn if nothing else remains; do not sleep, tail logs or query just to wait.";
 // Bound model-visible status text when many completions accumulate.
 const NOTIFICATION_MAX_BYTES = 16 * 1024;
 type Action = typeof actions[number];
@@ -23,7 +23,7 @@ interface Params {
 }
 const Parameters = Type.Object({
 	action: StringEnum(actions, { description: "start returns a task ID immediately; list checks status; output reads a bounded tail; cancel stops one task. list and output also work while tasks are running." }),
-	command: Type.Optional(Type.String({ description: "Shell command for start; may be multi-line. Runs locally, with stdin closed." })),
+	command: Type.Optional(Type.String({ description: "Shell command for start; may be multi-line. Runs locally, with stdin closed. Stdout/stderr are saved to a unique per-task log; its path is reported on completion." })),
 	description: Type.Optional(Type.String({ description: "Short display label for start" })),
 	cwd: Type.Optional(Type.String({ description: "Working directory for start; defaults to the session directory. Relative paths resolve from it." })),
 	timeout: Type.Optional(Type.Integer({ minimum: 1, maximum: 7200, description: "Runtime limit for start, in seconds: default 1800 (30 minutes), maximum 7200 (2 hours); no unlimited mode" })),

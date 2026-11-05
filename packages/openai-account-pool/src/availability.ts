@@ -63,7 +63,9 @@ export function availabilityFor(input: {
 		}
 		const needsProbe = cooldowns.length > 0;
 		const lease = record?.probeLease;
-		if (lease && lease.untilMs > input.now && lease.owner !== input.probeOwner) {
+		// A lease only serializes probing of unconfirmed recovery. Once live usage or a success has
+		// cleared the evidence, the account is plainly usable and the lease must not hide it.
+		if (needsProbe && lease && lease.untilMs > input.now && lease.owner !== input.probeOwner) {
 			// Another process is already testing whether this account recovered.
 			return {
 				id: account.id,

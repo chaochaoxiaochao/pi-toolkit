@@ -73,7 +73,8 @@ async function clickTask(workspace, parentTab, task, name) {
   assert.ok(row > 0, `No widget row for ${task.id}`);
   // Real fullscreen mouse input, not a direct /bg watch or focus command.
   herdr("pane", "send-text", parentPane, `\x1b[<0;8;${row}M\x1b[<0;8;${row}m`);
-  const focused = await until(() => panes(workspace).find((pane) => pane.label?.startsWith(task.id) && pane.focused), `click focuses ${task.id}`);
+  const focused = await until(() => panes(workspace).find((pane) => pane.label?.endsWith(` · ${task.description}`) && pane.focused), `click focuses ${task.id}`);
+  assert.equal(tabs(workspace).find((tab) => tab.tab_id === focused.tab_id).label, `BG · ${task.description}`);
   checks.push({ check: "widget-click", taskId: task.id, paneId: focused.pane_id, row });
   await until(() => visible(focused.pane_id).includes("demo-job.py"), "pane command header");
   await hold(2);
@@ -111,14 +112,23 @@ try {
   });
   await until(() => existsSync(join(output, "demo.webm")), "screen recorder output");
   await hold(1);
-  herdr("pane", "send-text", parentPane, "Start two background demo jobs: build progress and a test suite. I want to watch both in Herdr.");
+  herdr("pane", "send-text", parentPane, "Start one background demo job: build progress. I want to watch it in Herdr.");
+  herdr("pane", "send-keys", parentPane, "enter");
+  const singleTask = await until(() => events().find((event) => event.event === "tool_end" && event.name === "background_task" && event.result?.structuredContent?.action === "start")?.result.structuredContent.task, "one real accepted job");
+  await until(() => visible(parentPane).includes("One demo job is running"), "single task turn returned");
+  const singlePane = await clickTask(workspaceId, parentTab, singleTask, "single-task");
+  assert.equal(panes(workspaceId).filter((pane) => pane.tab_id === singlePane.tab_id).length, 1);
+  assert.ok(visible(singlePane.pane_id).includes("01 · Build progress"), "task name must be visible in a single pane");
+  checks.push({ check: "single-task-name", paneId: singlePane.pane_id });
+  herdr("tab", "focus", parentTab);
+  herdr("pane", "send-text", parentPane, "Start the second background demo job: a test suite. I want to watch both in Herdr.");
   await hold();
   herdr("pane", "send-keys", parentPane, "enter");
   const tasks = await until(() => {
     const starts = events().filter((event) => event.event === "tool_end" && event.name === "background_task" && event.result?.structuredContent?.action === "start");
     return starts.length === 2 && starts.map((event) => event.result.structuredContent.task);
   }, "two real accepted jobs");
-  const taskTab = await until(() => tabs(workspaceId).find((tab) => tab.label === "Background tasks" && tab.pane_count === 2), "two task panes in one tab");
+  const taskTab = await until(() => tabs(workspaceId).find((tab) => tab.label === "BG · Test suite" && tab.pane_count === 2), "two task panes in one tab");
   assert.equal(taskTab.focused, false, "automatic creation must not steal focus");
   checks.push({ check: "unfocused-tab", panes: taskTab.pane_count });
   await until(() => visible(parentPane).includes("Both demo jobs are running"), "parent returned while jobs run");

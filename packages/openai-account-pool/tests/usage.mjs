@@ -266,13 +266,17 @@ async function setupPool(credentials = [
 	}
 }
 
-// Clearing recovered quota evidence does not bypass another process's active probe lease.
+// A probe lease only serializes probing. Live availability that clears the evidence makes the
+// account usable again; while the evidence remains, another process's lease still blocks it.
 {
 	const { agent, statePath, snapshot } = await setupPool([fakeCredential(ACCOUNT_A, { now: NOW })]);
 	try {
 		const account = snapshot.accounts[0];
 		await recordFailure({ statePath, account, now: NOW - 120_000, classification: { kind: "quota", reason: "usage_limit_reached", scope: "account", serverResetAtMs: NOW - 60_000 } });
 		assert.equal(await claimProbeLease({ statePath, accountId: account.id, owner: "other", now: NOW }), true);
+		const leased = availabilityFor({ accounts: [account], state: await readPoolState(statePath), now: NOW, probeOwner: "this-process" });
+		assert.equal(leased[0].unavailable?.reason, "probe_in_progress", "unconfirmed recovery is probed by one process only");
+
 		await refreshPoolUsage({
 			authPath: agent.authPath,
 			statePath,
@@ -282,8 +286,10 @@ async function setupPool(credentials = [
 			fetch: async () => response(usagePayload({ allowed: true })),
 		});
 		const state = await readPoolState(statePath);
+		assert.ok(state.accounts[ACCOUNT_A].probeLease, "the other process keeps its own lease record");
 		const [availability] = availabilityFor({ accounts: [account], state, now: NOW, probeOwner: "this-process" });
-		assert.equal(availability.unavailable.reason, "probe_in_progress");
+		assert.equal(availability.unavailable, undefined, "confirmed live availability is not blocked by a probe lease");
+		assert.equal(availability.needsProbe, false);
 	} finally {
 		agent.dispose();
 	}

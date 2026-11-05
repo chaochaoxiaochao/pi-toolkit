@@ -24,12 +24,13 @@ function fakeHerdr() {
 		const [noun, verb, id] = args;
 		if (noun === "tab" && verb === "create") {
 			const tab = `w:t${++next}`, pane = `w:p${++next}`;
-			tabs.set(tab, true);
+			tabs.set(tab, { label: args[args.indexOf("--label") + 1] });
 			panes.set(pane, { tab, runs: [] });
 			return { tab: { tab_id: tab }, root_pane: { pane_id: pane } };
 		}
 		if (noun === "tab") {
 			if (!tabs.has(id)) throw missing("tab", id);
+			if (verb === "rename") tabs.get(id).label = args[3];
 			if (verb === "close") {
 				tabs.delete(id);
 				for (const [pane, value] of panes) if (value.tab === id) panes.delete(pane);
@@ -37,6 +38,7 @@ function fakeHerdr() {
 			return { tab: { tab_id: id, focused: state.focused } };
 		}
 		if (!panes.has(id)) throw missing("pane", id);
+		if (verb === "rename") panes.get(id).label = args[3];
 		if (verb === "split") {
 			const pane = `w:p${++next}`;
 			panes.set(pane, { tab: panes.get(id).tab, runs: [] });
@@ -73,7 +75,7 @@ function harness(env = { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w" }) {
 	register(pi, { operations: f.operations, clock: f.clock, logRoot: f.root, herdr: herdr.call, env, sleep: () => flush() });
 	return {
 		...f, herdr, handlers, commands, notices, widgets, ctx,
-		start: async (command) => (await tool.execute(command, { action: "start", command })).structuredContent.task,
+		start: async (command, description) => (await tool.execute(command, { action: "start", command, description })).structuredContent.task,
 		begin: () => handlers.get("session_start")({}, ctx),
 		async close() {
 			const closing = handlers.get("session_shutdown")({}, ctx);
@@ -85,6 +87,69 @@ function harness(env = { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w" }) {
 }
 
 async function settle() { for (let i = 0; i < 20; i++) await flush(); }
+
+test("a single task names its tab, pane and visible header; watch and pane reuse update the names", async () => {
+	const h = harness();
+	try {
+		await h.begin();
+		const first = await h.start("make release", "Release build");
+		await settle();
+		const [tab] = h.herdr.tabs.keys();
+		const [left] = h.herdr.panes.keys();
+		assert.equal(h.herdr.tabs.get(tab).label, "BG · Release build");
+		assert.equal(h.herdr.panes.get(left).label, "01 · Release build");
+		assert.match(readFileSync(first.log_path.replace(/\.log$/, ".header"), "utf8"), /^01 · Release build\n\$ make release\n/);
+
+		await h.start("make test", "Unit tests");
+		await settle();
+		assert.equal(h.herdr.tabs.size, 1);
+		assert.equal(h.herdr.tabs.get(tab).label, "BG · Unit tests");
+		assert.equal([...h.herdr.panes.values()][1].label, "02 · Unit tests");
+		await h.commands.get("bg").handler(`watch ${first.id}`, h.ctx);
+		assert.equal(h.herdr.tabs.get(tab).label, "BG · Release build");
+		assert.equal(h.herdr.panes.get(left).runs.length, 1, "watch must not restart an existing viewer");
+
+		h.calls[0].resolve();
+		await settle();
+		const third = await h.start("make lint", "Lint");
+		await settle();
+		assert.equal(h.herdr.tabs.get(tab).label, "BG · Lint");
+		assert.equal(h.herdr.panes.get(left).label, "03 · Lint");
+		assert.match(readFileSync(third.log_path.replace(/\.log$/, ".header"), "utf8"), /^03 · Lint\n\$ make lint\n/);
+		assert.equal(h.herdr.panes.size, 2);
+	} finally { await h.close(); }
+});
+
+test("task numbers survive closing the left pane and reopening it beside another task", async () => {
+	const h = harness();
+	try {
+		await h.begin();
+		const first = await h.start("make build", "Build");
+		await h.start("make test", "Tests");
+		await settle();
+		const [left] = h.herdr.panes.keys();
+		h.herdr.closePane(left);
+		await h.commands.get("bg").handler(`watch ${first.id}`, h.ctx);
+		assert.deepEqual([...h.herdr.panes.values()].map((pane) => pane.label), ["02 · Tests", "01 · Build"]);
+		assert.match(readFileSync(first.log_path.replace(/\.log$/, ".header"), "utf8"), /^01 · Build\n/);
+	} finally { await h.close(); }
+});
+
+test("when the named task finishes, the tab names the remaining running task", async () => {
+	const h = harness();
+	try {
+		await h.begin();
+		await h.start("make build", "Build");
+		await h.start("make test", "Tests");
+		await settle();
+		const [tab] = h.herdr.tabs.keys();
+		assert.equal(h.herdr.tabs.get(tab).label, "BG · Tests");
+		h.calls[1].resolve();
+		await settle();
+		assert.equal(h.herdr.tabs.get(tab).label, "BG · Build");
+		assert.equal(h.herdr.tabs.size, 1);
+	} finally { await h.close(); }
+});
 
 test("two tasks share one unfocused tab, one pane each; the pane shows the command, then the log", async () => {
 	const h = harness();
@@ -101,7 +166,7 @@ test("two tasks share one unfocused tab, one pane each; the pane shows the comma
 		const runs = [...h.herdr.panes.values()].map((pane) => pane.runs.at(-1));
 		assert.ok(runs[0].includes(first.log_path) && runs[1].includes(second.log_path));
 		assert.doesNotMatch(runs.join("\n"), /make test|printf/, "the command text is never passed as shell syntax");
-		assert.match(readFileSync(first.log_path.replace(/\.log$/, ".header"), "utf8"), /^\$ printf 'a\\n'; sleep 1\n# bg-.* · cwd .* · timeout 30m\n/);
+		assert.match(readFileSync(first.log_path.replace(/\.log$/, ".header"), "utf8"), /^01 · printf 'a\\n'; sleep 1\n\$ printf 'a\\n'; sleep 1\n# bg-.* · cwd .* · timeout 30m\n/);
 	} finally { await h.close(); }
 });
 
@@ -156,6 +221,8 @@ test("closing a pane keeps the task running; /bg watch reopens and focuses it", 
 		assert.equal(h.herdr.tabs.size, 1);
 		assert.equal(h.herdr.panes.size, 1);
 		assert.ok([...h.herdr.panes.values()][0].runs.at(-1).includes(task.log_path));
+		assert.equal([...h.herdr.tabs.values()][0].label, "BG · one");
+		assert.equal([...h.herdr.panes.values()][0].label, "01 · one");
 		assert.ok(h.herdr.calls.some((args) => args[0] === "tab" && args[1] === "focus"));
 		assert.deepEqual(h.notices, []);
 	} finally { await h.close(); }
@@ -187,6 +254,27 @@ test("clicking a widget task row opens its view and focuses the tab; other click
 		await settle();
 		const [, right] = h.herdr.panes.keys();
 		assert.deepEqual(h.herdr.calls.at(-1), ["pane", "focus", "--pane", right, "--direction", "left"], "the left pane gets focus");
+	} finally { await h.close(); }
+});
+
+test("completion after the user closes the tab does not consume the warning for real Herdr failures", async () => {
+	const h = harness();
+	try {
+		await h.begin();
+		await h.start("one");
+		await h.start("two");
+		await settle();
+		const [tab] = h.herdr.tabs.keys();
+		await h.herdr.call(["tab", "close", tab]);
+		h.calls[0].resolve();
+		await settle();
+		assert.deepEqual(h.notices, [], "closing a view is not a Herdr failure");
+		assert.equal(h.calls[1].signal.aborted, false);
+		h.herdr.state.fail = () => true;
+		await h.start("three");
+		await settle();
+		assert.equal(h.notices.length, 1, "a later real failure still warns");
+		assert.equal(h.notices[0].level, "warning");
 	} finally { await h.close(); }
 });
 

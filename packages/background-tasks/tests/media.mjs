@@ -52,3 +52,19 @@ test("offline media provider issues exactly two direct background starts, then r
 	assert.equal(next.filter((event) => event.type === "toolcall_end").length, 0);
 	assert.match(next.find((event) => event.type === "text_end").content, /Click a task row/);
 });
+
+for (const [prompt, kind] of [
+	["Start one background demo job: build progress.", "build"],
+	["Start the second background demo job: a test suite.", "tests"],
+]) {
+	test(`offline media provider can start the ${kind} job separately for single-pane verification`, async () => {
+		let provider;
+		register({ registerProvider(_name, value) { provider = value; }, on() {} });
+		const events = [];
+		for await (const event of provider.streamSimple({ api: "bg-fixture", provider: "bg-fixture", id: "deterministic" }, { messages: [{ role: "user", content: prompt }] })) events.push(event);
+		const calls = events.filter((event) => event.type === "toolcall_end").map((event) => event.toolCall);
+		assert.equal(calls.length, 1);
+		assert.equal(calls[0].name, "background_task");
+		assert.equal(calls[0].arguments.command, `python3 demo-job.py ${kind}`);
+	});
+}

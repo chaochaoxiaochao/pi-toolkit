@@ -279,6 +279,8 @@ if (wanted("cache-export")) {
 
 // OpenAI Account Pool: run the real wizard, status and failover wrapper over a temporary agent dir.
 if (wanted("openai-account-pool")) {
+  // Like the package tests, resolve host peers from the selected installed Pi.
+  await import(join(root, "packages/background-tasks/tests/runtime.mjs"));
   const pkg = join(root, "packages/openai-account-pool");
   const { confirmText, poolStatus, runEnrollment } = await import(join(pkg, "src/enrollment.ts"));
   const { loadPoolSnapshot, POOL_UNRESOLVED_API_KEY } = await import(join(pkg, "src/auth.ts"));

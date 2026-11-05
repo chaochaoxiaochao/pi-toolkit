@@ -1,3 +1,7 @@
+## Unreleased
+
+- Background Tasks: use descriptive Herdr tab names, numbered pane names and visible task headers; clarify automatic per-task log capture before the first tool call.
+
 ## 2026-11-03 - v0.14.6
 
 - herdr-subagents v0.10.1: Fail tasks whose prompt was never accepted instead of waiting forever

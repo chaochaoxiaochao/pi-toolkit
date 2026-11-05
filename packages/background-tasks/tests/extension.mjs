@@ -465,6 +465,7 @@ test("registration is compact, does not inject prompt rules or start session res
 		assert.equal(h.tool.exposure, "model-only");
 		assert.match(h.tool.description, /up to two concurrent background shell tasks/);
 		assert.match(h.tool.parameters.properties.action.description, /start returns a task ID immediately/);
+		assert.equal(h.tool.parameters.properties.command.description, "Shell command for start; may be multi-line. Runs locally, with stdin closed. Stdout/stderr are saved to a unique per-task log; its path is reported on completion.");
 		assert.ok(h.tool.description.length < 500);
 		assert.equal(h.tool.promptGuidelines, undefined);
 		assert.ok(h.tool.outputSchema);
@@ -482,7 +483,7 @@ test("start keeps only task-specific guidance while the declaration describes li
 		await h.handlers.get("session_start")({}, h.ctx);
 		const started = await h.tool.execute("start", { action: "start", command: "sleep 60" });
 		const { task } = started.structuredContent;
-		const notice = "Completion is reported automatically. Continue other work or end the turn; do not repeatedly query just to wait for completion.";
+		const notice = "Completion is reported automatically. Continue other work, or end the turn if nothing else remains; do not sleep, tail logs or query just to wait.";
 		assert.equal(task.status, "running");
 		assert.ok(started.content[0].text.includes(notice));
 		assert.ok(!started.content[0].text.includes(task.log_path));

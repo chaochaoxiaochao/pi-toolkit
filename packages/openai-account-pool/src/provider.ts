@@ -20,7 +20,7 @@ import {
 	type PoolAccount,
 	type PoolSnapshot,
 } from "./auth.ts";
-import { claimProbeLease, readAvailability, recordFailure, recordSuccess, releaseProbeLease } from "./availability.ts";
+import { claimProbeLease, DEFAULT_PROBE_LEASE_MS, readAvailability, recordFailure, recordSuccess, releaseProbeLease } from "./availability.ts";
 import {
 	classifyFailure,
 	decideFailover,
@@ -43,6 +43,8 @@ import { describeSoonestReady, refreshPoolUsage } from "./usage.ts";
 const MAX_ERROR_BODY_BYTES = 64 * 1024;
 /** Events held back before the first real output, so a dead attempt can still be discarded. */
 const MAX_BUFFERED_EVENTS = 64;
+/** How often a request waiting on another process's probe re-reads the shared state. */
+const PROBE_WAIT_POLL_MS = 250;
 
 export interface PoolRuntime {
 	/** pi-ai's `lazyStream`, injected so this module needs no runtime import of pi-ai. */
@@ -60,6 +62,8 @@ export interface PoolRuntime {
 	onAccountSuccess?: (accountId: string) => void;
 	/** Test seam for the private usage endpoint; ordinary model requests do not use it. */
 	usageFetch?: typeof globalThis.fetch;
+	/** Upper bound of the single wait for another process's probe. Defaults to the lease length. */
+	maxProbeWaitMs?: number;
 }
 
 type StreamKind = "stream" | "streamSimple";
@@ -105,6 +109,22 @@ function errorBodyOf(payload: unknown): ProviderErrorBody | undefined {
 	if (typeof nested === "object" && nested !== null) return nested as ProviderErrorBody;
 	if (typeof record.code === "string" || typeof record.type === "string") return record as ProviderErrorBody;
 	return undefined;
+}
+
+/** Cancellable delay: rejects with the same aborted error as a cancelled request. */
+function sleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
+	if (signal?.aborted) return Promise.reject(new Error("Request was aborted"));
+	return new Promise((resolve, reject) => {
+		const onAbort = () => {
+			clearTimeout(timer);
+			reject(new Error("Request was aborted"));
+		};
+		const timer = setTimeout(() => {
+			signal?.removeEventListener("abort", onAbort);
+			resolve();
+		}, ms);
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
 }
 
 function isAbortError(error: unknown): boolean {
@@ -293,6 +313,10 @@ export function createPoolProvider(base: Provider, runtime: PoolRuntime): Provid
 		const repaired = new Set<string>();
 		let lastAvailability: readonly AccountAvailability[] = [];
 		let usageRefreshAttempted = false;
+		let probeWaitUsed = false;
+		/** An account only another process's probe lease blocks: usable once, after one wait. */
+		const waitable = (entry: AccountAvailability) =>
+			!probeWaitUsed && !attempted.includes(entry.id) && !entry.authInvalid && entry.unavailable?.reason === "probe_in_progress";
 
 		while (true) {
 			if (options?.signal?.aborted) throw new Error("Request was aborted");
@@ -322,6 +346,14 @@ export function createPoolProvider(base: Provider, runtime: PoolRuntime): Provid
 					attempted.length = 0;
 					continue;
 				}
+				// Another process is confirming a recovery. Wait for that probe once, instead of
+				// failing while its account may become usable within seconds.
+				const leased = availability.filter(waitable);
+				if (leased.length > 0) {
+					probeWaitUsed = true;
+					await waitForProbe(leased, model.id, snapshot.accounts, options?.signal);
+					continue;
+				}
 				break;
 			}
 
@@ -333,7 +365,11 @@ export function createPoolProvider(base: Provider, runtime: PoolRuntime): Provid
 			let holdsProbe = false;
 			if (chosen.needsProbe) {
 				holdsProbe = await claimProbeLease({ statePath: runtime.statePath, accountId: account.id, owner: probeOwner, now: now() });
-				if (!holdsProbe) continue;
+				if (!holdsProbe) {
+					// Another process won the probe; the account stays a candidate for the probe wait.
+					attempted.pop();
+					continue;
+				}
 			}
 
 			try {
@@ -341,7 +377,7 @@ export function createPoolProvider(base: Provider, runtime: PoolRuntime): Provid
 					repairUsed: repaired.has(account.id),
 					clearsState: chosen.needsProbe || chosen.authInvalid,
 					hasRemainingCandidate: availability.some(
-						(entry) => !attempted.includes(entry.id) && !entry.unavailable && !entry.authInvalid,
+						(entry) => (!attempted.includes(entry.id) && !entry.unavailable && !entry.authInvalid) || waitable(entry),
 					),
 					markRepaired: () => repaired.add(account.id),
 				}, snapshot.accounts);
@@ -369,6 +405,23 @@ export function createPoolProvider(base: Provider, runtime: PoolRuntime): Provid
 		}
 
 		throw new Error(await poolExhaustedTextWithRecovery(lastAvailability, snapshot.accounts, model.id));
+	}
+
+	/**
+	 * Waits until another process's probe lease on one of `leased` ends: released after its probe,
+	 * or expired. Bounded by the lease and `maxProbeWaitMs`; cancellation ends the wait at once.
+	 */
+	async function waitForProbe(leased: readonly AccountAvailability[], modelId: string, accounts: readonly PoolAccount[], signal: AbortSignal | undefined): Promise<void> {
+		const leaseEnd = Math.min(...leased.map((entry) => entry.unavailable?.untilMs ?? now()));
+		const deadline = Math.min(leaseEnd, now() + (runtime.maxProbeWaitMs ?? DEFAULT_PROBE_LEASE_MS));
+		const seconds = Math.max(1, Math.ceil((deadline - now()) / 1_000));
+		runtime.notify?.(`Codex 账号 ${leased.map((entry) => maskAccountId(entry.id)).join("、")} 正由另一个 Pi 进程确认是否恢复，最多等待 ${seconds} 秒。`);
+		const ids = new Set(leased.map((entry) => entry.id));
+		while (now() < deadline) {
+			await sleep(Math.min(PROBE_WAIT_POLL_MS, Math.max(0, deadline - now())), signal);
+			const current = await readAvailability({ statePath: runtime.statePath, accounts, now: now(), modelId, probeOwner });
+			if (current.some((entry) => ids.has(entry.id) && entry.unavailable?.reason !== "probe_in_progress")) return;
+		}
 	}
 
 	async function handleRefreshFailure(error: unknown, modelId: string, account: PoolAccount, hasRemainingCandidate: boolean): Promise<AttemptOutcome> {

@@ -22,10 +22,11 @@ test("native model receives distinct declaration and start guidance without Code
 		const records = readFileSync(events, "utf8").trim().split("\n").map((line) => JSON.parse(line));
 		const started = records.find((entry) => entry.event === "tool_end" && entry.name === "background_task");
 		assert.equal(started.isError, false);
-		const notice = "Completion is reported automatically. Continue other work or end the turn; do not repeatedly query just to wait for completion.";
+		const notice = "Completion is reported automatically. Continue other work, or end the turn if nothing else remains; do not sleep, tail logs or query just to wait.";
 		assert.equal(started.result.structuredContent.guidance, undefined);
 		assert.equal(records.some((entry) => entry.event === "tool_end" && entry.name === "codemode"), false);
 		const requests = records.filter((entry) => entry.event === "request");
+		assert.match(requests[0].backgroundCommandDescription, /Stdout\/stderr are saved to a unique per-task log; its path is reported on completion\./);
 		assert.match(requests[0].backgroundDescription, /automatic completion notifications/);
 		assert.match(requests[0].backgroundDescription, /session changes, reload, or exit/);
 		assert.ok(!requests[0].backgroundDescription.includes(notice));

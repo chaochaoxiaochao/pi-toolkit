@@ -1,11 +1,10 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { errorText, type TaskSnapshot } from "./background-tasks.ts";
+import { errorText, summary, type TaskSnapshot } from "./background-tasks.ts";
 import { isMissing, type HerdrCall } from "./herdr.ts";
 import { duration } from "./widget.ts";
 
-export const TAB_LABEL = "Background tasks";
 const UNFOCUS_POLL_MS = 1000;
 
 // Runs inside the pane's own shell. It only reads files; the task itself runs elsewhere.
@@ -34,6 +33,7 @@ interface Options {
 
 function quote(value: string): string { return `'${value.replaceAll("'", "'\\''")}'`; }
 function clean(text: string): string { return stripVTControlCharacters(text).replace(/[\x00-\x08\x0b-\x1f\x7f]/g, ""); }
+function tabLabel(task: TaskSnapshot): string { return summary(`BG · ${task.description}`, 80); }
 
 /**
  * Shows background task logs in one Herdr tab per session. Display only: every failure
@@ -41,7 +41,7 @@ function clean(text: string): string { return stripVTControlCharacters(text).rep
  */
 export class HerdrViewer {
 	private readonly options: Options;
-	private readonly commands = new Map<string, string>();
+	private readonly commands = new Map<string, { text: string; order: number }>();
 	private tab?: string;
 	private panes: Pane[] = [];
 	private chain: Promise<unknown> = Promise.resolve();
@@ -58,7 +58,7 @@ export class HerdrViewer {
 
 	/** Opens a pane for a newly started task without taking focus. */
 	show(task: TaskSnapshot, command: string): Promise<void> {
-		this.commands.set(task.id, command);
+		this.commands.set(task.id, { text: command, order: this.commands.size + 1 });
 		return this.enqueue(async () => { await this.open(task, false); });
 	}
 
@@ -66,7 +66,9 @@ export class HerdrViewer {
 	watch(task: TaskSnapshot): Promise<string> {
 		return this.enqueue(async () => {
 			await this.prune();
-			const pane = this.panes.find((entry) => entry.task === task.id) ?? await this.open(task, false);
+			const existing = this.panes.find((entry) => entry.task === task.id);
+			const pane = existing ?? await this.open(task, false);
+			if (existing) await this.options.call(["tab", "rename", this.tab!, tabLabel(task)]);
 			await this.options.call(["tab", "focus", this.tab!]);
 			// Panes are split left to right; Herdr focuses a pane through its neighbour.
 			const index = this.panes.indexOf(pane);
@@ -82,6 +84,12 @@ export class HerdrViewer {
 		if (this.disposed) return;
 		try { this.writeDone(task); }
 		catch (error) { this.report(error); }
+		void this.enqueue(async () => {
+			const remaining = this.options.tasks().find((task) => task.status === "running");
+			if (!this.tab || !remaining) return;
+			try { await this.options.call(["tab", "rename", this.tab, tabLabel(remaining)]); }
+			catch (error) { if (!isMissing(error)) throw error; }
+		});
 		this.closeWhenIdle();
 	}
 
@@ -119,7 +127,7 @@ export class HerdrViewer {
 		let pane = this.panes.find((entry) => !running.has(entry.task));
 		try {
 			if (!this.tab) {
-				const created = await this.options.call(["tab", "create", "--workspace", this.options.workspaceId, "--cwd", task.cwd, "--label", TAB_LABEL, "--no-focus"]);
+				const created = await this.options.call(["tab", "create", "--workspace", this.options.workspaceId, "--cwd", task.cwd, "--label", tabLabel(task), "--no-focus"]);
 				this.tab = created.tab?.tab_id;
 				const root = created.root_pane?.pane_id;
 				if (!this.tab || !root) throw new Error("herdr tab create omitted the tab or pane id");
@@ -127,14 +135,17 @@ export class HerdrViewer {
 				this.panes = [pane];
 			} else if (pane) {
 				pane.task = task.id;
+				await this.options.call(["tab", "rename", this.tab, tabLabel(task)]);
 			} else {
 				const split = await this.options.call(["pane", "split", this.panes.at(-1)!.id, "--direction", "right", "--cwd", task.cwd, "--no-focus"]);
 				if (!split.pane?.pane_id) throw new Error("herdr pane split omitted the pane id");
 				pane = { id: split.pane.pane_id, task: task.id };
 				this.panes.push(pane);
+				await this.options.call(["tab", "rename", this.tab, tabLabel(task)]);
 			}
-			await this.options.call(["pane", "rename", pane.id, `${task.id} · ${task.description}`.slice(0, 80)]);
-			await this.options.call(["pane", "run", pane.id, this.viewCommand(task)]);
+			const label = summary(`${String(this.commands.get(task.id)!.order).padStart(2, "0")} · ${task.description}`, 80);
+			await this.options.call(["pane", "rename", pane.id, label]);
+			await this.options.call(["pane", "run", pane.id, this.viewCommand(task, label)]);
 			return pane;
 		} catch (error) {
 			// The user may close a pane or the whole tab; drop stale handles and retry once.
@@ -158,13 +169,13 @@ export class HerdrViewer {
 		await this.options.call(["tab", "close", tab]).catch(() => {});
 	}
 
-	private viewCommand(task: TaskSnapshot): string {
+	private viewCommand(task: TaskSnapshot, label: string): string {
 		const directory = dirname(task.log_path);
 		const script = join(directory, "view.sh");
 		const header = join(directory, `${task.id}.header`);
 		if (!existsSync(script)) writeFileSync(script, VIEW_SCRIPT, { mode: 0o600 });
-		const lines = clean(this.commands.get(task.id) ?? task.description).split("\n");
-		writeFileSync(header, `${lines.map((line, index) => `${index ? ">" : "$"} ${line}`).join("\n")}\n# ${task.id} · cwd ${clean(task.cwd)} · timeout ${duration(task.timeout)}\n\n`, { mode: 0o600 });
+		const lines = clean(this.commands.get(task.id)!.text).split("\n");
+		writeFileSync(header, `${label}\n${lines.map((line, index) => `${index ? ">" : "$"} ${line}`).join("\n")}\n# ${task.id} · cwd ${clean(task.cwd)} · timeout ${duration(task.timeout)}\n\n`, { mode: 0o600 });
 		if (task.status !== "running") this.writeDone(task);
 		// The leading space keeps the line out of shell history where HISTCONTROL allows it.
 		return ` sh ${[script, task.log_path, this.donePath(task), header].map(quote).join(" ")}`;

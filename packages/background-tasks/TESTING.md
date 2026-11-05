@@ -28,6 +28,8 @@ Notification retry tests use the injected clock and session-idle interface. They
 
 Load-test uses an isolated temporary agent directory, the production extension and an offline fixture provider. It does not access real provider credentials or alter the user's installed packages. From the workspace, `npm --prefix packages/background-tasks run load-test -- --toolkit` loads the complete toolkit directory through its manifest and verifies exactly one background-task tool; the root load-test runs this check too.
 
+The deterministic registration test checks the approved per-task-log sentence in the `command` parameter description. The native offline-provider test verifies it is visible in the first model request, before starting a task. Viewer tests check single-task names, shared-tab renaming on start/watch/completion, stable task numbers when the left pane is closed and reopened, and pane reuse.
+
 ## Real Pi TUI
 
 Requires Python 3 with the existing `pexpect` module; process fixtures use Bash, Python and `ps`. The current native-process/TUI suite is verified on Linux.
@@ -52,8 +54,8 @@ It relays the real PTY output, captures only the test window, then closes it. In
 
 Run from a Pi or shell inside Herdr (`HERDR_ENV=1`). Start two real tasks through the production extension, for example one `printf 'tick %s\r'` loop that succeeds and one `sleep 6; exit 4` that fails. Check with `herdr tab list`, `herdr pane list` and `herdr pane read`:
 
-- One unfocused **Background tasks** tab with two panes while both run.
-- Each pane shows the command header, live output and a final result line (`[succeeded · exit 0 · …]`, `[failed · exit 4 · …]`).
+- One unfocused **BG · &lt;task description&gt;** tab with two panes while both run. Starting or watching a task updates the tab name; each pane has a numbered task name.
+- Each pane shows its task name above the command header, live output and a final result line (`[succeeded · exit 0 · …]`, `[failed · exit 4 · …]`). Check the name is visible with only one pane too.
 - With the tab focused after both tasks end, it stays open; after focus returns to another tab, it closes.
 - In a fullscreen Pi started in its own Herdr pane, an SGR click on each widget task row (`herdr pane send-text <pane> $'\e[<0;10;<row>M\e[<0;10;<row>m'`) focuses the tab and that task's pane (`herdr pane list`).
 - No warning is shown, and the private log directory is removed after session shutdown.
@@ -74,7 +76,7 @@ git diff --check
 
 The media command requires the real-TUI screenshot prerequisites above, Pillow, and GStreamer (`ximagesrc`, VP8/WebM encoding/decoding, and PNG encoding). Select the X11 window that already displays a working Herdr client with `HERDR_MEDIA_WINDOW_ID`; the GNOME desktop must be unlocked. The recorder checks the lock state before starting and at each screenshot; hidden windows can return stale pixels.
 
-The command first reruns the existing real TUI checks, then invokes `scripts/capture-background-tasks-media.mjs`. The recorder creates only a temporary workspace, launches the production extension with an isolated offline provider and an explicit `dark` theme, and starts two actual Python demo jobs. It sends real fullscreen SGR mouse press/release events to both task rows, verifies each exact focused pane, checks live output and both terminal results, and verifies that a focused completed tab stays open until focus leaves. Demo-job release files control completion; output intervals and viewing holds only make the recording readable.
+The command first reruns the existing real TUI checks, then invokes `scripts/capture-background-tasks-media.mjs`. The recorder creates only a temporary workspace, launches the production extension with an isolated offline provider and an explicit `dark` theme, and starts two actual Python demo jobs in sequence. It first verifies the single-pane tab name and visible task header, then adds the second task. It sends real fullscreen SGR mouse press/release events to both task rows, verifies each exact focused pane, checks live output and both terminal results, and verifies that a focused completed tab stays open until focus leaves. Demo-job release files control completion; output intervals and viewing holds only make the recording readable.
 
 The recorder captures the selected client window continuously, rejects uniform/blank screenshot centres, restores the original workspace/tab, and removes its own workspace. It never starts paid models or copies credentials. `result.json`, tool events and diagnostic frames are stored under `.cache/package-media/background-herdr`. The renderer publishes `docs/screenshot.png` (parent widget), `docs/task-panes.png` (actual task panes), `docs/demo.gif` (frames decoded from the recording), and the complete `docs/demo.webm`. No synthetic UI is drawn.
 

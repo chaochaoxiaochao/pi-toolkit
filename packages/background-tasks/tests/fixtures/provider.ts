@@ -19,15 +19,20 @@ export default function (pi: ExtensionAPI) {
 			queueMicrotask(() => {
 				const last = context.messages.at(-1) as any;
 				const text = typeof last?.content === "string" ? last.content : (last?.content ?? []).filter((block: any) => block.type === "text").map((block: any) => block.text).join("\n");
-				const media = context.messages.some((message: any) => JSON.stringify(message.content).includes("Start two background demo jobs"));
+				const media = context.messages.some((message: any) => JSON.stringify(message.content).includes("background demo job"));
 				const tools = getCurrentTools(context.messages);
 				record({ event: "request", lastRole: last?.role, text: text.slice(0, 2000), tools: tools.map((tool) => tool.name),
-					backgroundDescription: tools.find((tool) => tool.name === "background_task")?.description });
+					backgroundDescription: tools.find((tool) => tool.name === "background_task")?.description,
+					backgroundCommandDescription: tools.find((tool) => tool.name === "background_task")?.parameters?.properties?.command?.description });
 				const calls: { name: string; arguments: any }[] = [];
 				const call = (args: any) => calls.push({ name: "background_task", arguments: args });
 				if (last?.role !== "toolResult") {
 					if (text.includes("Start two background demo jobs")) {
 						call({ action: "start", command: "python3 demo-job.py build", description: "Build progress", timeout: 120 });
+						call({ action: "start", command: "python3 demo-job.py tests", description: "Test suite", timeout: 120 });
+					} else if (text.includes("Start one background demo job")) {
+						call({ action: "start", command: "python3 demo-job.py build", description: "Build progress", timeout: 120 });
+					} else if (text.includes("Start the second background demo job")) {
 						call({ action: "start", command: "python3 demo-job.py tests", description: "Test suite", timeout: 120 });
 					} else if (text.includes("SMOKE_START")) {
 						call({ action: "start", command: "sleep 9; printf 'BUILD SUCCESSFUL\\n'", description: "Release build", timeout: 30 });
@@ -61,7 +66,7 @@ catch { text("BACKGROUND_CALL_BLOCKED"); }` } });
 				} else {
 					const reply = text.includes("[Background task finished]") ? (media ? "Background jobs finished. Their status and captured logs remain available with /bg." : "BACKGROUND_NOTIFICATION_RECEIVED")
 						: media
-							? "Both demo jobs are running. Click a task row below to open its live Herdr pane; closing the pane does not stop the job."
+							? `${tasks.size === 1 ? "One demo job is" : "Both demo jobs are"} running. Click a task row below to open its live Herdr pane; closing the pane does not stop the job.`
 							: "Main agent is ready; accepted background tasks keep running.";
 					message.content.push({ type: "text", text: reply });
 					stream.push({ type: "text_start", contentIndex: 0, partial: message });

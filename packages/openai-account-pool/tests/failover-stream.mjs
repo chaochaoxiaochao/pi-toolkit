@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 import { accountIdOf, commitAccount, loadPoolSnapshot, POOL_UNRESOLVED_API_KEY } from "../src/auth.ts";
-import { recordFailure, setPreferredAccountId } from "../src/availability.ts";
+import { claimProbeLease, recordFailure, recordSuccess, releaseProbeLease, setPreferredAccountId } from "../src/availability.ts";
 import { createPoolProvider } from "../src/provider.ts";
 import { poolStatePathFor, readPoolState } from "../src/store.ts";
 import { fakeAccessToken, fakeCredential, makeAgentDir } from "./helpers/fixtures.mjs";
@@ -598,6 +598,171 @@ for (const failure of ["network", "invalid_grant", "cancelled"]) {
 			"the pinned account is tried first, then the pool takes over",
 		);
 		assert.equal((await readPoolState(statePath)).preferredAccountId, ACCOUNT_B, "a failover does not silently repoint the default");
+	} finally {
+		agent.dispose();
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Regression: another session holds the probe lease on a recovered account while this session's
+// sticky account runs out. Live usage proves the recovered account available, so it must run
+// instead of being reported as "another process is retrying".
+// ---------------------------------------------------------------------------
+{
+	const { agent, statePath } = await setupPool();
+	try {
+		const snapshot = await loadPoolSnapshot(agent.authPath);
+		const [recovered, exhausted] = snapshot.accounts;
+		const now = Date.now();
+		// The recovered account was limited for two days; its server reset time has passed.
+		await recordFailure({ statePath, account: recovered, now: now - 2 * 86_400_000, classification: { kind: "quota", reason: "usage_limit_reached", scope: "account", serverResetAtMs: now - 3 * 3_600_000 } });
+		// The account in use has just run out.
+		await recordFailure({ statePath, account: exhausted, now: now - 10_000, classification: { kind: "quota", reason: "usage_limit_reached", scope: "account", serverResetAtMs: now + 84 * 60_000 } });
+		// Another session already switched to the recovered account and is probing it.
+		assert.equal(await claimProbeLease({ statePath, accountId: recovered.id, owner: "other-session", now: now - 1_000 }), true);
+
+		const usageFetch = async (_input, init) => {
+			const id = init.headers["ChatGPT-Account-Id"];
+			const available = id === recovered.id;
+			return jsonResponse(200, {
+				rate_limit: {
+					allowed: available,
+					limit_reached: !available,
+					primary_window: { used_percent: available ? 2 : 100, limit_window_seconds: 18_000, reset_at: Math.floor((now + 84 * 60_000) / 1_000) },
+				},
+			});
+		};
+		const log = { attempts: [], refreshes: [], fetches: [] };
+		const provider = createPoolProvider(
+			scriptedProvider([{ kind: "ok", text: "recovered account answered" }], log),
+			poolRuntime(agent, statePath, [], usageFetch, exhausted.id),
+		);
+		const events = await collect(provider.stream(MODEL, CONTEXT, { apiKey: POOL_UNRESOLVED_API_KEY, fetch: scriptedFetch([], log) }));
+		assert.equal(events.at(-1).type, "done", events.at(-1).error?.errorMessage);
+		assert.equal(events.at(-1).message.content[0].text, "recovered account answered");
+		assert.deepEqual(log.attempts.map((attempt) => accountIdOf({ access: attempt.apiKey })), [recovered.id]);
+	} finally {
+		agent.dispose();
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Unconfirmed recovery held by another session's probe lease: wait once for that probe instead of
+// failing immediately. The wait is bounded, cancellable and never replays delivered output.
+// ---------------------------------------------------------------------------
+const LIMIT_429 = () => jsonResponse(429, { error: { code: "usage_limit_reached", plan_type: "plus", resets_at: Math.floor(Date.now() / 1_000) + 1_800 } });
+
+/** Recovered account still unconfirmed (live usage unavailable), exhausted account cooling down. */
+async function leasedRecovery({ exhaustedCooling = true, leaseTtlMs = 30_000 } = {}) {
+	const pool = await setupPool();
+	const snapshot = await loadPoolSnapshot(pool.agent.authPath);
+	const [recovered, exhausted] = snapshot.accounts;
+	const now = Date.now();
+	await recordFailure({ statePath: pool.statePath, account: recovered, now: now - 2 * 86_400_000, classification: { kind: "quota", reason: "usage_limit_reached", scope: "account", serverResetAtMs: now - 3 * 3_600_000 } });
+	if (exhaustedCooling) {
+		await recordFailure({ statePath: pool.statePath, account: exhausted, now: now - 10_000, classification: { kind: "quota", reason: "usage_limit_reached", scope: "account", serverResetAtMs: now + 84 * 60_000 } });
+	}
+	assert.equal(await claimProbeLease({ statePath: pool.statePath, accountId: recovered.id, owner: "other-session", now, ttlMs: leaseTtlMs }), true);
+	// Live usage cannot confirm the recovery, so the lease keeps serializing the probe.
+	const usageFetch = async (_input, init) =>
+		init.headers["ChatGPT-Account-Id"] === recovered.id ? jsonResponse(503, { error: { message: "unavailable" } }) : exhaustedUsageResponse();
+	/** The other session's probe succeeds: it clears the evidence and releases its lease. */
+	const otherSessionSucceedsAfter = (ms) => setTimeout(async () => {
+		await recordSuccess({ statePath: pool.statePath, account: recovered, requestStartedAtMs: now, clearEvidence: true });
+		await releaseProbeLease({ statePath: pool.statePath, accountId: recovered.id, owner: "other-session" });
+	}, ms);
+	return { ...pool, recovered, exhausted, usageFetch, otherSessionSucceedsAfter };
+}
+
+const attemptedAccounts = (log) => log.attempts.map((attempt) => accountIdOf({ access: attempt.apiKey }));
+
+// Before any model attempt: the other session's probe succeeds, then this request uses the account.
+{
+	const { agent, statePath, recovered, exhausted, usageFetch, otherSessionSucceedsAfter } = await leasedRecovery();
+	try {
+		const log = { attempts: [], refreshes: [], fetches: [] };
+		const notes = [];
+		const provider = createPoolProvider(scriptedProvider([{ kind: "ok", text: "after probe" }], log), poolRuntime(agent, statePath, notes, usageFetch, exhausted.id));
+		const started = Date.now();
+		otherSessionSucceedsAfter(300);
+		const events = await collect(provider.stream(MODEL, CONTEXT, { apiKey: POOL_UNRESOLVED_API_KEY, fetch: scriptedFetch([], log) }));
+		assert.equal(events.at(-1).type, "done", events.at(-1).error?.errorMessage);
+		assert.equal(events.at(-1).message.content[0].text, "after probe");
+		assert.deepEqual(attemptedAccounts(log), [recovered.id]);
+		assert.ok(Date.now() - started < 5_000, "an early release ends the wait without waiting for lease expiry");
+		assert.equal(notes.filter((note) => /等待/.test(note)).length, 1, "the user is told why the request pauses");
+	} finally {
+		agent.dispose();
+	}
+}
+
+// An abandoned lease expires; this request then probes the account itself.
+{
+	const { agent, statePath, recovered, exhausted, usageFetch } = await leasedRecovery({ leaseTtlMs: 400 });
+	try {
+		const log = { attempts: [], refreshes: [], fetches: [] };
+		const provider = createPoolProvider(scriptedProvider([{ kind: "ok", text: "probed after expiry" }], log), poolRuntime(agent, statePath, [], usageFetch, exhausted.id));
+		const events = await collect(provider.stream(MODEL, CONTEXT, { apiKey: POOL_UNRESOLVED_API_KEY, fetch: scriptedFetch([], log) }));
+		assert.equal(events.at(-1).type, "done", events.at(-1).error?.errorMessage);
+		assert.deepEqual(attemptedAccounts(log), [recovered.id]);
+		assert.equal((await readPoolState(statePath)).accounts[recovered.id].probeLease, undefined, "this request released the lease it took over");
+	} finally {
+		agent.dispose();
+	}
+}
+
+// The sticky account runs out during the request: fail over through the wait instead of stopping.
+{
+	const { agent, statePath, recovered, exhausted, usageFetch, otherSessionSucceedsAfter } = await leasedRecovery({ exhaustedCooling: false });
+	try {
+		const log = { attempts: [], refreshes: [], fetches: [] };
+		const provider = createPoolProvider(
+			scriptedProvider([{ kind: "quota" }, { kind: "ok", text: "failed over after probe" }], log),
+			poolRuntime(agent, statePath, [], usageFetch, exhausted.id),
+		);
+		otherSessionSucceedsAfter(300);
+		const events = await collect(provider.stream(MODEL, CONTEXT, { apiKey: POOL_UNRESOLVED_API_KEY, fetch: scriptedFetch([LIMIT_429], log) }));
+		assert.equal(events.filter((event) => event.type === "error").length, 0, "the failed attempt is not shown");
+		assert.equal(events.at(-1).message.content[0].text, "failed over after probe");
+		assert.deepEqual(attemptedAccounts(log), [exhausted.id, recovered.id]);
+	} finally {
+		agent.dispose();
+	}
+}
+
+// The wait has an upper bound and happens at most once per request.
+{
+	const { agent, statePath, exhausted, usageFetch } = await leasedRecovery({ leaseTtlMs: 10 * 60_000 });
+	try {
+		const log = { attempts: [], refreshes: [], fetches: [] };
+		const notes = [];
+		const provider = createPoolProvider(scriptedProvider([], log), { ...poolRuntime(agent, statePath, notes, usageFetch, exhausted.id), maxProbeWaitMs: 300 });
+		const started = Date.now();
+		const events = await collect(provider.stream(MODEL, CONTEXT, { apiKey: POOL_UNRESOLVED_API_KEY, fetch: scriptedFetch([], log) }));
+		assert.equal(events.at(-1).type, "error");
+		assert.match(events.at(-1).error.errorMessage, /账号池暂时都不可用/);
+		assert.equal(log.attempts.length, 0);
+		assert.ok(Date.now() - started < 5_000, "a long lease does not hold the request beyond the bound");
+		assert.equal(notes.filter((note) => /等待/.test(note)).length, 1, "only one wait per logical request");
+	} finally {
+		agent.dispose();
+	}
+}
+
+// Cancelling during the wait ends the request promptly, without an attempt.
+{
+	const { agent, statePath, exhausted, usageFetch } = await leasedRecovery();
+	try {
+		const log = { attempts: [], refreshes: [], fetches: [] };
+		const controller = new AbortController();
+		const provider = createPoolProvider(scriptedProvider([], log), poolRuntime(agent, statePath, [], usageFetch, exhausted.id));
+		const started = Date.now();
+		setTimeout(() => controller.abort(), 200);
+		const events = await collect(provider.stream(MODEL, CONTEXT, { apiKey: POOL_UNRESOLVED_API_KEY, signal: controller.signal, fetch: scriptedFetch([], log) }));
+		assert.equal(events.at(-1).type, "error");
+		assert.match(events.at(-1).error.errorMessage, /aborted/i);
+		assert.equal(log.attempts.length, 0);
+		assert.ok(Date.now() - started < 5_000, "cancellation interrupts the wait");
 	} finally {
 		agent.dispose();
 	}
