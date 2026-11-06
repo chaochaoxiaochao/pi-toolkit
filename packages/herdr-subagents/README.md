@@ -296,10 +296,11 @@ None of the bundled Personas pins a model, thinking level, skill, or optional ex
 | --- | --- | --- | --- |
 | `worker` | `write` | `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `codemode` | One focused implementation or other file-changing task. |
 | `explorer` | `read` | `read`, `bash`, `grep`, `find`, `ls`, `codemode` | Codebase structure, behavior, and dependency investigation without file changes. |
-| `analyst` | `read` | `read`, `bash`, `grep`, `find`, `ls`, `codemode` | Neutral agent-team execution where each task supplies the role charter and evaluation method. |
 | `reviewer` | `read` | `read`, `bash`, `grep`, `find`, `ls`, `codemode` | Independent review of proposals, designs, documents, implementations, and analysis against goals and constraints. |
 
-Choose `reviewer` for an independent assessment of existing work, `explorer` to investigate how the codebase works, `worker` for file-changing work, and `analyst` for agent-team members whose role is supplied by the task charter. An analyst may perform a review when its charter calls for one; its neutral execution role does not replace the reviewer selection for ordinary review requests.
+Choose `reviewer` for an independent assessment of existing work, `explorer` to investigate how the codebase works, and `worker` for file-changing work. Agent-team tasks use `reviewer` for reviews and counterevidence or `explorer` for codebase investigation; each task charter supplies the method and evaluation criteria.
+
+The built-in `analyst` Persona has been removed. Update tasks and any `personas.analyst` settings to the selected remaining Persona; settings are not migrated automatically. Without a custom definition, `agent: "analyst"` fails as an unknown Persona before creating a run. User-defined Personas may still use that name.
 
 The control tool's `list` action exposes each effective `description` to help the parent choose a Persona. The Markdown body instead becomes the selected child's appended system prompt. Put selection guidance in `description` and execution instructions in the body; bundled definitions keep both in English.
 
@@ -379,7 +380,7 @@ Use `/herdr-subagents agents`, `/herdr-subagents models`, and `/herdr-subagents 
 
 ## Development and tests
 
-See [TESTING.md](TESTING.md) for deterministic tests, extension loading, packaging, and real Herdr smoke requirements. The real smoke preserves your configured `analyst` model, thinking level, and explicit extensions (including authentication providers) inside its isolated fixture; unrelated Persona settings remain isolated.
+See [TESTING.md](TESTING.md) for deterministic tests, extension loading, packaging, and real Herdr smoke requirements. The real smoke preserves your configured `reviewer` model, thinking level, and explicit extensions (including authentication providers) inside its isolated fixture; unrelated Persona settings remain isolated.
 
 ## Missing reports and terminal diagnostics
 

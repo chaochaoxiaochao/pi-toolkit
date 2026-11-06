@@ -66,6 +66,9 @@ function hasAssistantMessage(path) {
 
 function restoreTestFocus() {
 	if (!controlledFocus?.triggered || controlledFocus.restored) return;
+	// A tab stays selected in its workspace even while another workspace is focused.
+	const caller = spawnSync(process.env.PI_HERDR_SUBAGENTS_HERDR_BINARY?.trim() || "herdr", ["tab", "focus", controlledFocus.previousCallerTabId], { encoding: "utf8", timeout: 10_000 });
+	assert.equal(caller.status, 0, caller.stderr);
 	const restored = spawnSync(process.env.PI_HERDR_SUBAGENTS_HERDR_BINARY?.trim() || "herdr", ["tab", "focus", controlledFocus.previousTabId], { encoding: "utf8", timeout: 10_000 });
 	assert.equal(restored.status, 0, restored.stderr);
 	const workspace = spawnSync(process.env.PI_HERDR_SUBAGENTS_HERDR_BINARY?.trim() || "herdr", ["workspace", "focus", controlledFocus.previousWorkspaceId], { encoding: "utf8", timeout: 10_000 });
@@ -78,7 +81,10 @@ function restoreTestFocus() {
 function assertRestoredFocus() {
 	const result = spawnSync(process.env.PI_HERDR_SUBAGENTS_HERDR_BINARY?.trim() || "herdr", ["workspace", "list"], { encoding: "utf8", timeout: 10_000 });
 	assert.equal(result.status, 0, result.stderr);
-	const focused = JSON.parse(result.stdout).result.workspaces.find((workspace) => workspace.focused);
+	const workspaces = JSON.parse(result.stdout).result.workspaces;
+	const caller = workspaces.find((workspace) => workspace.workspace_id === process.env.HERDR_WORKSPACE_ID);
+	assert.equal(caller?.active_tab_id, controlledFocus.previousCallerTabId, "The caller workspace's selected tab was not restored");
+	const focused = workspaces.find((workspace) => workspace.focused);
 	assert.equal(focused?.workspace_id, controlledFocus.previousWorkspaceId, "The original workspace focus was not restored");
 	assert.equal(focused?.active_tab_id, controlledFocus.previousTabId, "The original tab focus was not restored");
 }
@@ -97,20 +103,23 @@ async function waitForCleanup(result) {
 
 async function runCase(label, names, concurrency, extraExtensions = [], taskOverrides = {}) {
 	const extensions = [...runtimePersona.extensions, ...extraExtensions];
-	writeFileSync(configurationPaths.globalConfig, JSON.stringify({ defaultExtensions: extensions, personas: { analyst: { model: runtimePersona.model, thinking: runtimePersona.thinking } } }));
+	writeFileSync(configurationPaths.globalConfig, JSON.stringify({ defaultExtensions: extensions, personas: { reviewer: { model: runtimePersona.model, thinking: runtimePersona.thinking } } }));
 	if (concurrency > 1 && process.env.HERDR_SUBAGENTS_E2E_FOCUS_CLEANUP === "1") {
 		const workspaces = spawnSync(process.env.PI_HERDR_SUBAGENTS_HERDR_BINARY?.trim() || "herdr", ["workspace", "list"], { encoding: "utf8", timeout: 10_000 });
 		assert.equal(workspaces.status, 0, workspaces.stderr);
-		const previous = JSON.parse(workspaces.stdout).result.workspaces.find((workspace) => workspace.focused);
+		const listed = JSON.parse(workspaces.stdout).result.workspaces;
+		const previous = listed.find((workspace) => workspace.focused);
+		const caller = listed.find((workspace) => workspace.workspace_id === process.env.HERDR_WORKSPACE_ID);
 		assert.ok(previous?.active_tab_id, "The focused cleanup probe needs an existing focused tab to restore");
-		controlledFocus = { previousWorkspaceId: previous.workspace_id, previousTabId: previous.active_tab_id, triggered: false, restored: false };
+		assert.ok(caller?.active_tab_id, "The focused cleanup probe needs the caller workspace's selected tab to restore");
+		controlledFocus = { previousWorkspaceId: previous.workspace_id, previousTabId: previous.active_tab_id, previousCallerTabId: caller.active_tab_id, triggered: false, restored: false };
 	}
 	const response = await executeHerdrSubagents({
 		label,
 		concurrency,
 		tasks: names.map((name) => ({
 			name,
-			agent: "analyst",
+			agent: "reviewer",
 			prompt: `Do not inspect files. Call subagent_report with status completed, summary '${name} completed', and result 'hello'.`,
 			...taskOverrides,
 		})),

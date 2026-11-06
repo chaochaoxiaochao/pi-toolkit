@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -11,6 +11,7 @@ try {
 		"pack", source, "--ignore-scripts", "--json", "--pack-destination", root,
 	], { cwd: root, encoding: "utf8" }));
 	execFileSync("tar", ["-xzf", join(root, packed.filename), "-C", root]);
+	assert.deepEqual(readdirSync(join(root, "package", "agents")).sort(), ["explorer.md", "reviewer.md", "worker.md"], "The published package must contain only the three supported built-in Personas");
 	const output = execFileSync(process.execPath, ["--experimental-strip-types", "tests/report-lifecycle.mjs"], {
 		cwd: join(root, "package"), encoding: "utf8", timeout: 30000,
 	});

@@ -111,9 +111,8 @@ async function run(tasks, concurrency, herdr = fakeHerdr(), signal) {
 		configurationPaths: { globalConfig: join(root, "global-config.json") },
 	});
 	const personas = new Map(listed.details.agents.map((persona) => [persona.name, persona]));
-	const analyst = personas.get("analyst");
-	assert.match(analyst.description, /agent-team.*roles defined by each task/);
-	assert.match(analyst.systemPrompt, /role charter and evaluation method/);
+	assert.deepEqual([...personas.keys()].sort(), ["explorer", "reviewer", "worker"], "Only three built-in Personas remain");
+	assert.doesNotMatch(listed.content[0].text, /\banalyst\b/);
 	const reviewer = personas.get("reviewer");
 	assert.match(reviewer.description, /proposals, designs, documents, implementations, and analysis/);
 	assert.match(reviewer.systemPrompt, /goals and constraints/);
@@ -122,7 +121,7 @@ async function run(tasks, concurrency, herdr = fakeHerdr(), signal) {
 	assert.match(explorer.description, /codebase structure, behavior, and dependencies/);
 	assert.match(explorer.systemPrompt, /Locate relevant files, trace behavior and dependencies/);
 	const readTools = ["read", "bash", "grep", "find", "ls", "codemode"];
-	for (const name of ["analyst", "reviewer", "explorer"]) {
+	for (const name of ["reviewer", "explorer"]) {
 		const persona = personas.get(name);
 		assert.equal(persona.access, "read");
 		assert.deepEqual(persona.tools, readTools);
@@ -143,20 +142,23 @@ async function run(tasks, concurrency, herdr = fakeHerdr(), signal) {
 		assert.equal(response.isError, true, "Missing or invalid agent must not silently select worker");
 		assert.match(response.content[0].text, /tasks\[0\]\.agent.*required/);
 	}
-	const laterMissing = await execute({ tasks: [{ ...missing, agent: "analyst" }, missing], concurrency: 2 });
+	const laterMissing = await execute({ tasks: [{ ...missing, agent: "reviewer" }, missing], concurrency: 2 });
 	assert.match(laterMissing.content[0].text, /tasks\[1\]\.agent.*required/);
 	const unknown = await execute({ tasks: [{ ...missing, agent: "unknown-persona" }] });
 	assert.equal(unknown.isError, true);
 	assert.equal(unknown.content[0].text, `Unknown persona 'unknown-persona'.\n\n${listed.content[0].text}`, "Unknown-Persona errors must reuse the concise selection list");
+	const removed = await execute({ tasks: [{ ...missing, agent: "analyst" }] });
+	assert.equal(removed.isError, true);
+	assert.equal(removed.content[0].text, `Unknown persona 'analyst'.\n\n${listed.content[0].text}`, "Removed built-ins must not silently route to a different Persona");
 	assert.deepEqual(herdr.starts, [], "Invalid requests must not start an Agent");
 	assert.equal(existsSync(join(root, ".pi", "herdr-subagents", "runs")), false, "Invalid requests must not create run records");
 
 	const serial = await execute(normalizeHerdrSubagentsArguments({ prompt: "make change", agent: "worker" }));
 	assert.equal(serial.details.status, "completed", "Explicit worker must still run serially through legacy argument normalization");
-	const parallel = await execute({ tasks: ["analyst", "reviewer", "explorer"].map((agent) => ({ ...missing, agent })), concurrency: 2 });
+	const parallel = await execute({ tasks: ["reviewer", "explorer", "reviewer"].map((agent) => ({ ...missing, agent })), concurrency: 2 });
 	assert.equal(parallel.details.status, "completed");
 	assert.equal(parallel.details.effectiveConcurrency, 2);
-	for (const [index, name] of ["analyst", "reviewer", "explorer"].entries()) {
+	for (const [index, name] of ["reviewer", "explorer", "reviewer"].entries()) {
 		const directory = parallel.details.tasks[index].recordDirectory;
 		const instructions = readFileSync(join(directory, "system-prompt.md"), "utf8");
 		assert.ok(instructions.startsWith(personas.get(name).systemPrompt), "Each child must receive its selected Persona body");
@@ -169,6 +171,9 @@ async function run(tasks, concurrency, herdr = fakeHerdr(), signal) {
 	writeFileSync(join(projectAgents, "auditor.md"), "---\nname: auditor\ndescription: Custom read-only reviewer\naccess: read\n---\nReview the task.\n");
 	const custom = await execute({ tasks: [{ ...missing, agent: " auditor " }], concurrency: 2 });
 	assert.equal(custom.details.status, "completed", "Custom Persona names must remain valid and trim whitespace");
+	writeFileSync(join(projectAgents, "analyst.md"), "---\nname: analyst\ndescription: User-defined analysis role\naccess: read\n---\nFollow the assigned task charter.\n");
+	const customAnalyst = await execute({ tasks: [{ ...missing, agent: "analyst" }], concurrency: 2 });
+	assert.equal(customAnalyst.details.status, "completed", "Removing a built-in must not reserve or ban its name for custom Personas");
 }
 
 {
@@ -273,7 +278,7 @@ assert.throws(() => applyTaskStatus(terminal, "running"), /terminal tasks are im
 	assert.match(description, /reviewer for independent reviews/);
 	assert.match(description, /explorer for codebase investigation/);
 	assert.match(description, /worker for file changes/);
-	assert.match(description, /analyst for agent-team/);
+	assert.doesNotMatch(description, /\banalyst\b/);
 	assert.ok(taskSchema.required.includes("agent"), "The model-facing schema must require agent");
 	assert.equal(taskSchema.properties.agent.enum, undefined, "Custom Persona names must remain valid");
 	assert.equal(registeredTools.get("herdr_subagents")?.exposure, undefined, "Unconfigured Subagent execution must inherit Pi's exposure default");

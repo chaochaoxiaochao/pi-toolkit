@@ -50,9 +50,9 @@ try {
 	const globalConfig = join(root, "global.json");
 	writeFileSync(globalConfig, JSON.stringify({ defaultExtensions: [fileExtension, "./local package", probe] }));
 	const configuration = loadSubagentConfiguration(root, fileURLToPath(new URL("../agents", import.meta.url)), undefined, { globalConfig, globalAgents: join(root, "global-agents") });
-	const analyst = configuration.personas.find(({ name }) => name === "analyst");
-	assert.equal(analyst.extensionsSource, "global");
-	const args = childPiArgs({ id: "probe", sessionFile: join(root, "session.jsonl"), tools: ["read"], extensions: analyst.extensions }, join(root, "system.md"));
+	const reviewer = configuration.personas.find(({ name }) => name === "reviewer");
+	assert.equal(reviewer.extensionsSource, "global");
+	const args = childPiArgs({ id: "probe", sessionFile: join(root, "session.jsonl"), tools: ["read"], extensions: reviewer.extensions }, join(root, "system.md"));
 	// `builtin:codemode` is translated by `herdr agent start` and is covered by
 	// the real-Herdr smoke test. Direct Pi has no portable form of that alias.
 	const codemode = args.indexOf("builtin:codemode");
@@ -69,8 +69,8 @@ try {
 	console.log("PASS real Pi loads defaultExtensions file and package sources, including package skills/prompts despite discovery flags, without broadening the direct-Pi tool allowlist");
 
 	for (const [id, tools, extensions, expected] of [
-		["patch-editor", ["read", "edit", "write"], analyst.extensions, ["read", "write", "apply_patch", "subagent_report"]],
-		["no-editor", ["read", "write"], analyst.extensions, ["read", "write", "subagent_report"]],
+		["patch-editor", ["read", "edit", "write"], reviewer.extensions, ["read", "write", "apply_patch", "subagent_report"]],
+		["no-editor", ["read", "write"], reviewer.extensions, ["read", "write", "subagent_report"]],
 		["native-editor", ["read", "edit", "write"], [fileExtension, probe], ["read", "edit", "write", "subagent_report"]],
 	]) {
 		const childArgs = childPiArgs({ id, sessionFile: join(root, `${id}.jsonl`), tools, extensions }, join(root, "system.md"));

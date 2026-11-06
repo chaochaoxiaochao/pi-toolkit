@@ -22,7 +22,7 @@ try {
 		defaultModel: "openai-codex/test-model",
 		defaultThinking: "high",
 		defaultExtensions: ["npm:@maxiaochao/pi-openai-account-pool"],
-		personas: { analyst: {
+		personas: { reviewer: {
 			skills: ["unrelated-skill"],
 		} },
 	});
@@ -36,14 +36,14 @@ try {
 
 	const fixture = join(root, "fixture.json");
 	const probe = join(root, "local-package");
-	write(fixture, { personas: { analyst: { ...persona, extensions: [...persona.extensions, probe] } } });
+	write(fixture, { personas: { reviewer: { ...persona, extensions: [...persona.extensions, probe] } } });
 	const isolated = loadSubagentConfiguration(root, agents, undefined, { ...paths, globalConfig: fixture });
-	const analyst = isolated.personas.find(({ name }) => name === "analyst");
+	const reviewer = isolated.personas.find(({ name }) => name === "reviewer");
 	assert.equal(isolated.settings.maxConcurrency, 4);
-	assert.equal(analyst.access, "read");
-	assert.deepEqual(analyst.skills, []);
-	assert.deepEqual(analyst.extensions, ["npm:@maxiaochao/pi-openai-account-pool", probe]);
-	const args = childPiArgs({ ...analyst, sessionFile: join(root, "session.jsonl") }, join(root, "system.md"));
+	assert.equal(reviewer.access, "read");
+	assert.deepEqual(reviewer.skills, []);
+	assert.deepEqual(reviewer.extensions, ["npm:@maxiaochao/pi-openai-account-pool", probe]);
+	const args = childPiArgs({ ...reviewer, sessionFile: join(root, "session.jsonl") }, join(root, "system.md"));
 	assert.equal(args[args.indexOf("--model") + 1], "openai-codex/test-model");
 	assert.ok(args.includes("--no-extensions"));
 	assert.ok(args.includes("npm:@maxiaochao/pi-openai-account-pool"));
@@ -51,7 +51,7 @@ try {
 	assert.equal(readFileSync(paths.globalConfig, "utf8"), before);
 	console.log("PASS smoke preserves configured model and authentication extensions without copying unrelated settings");
 
-	write(paths.projectConfig, { personas: { analyst: {
+	write(paths.projectConfig, { personas: { reviewer: {
 		model: "custom/project-model",
 		thinking: "low",
 		extensions: ["./provider with spaces.ts", "../provider-package", "~/provider.ts", "npm:provider@1.0.0", "git:github.com/example/provider@v1", "builtin:codemode", "https://example.test/provider.git"],
@@ -63,14 +63,14 @@ try {
 	});
 	console.log("PASS smoke honors project precedence and keeps local and native package sources valid in a temporary cwd");
 
-	write(paths.projectConfig, { personas: { analyst: { extensions: [] } } });
+	write(paths.projectConfig, { personas: { reviewer: { extensions: [] } } });
 	assert.deepEqual(smokePersona(root, agents, " custom/override-model ", paths), {
 		model: "custom/override-model",
 		thinking: "high",
 		extensions: [],
 	});
 	mkdirSync(paths.globalAgents, { recursive: true });
-	writeFileSync(join(paths.globalAgents, "analyst.md"), "---\nname: analyst\ndescription: Custom user analyst\naccess: write\ntools: write\n---\nUnrelated user prompt.\n");
+	writeFileSync(join(paths.globalAgents, "reviewer.md"), "---\nname: reviewer\ndescription: Custom user reviewer\naccess: write\ntools: write\n---\nUnrelated user prompt.\n");
 	const selected = smokePersona(root, agents, undefined, paths);
 	assert.deepEqual(Object.keys(selected).sort(), ["extensions", "model", "thinking"]);
 	assert.equal(selected.model, "openai-codex/test-model");
