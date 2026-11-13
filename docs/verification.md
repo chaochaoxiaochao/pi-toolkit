@@ -1,5 +1,12 @@
 # Package split verification
 
+## Verified shell-panel publication (2026-11-13)
+
+- Source commit `8159074` includes the local shell panel; earlier commit `220c2a4` removes the built-in analyst Persona. User approved publishing both in the root bundle. Release commit `48c24f1` carries `background-tasks-v0.4.0` and `v0.15.0`; both tags and `main` were pushed atomically.
+- Final release gate passed all 90 Background Tasks tests, standalone loading, package layout and both tarball checks. Real Herdr acceptance also passed: one child, two concurrent children, focused deferred cleanup, focus restoration and automatic tab cleanup. This validates the earlier Herdr change embedded in the root bundle; the standalone Herdr package was not version-bumped or published.
+- [publish.yml run 43389085138](https://github.com/chaochaoxiaochao/pi-toolkit/actions/runs/43389085138) succeeded. `npm_config_prefer_online=true npm run release:check -- v0.15.0 --timeout 600 --interval 10` passed after registry propagation: remote tags, npm exact versions and integrity, and all 29 child / 219 root tarball files matched the tagged source. Evidence: `.cache/verification/release-shell-panel/release.log` and `post-release.log`.
+- Installed packages and the running session were not updated or reloaded. Reloading terminates session-owned background jobs; finish active work before updating/reloading.
+
 ## Background Tasks coordinated release approval (2026-11-13)
 
 - User approved publishing the local shell-panel changes together with the already committed analyst removal (`220c2a4`). Planned coordinated versions: Background Tasks `0.4.0` and toolkit `0.15.0`; the toolkit embeds the updated Herdr source, while the standalone Herdr version is unchanged.
