@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Show `1 shell` / `N shells` below the editor. Click or press Alt+J to open local shell details or a selectable list. Align Status, Runtime and Command; refresh a bounded Output tail every second.
+- Support arrows, Enter, Escape, Space and `x` to inspect, return, dismiss and stop without a model call. Keep finished history accessible with Alt+J.
+- Remove all `/bg` commands and Herdr tab/pane creation, log-following processes, focus and cleanup code. Task execution, timeouts, log budgets and completion delivery stay local and unchanged.
+- Replace the retired Herdr suite/media flow with deterministic panel tests and real Pi PTY interaction in Chrome.
+
 ## 2026-11-05 - v0.3.1
 
 - Use descriptive task views and clarify captured logs and automatic completion waiting

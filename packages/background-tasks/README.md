@@ -2,21 +2,19 @@
 
 Run shell commands in the background, then notify the main agent of completion and the captured log location. These are local processes, not subagents.
 
-![Real parent Pi: click either background task row to watch it in Herdr](docs/screenshot.png)
+![Real Pi shell details with aligned Status, Runtime and Command](docs/screenshot.png)
 
-![Real Herdr task panes: command headers and streaming build/test output](docs/task-panes.png)
+![Real Pi list of background shells](docs/shell-list.png)
 
-![Real Pi and Herdr: start two jobs, click each task, watch live output, then automatic tab cleanup](docs/demo.gif)
+![Real Pi shell counter, list, live details, cancellation and history](docs/demo.gif)
 
-[Watch the full recording (WebM)](docs/demo.webm).
-
-The recording uses an offline fixture provider to start two real local demo jobs: an in-place build counter and a streaming test log. It captures the production extension in a real Pi TUI and a temporary Herdr workspace, including clicks on both widget rows, the exact pane focus, success/failure results, and automatic tab cleanup. No paid model or user credentials are used.
+The frames come from the production extension in a real Pi PTY, displayed in Chrome with xterm.js. An offline fixture starts two actual local jobs; real browser clicks and keyboard events exercise the UI. No paid model or user credentials are used.
 
 ## Why
 
 A command such as `sleep 60; python3 ...` can spend most of its time waiting to check a build log. A normal Bash call keeps waiting for that command. This package returns a task ID immediately so the main agent can do other work.
 
-It uses Pi's public `createLocalBashOperations()` backend for shell execution and process-group cancellation. It adds session ownership, bounded logs, status, and completion messages. It neither replaces Bash nor starts another model. Inside Herdr, it also opens a read-only pane per task so the user can watch the command and its live output; the command still runs locally, not in that pane.
+It uses Pi's public `createLocalBashOperations()` backend for shell execution and process-group cancellation. It adds session ownership, bounded logs, status, and completion messages. It neither replaces Bash nor starts another model. The shell counter and local details panel follow the compact interaction shown in the supplied reference screenshots. No terminal multiplexer is required.
 
 Completion delivery follows [oh-my-pi's yield-queue approach](https://github.com/can1357/oh-my-pi/blob/3a2758b68f7c8e6bdf22c3a76b86c8675e5e0c9e/packages/coding-agent/src/session/yield-queue.ts): retain results, combine them at a safe boundary, and filter consumed results before delivery. This package uses Pi's public extension API, not patched host code; a local idle retry covers busy operations that expose no final agent boundary. Prompt timing is informed by [OMP’s background-start notice](https://github.com/can1357/oh-my-pi/blob/256b3211bca7458391866a8bcc9369902664be55/packages/tui/src/tools/bash.ts#L36-L48), but delivery is deliberately different: this package sends status and log paths only, not OMP-style automatic command-output injection. Agents inspect captured logs progressively when needed.
 
@@ -29,7 +27,7 @@ pi install npm:@maxiaochao/pi-background-tasks
 pi update npm:@maxiaochao/pi-background-tasks
 ```
 
-The complete `@maxiaochao/pi-toolkit` package **bundles and enables Background Tasks by default**. Choose either the toolkit or this standalone package; do not install both, because the tool and `/bg` command would be registered twice.
+The complete `@maxiaochao/pi-toolkit` package **bundles and enables Background Tasks by default**. Choose either the toolkit or this standalone package; do not install both, because the tool and shortcut would be registered twice.
 
 ## Agent tool
 
@@ -51,7 +49,7 @@ Inspect a running or finished task whenever its output is needed; no completion 
 background_task({ action: "output", id: "<returned-task-id>" })
 ```
 
-Use `list` to inspect task status at any time, including while tasks are running. These are agent-callable actions, not only user `/bg` commands. Query on demand rather than repeatedly checking just to wait. After completion, use the reported log path to search relevant terms or read selected ranges; avoid loading the entire log by default. The tool also supports cancellation:
+Use `list` to inspect task status at any time, including while tasks are running. These actions are agent-callable. Query on demand rather than repeatedly checking just to wait. After completion, use the reported log path to search relevant terms or read selected ranges; avoid loading the entire log by default. The tool also supports cancellation:
 
 ```text
 background_task({ action: "list" })
@@ -72,33 +70,17 @@ List shows running tasks and the latest 20 finished tasks, with total and omitte
 
 ## User controls and status
 
-```text
-/bg
-/bg list
-/bg output <returned-task-id>
-/bg cancel <returned-task-id>
-/bg watch <returned-task-id>
-```
+A compact **`1 shell` / `N shells`** counter sits below the editor without replacing Pi's footer. Click the count in fullscreen mode, or press **Alt+J** in either terminal mode. One active task opens **Shell details** directly; multiple tasks open **Background**. With no active tasks, Alt+J still opens retained history.
 
-The commands inspect the same jobs without asking a model to perform the operation. Start a command through the agent tool; there is no second shell parser in `/bg`.
+- **List:** ↑/↓ selects a shell, Enter opens its details, and clicking a task row opens that task. Running tasks appear first, followed by **Earlier in this session**. At most eight task rows are visible; selection scrolls the retained history (latest 20 finished tasks).
+- **Details:** `Status:`, `Runtime:` and `Command:` share a fixed value column. Long commands wrap for up to three lines with an ellipsis. **Output:** shows the last ten captured lines, clipped to the current width, refreshed every second. Empty output says `No output available`; truncated tails show the log path for further inspection. Finished tasks also show their exit code, reason and incomplete-capture warning when applicable.
+- **Controls:** ← returns to the list. Esc closes either view; Enter or Space also closes details. `x` stops only the selected running shell. Closing the panel leaves the task running. Inspecting output in the panel does not add model messages or consume a pending completion reminder.
+- **Counter:** recently finished tasks add `N done` for five seconds. Hiding the counter does not delete history. RPC receives an active count; print/JSON mode has no UI timer.
+- **No `/bg` commands or Herdr integration:** the extension creates no tabs, panes or log-following processes, including when Pi itself runs inside Herdr. Task execution always uses the same local backend.
 
-A fixed widget **above the editor** shows each task's ID, status, elapsed time, runtime limit and description. It coexists with Scheduler, Todo, and Herdr widgets. Finished rows remain for five seconds; hiding a row does not delete its record. RPC gets a compact active count; non-interactive tools work without the widget.
+The preview is intentionally bounded, not a full log viewer. Use the retained log path for earlier output or long lines. Commands have no TTY, so TTY-only colour and progress rendering may be absent. Other extensions' widgets remain intact.
 
-## Herdr task view
-
-When Pi runs inside Herdr (`HERDR_ENV=1` and `HERDR_WORKSPACE_ID` set), each started task also gets a pane in one per-session **BG · &lt;task description&gt;** tab:
-
-- The tab is created on the first start without taking focus, and holds at most two panes, one per running task. A new task reuses the pane of a finished one.
-- Like Herdr Subagents, the tab has a descriptive name and panes use numbered task names (`01 · Release build`, `02 · Unit tests`). Starting or watching a task updates the shared tab's name to that task's description. When one task ends, the tab names the remaining running task. Task numbers stay stable when panes are closed, reopened or reused.
-- Each pane prints its numbered task name, the command (`$ ...`), cwd and runtime limit, then follows the task's captured log with `tail -f`. The task name remains visible even when the single-pane layout hides the pane label. Line output and `\r` progress updates appear live. When the task ends, the pane prints a result line such as `[failed · exit 4 · 6s]`.
-- The view follows the tool's captured stdout/stderr, not files chosen by the command. Redirecting all output to another file leaves this log empty. No extra redirection is needed merely to inspect output later; use the reported log path. If an extra copy is required, `set -o pipefail; command 2>&1 | tee <unique-path>` preserves live output and command failures. The copy still counts toward the capture limit.
-- The pane is a **viewer only**. The task runs through the same local backend as outside Herdr, with the same logs, limits, status and notifications. The command has no TTY, so tools that detect one may drop colour or animated progress bars.
-- Closing a pane, or the whole tab, does not cancel the task. Clicking a task row in the widget (Pi 1.4+ fullscreen mode) or `/bg watch <id>` reopens the pane if needed and focuses that tab and pane; use `/bg cancel <id>` to stop the task.
-- When no task runs any more, the tab closes. If the user is looking at it, it closes after focus moves to another tab. Session shutdown, reload and replacement close it immediately, together with the logs.
-- Herdr subagent children (`PI_HERDR_SUBAGENTS_CHILD=1`) open no view; their tasks remain visible in the child's own widget. RPC and print modes open no view either.
-- A failed Herdr call shows one warning. Tasks keep running and the widget stays current.
-
-There is no setting to turn the view off.
+## Completion delivery
 
 Completion, failure, cancellation, timeout and output-limit termination update the widget immediately. The extension holds pending completion metadata until it can deliver it safely:
 
@@ -106,7 +88,7 @@ Completion, failure, cancellation, timeout and output-limit termination update t
 - While idle, pending completions are combined on the next event-loop tick and wake the main agent once. Oversized metadata batches remain pending for later safe boundaries rather than being dropped. Jobs that finish after that batch can produce another notification. Pi's global steering/follow-up queue settings are unchanged.
 - If another operation such as manual compaction keeps the session busy without an agent boundary, one local timer retries after 1, 2, 4, 8, 16, then 30 seconds, staying at 30 seconds thereafter. There is no retry-count limit or expiry that discards unread results. This does not call a model or poll shell output.
 - Normal tool/settlement boundaries still deliver immediately, without waiting for the retry timer. Without a boundary, an idle session can wait up to the current retry interval (at most 30 seconds, subject to native timer delays). Once a batch is delivered or fully consumed, the next batch starts with an immediate check and fresh backoff.
-- A successful tool `output` read of a finished task consumes its pending reminder, including failed tasks. A running snapshot, `list`, a failed log read, or a user `/bg output` inspection does not consume the main agent's reminder. Consumption does not mean the task passed validation.
+- A successful tool `output` read of a finished task consumes its pending reminder, including failed tasks. A running snapshot, `list`, a failed log read, or a user panel inspection does not consume the main agent's reminder. Consumption does not mean the task passed validation.
 - Aborted/error boundaries do not request continuation or replay a previously scheduled wake. An error does not suppress later completions.
 - A user interrupt keeps the agent stopped: accepted jobs still run, but even later completions cannot restart it. Unread results remain queryable and are handed to the next user-message run before its first model request. Another extension's custom wake does not release this interrupt state; a new user-message run or session replacement does. This adds no notification pause switch.
 - Cancelling manual compaction is separate from interrupting the agent. Pending completions still wake an otherwise-idle session after compaction succeeds, fails or is cancelled.
@@ -152,7 +134,7 @@ The tool description is compact. This package adds no `promptGuidelines` or extr
 ## Lifetime and scope
 
 - Exit, new/resumed/forked sessions and reload terminate active tasks, remove the widget and timers, and delete this package's captured logs. Commands' own files are left alone. History is not restored.
-- Aborting the main agent's current turn does not cancel an accepted job, but its completion cannot automatically restart the interrupted agent. Use cancel or `/bg cancel` to stop the job itself.
+- Aborting the main agent's current turn does not cancel an accepted job, but its completion cannot automatically restart the interrupted agent. Use the tool’s cancel action or `x` in the panel to stop the job itself.
 - Cancellation and runtime limits stop the native shell process group. Scripts must wait for their own work. Daemonized/detached commands (`nohup`, `setsid`, self-backgrounding processes), existing PID adoption, PTYs and interactive stdin are not supported.
 - This is a distinct **local execution** tool. A third-party sandbox or remote backend installed only for Bash does not automatically cover it. Enable it only where direct local shell execution is permitted.
 - It is not an OS sandbox: CPU/memory quotas, cleanup after SIGKILL/power loss, automatic retries, deadline renewal and persistence are out of scope. Native signal delivery and timers are best-effort.

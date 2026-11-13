@@ -22,6 +22,7 @@ try {
 	const events = readFileSync(join(directory, "events.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
 	const loaded = events.find((entry) => entry.event === "loaded");
 	assert.equal(loaded.tools.filter((name) => name === "background_task").length, 1, "the real host registered exactly one background-task tool");
+	assert.ok(!loaded.commands.includes("bg"), "the host has no background-task slash command");
 	const request = events.find((entry) => entry.event === "request");
 	assert.equal(request.tools.filter((name) => name === "background_task").length, 1, "background_task is active in the model request without manual activation");
 	console.log(`Real Pi loaded ${toolkit ? "the toolkit default loadout" : "the standalone background-task extension"} with exactly one background-task tool and an offline fixture provider.`);

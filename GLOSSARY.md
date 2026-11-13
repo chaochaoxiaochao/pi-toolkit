@@ -53,7 +53,7 @@ A local shell command owned by one Pi session that runs after the model's turn a
 _Avoid_: Subagent, background job pane
 
 **Task View**:
-A read-only Herdr pane that shows one Background Task's command and live output. Closing it never affects the task.
+A session-local view of Background Tasks and their command, status and captured output. Dismissing it does not stop a task; stopping requires an explicit action.
 _Avoid_: Task pane, terminal task
 
 **Plan History**:

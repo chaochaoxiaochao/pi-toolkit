@@ -64,9 +64,9 @@ catch { text("BACKGROUND_CALL_BLOCKED"); }` } });
 						stream.push({ type: "toolcall_end", contentIndex: index, toolCall: message.content[index], partial: message });
 					}
 				} else {
-					const reply = text.includes("[Background task finished]") ? (media ? "Background jobs finished. Their status and captured logs remain available with /bg." : "BACKGROUND_NOTIFICATION_RECEIVED")
+					const reply = text.includes("[Background task finished]") ? (media ? "Background jobs finished. Their status and captured logs remain available with Alt+J." : "BACKGROUND_NOTIFICATION_RECEIVED")
 						: media
-							? `${tasks.size === 1 ? "One demo job is" : "Both demo jobs are"} running. Click a task row below to open its live Herdr pane; closing the pane does not stop the job.`
+							? `${tasks.size === 1 ? "One demo job is" : "Both demo jobs are"} running. Click the shell count below to inspect live output; closing the panel does not stop the job.`
 							: "Main agent is ready; accepted background tasks keep running.";
 					message.content.push({ type: "text", text: reply });
 					stream.push({ type: "text_start", contentIndex: 0, partial: message });
@@ -79,7 +79,7 @@ catch { text("BACKGROUND_CALL_BLOCKED"); }` } });
 		},
 	});
 	pi.on("session_start", (_event, ctx) => {
-		record({ event: "loaded", tools: pi.getAllTools().map((tool) => tool.name) });
+		record({ event: "loaded", tools: pi.getAllTools().map((tool) => tool.name), commands: pi.getCommands().map((command) => command.name) });
 		if (ctx.hasUI) ctx.ui.setTitle("Pi Background Tasks Smoke");
 	});
 	pi.on("agent_settled", () => record({ event: "settled" }));

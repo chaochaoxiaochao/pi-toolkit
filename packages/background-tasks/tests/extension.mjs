@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
 import { unlinkSync } from "node:fs";
 import { test } from "node:test";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import register from "../extensions/background-tasks.ts";
 import { fixture, flush } from "./helpers.mjs";
+
+const keys = new KeybindingsManager(TUI_KEYBINDINGS);
 
 function harness(mode = "tui", hasUI = true) {
 	const f = fixture();
 	const handlers = new Map();
 	const commands = new Map();
+	const shortcuts = new Map();
+	let panel;
 	const messages = [];
 	const notices = [];
 	const widgets = new Map([["scheduler", { render: () => ["Scheduler"] }], ["herdr-subagents", { render: () => ["Fleet"] }]]);
@@ -25,6 +29,11 @@ function harness(mode = "tui", hasUI = true) {
 				widgets.set(key, factory({ requestRender() { renders++; } }, theme));
 				placements.set(key, options);
 			},
+			custom(factory) {
+				return new Promise((resolve) => {
+					panel = factory({ requestRender() { renders++; } }, theme, keys, () => { panel?.dispose(); panel = undefined; resolve(); });
+				});
+			},
 			setStatus(key, value) { if (value === undefined) statuses.delete(key); else statuses.set(key, value); },
 			notify(message, level) { notices.push({ message, level }); },
 		},
@@ -32,17 +41,20 @@ function harness(mode = "tui", hasUI = true) {
 	const pi = {
 		on(name, handler) { handlers.set(name, handler); },
 		registerTool(value) { tool = value; },
+		registerShortcut(name, value) { shortcuts.set(name, value); },
 		registerCommand(name, value) { commands.set(name, value); },
 		sendMessage(message, options) {
 			if (failSend) { failSend = false; throw new Error("Fixture delivery rejected"); }
 			messages.push({ message, options });
 		},
 	};
-	register(pi, { operations: f.operations, clock: f.clock, logRoot: f.root, env: {} });
+	register(pi, { operations: f.operations, clock: f.clock, logRoot: f.root });
 	return {
 		...f, handlers, commands, messages, notices, widgets, placements, statuses, idleChecks, ctx,
 		setIdle(value) { idle = value; },
 		failNextSend() { failSend = true; },
+		get panel() { return panel; },
+		open() { void shortcuts.get("alt+j").handler(ctx); },
 		get tool() { return tool; }, get renders() { return renders; },
 		async close() {
 			const closing = handlers.get("session_shutdown")({}, ctx);
@@ -63,7 +75,7 @@ test("completions during a synchronous tool are merged before the next model req
 		h.calls[1].resolve(2);
 		await flush();
 		assert.equal(h.messages.length, 0, "busy completions must not enter an irrevocable host queue");
-		assert.match(h.widgets.get("background-tasks").render(140).join("\n"), /failed/);
+		assert.match(h.widgets.get("background-tasks").render(140).join("\n"), /done/);
 		const existing = { type: "custom", customType: "other-extension", data: { preserved: true } };
 		const boundary = h.handlers.get("turn_end")({ entries: [existing], continue: true, outcome: "completed" }, h.ctx);
 		assert.equal(boundary.continue, true);
@@ -344,12 +356,16 @@ test("terminal output consumed by the agent removes only that pending reminder",
 		h.calls[1].resolve();
 		await flush();
 		await h.tool.execute("list", { action: "list" });
-		await h.commands.get("bg").handler(`output ${b.id}`, h.ctx);
+		h.open();
+		h.panel.handleInput("\r");
+		assert.match(h.panel.render(140).join("\n"), /Command:  second/);
+		h.panel.handleInput("\x1b");
+		await flush();
 		const output = await h.tool.execute("read", { action: "output", id: a.id });
 		assert.equal(output.isError, true, "a nonzero command is still a successful log read");
 		const boundary = h.handlers.get("turn_end")({ entries: [], outcome: "completed" }, h.ctx);
 		assert.deepEqual(boundary.entries[0].details.tasks.map((task) => task.id), [b.id]);
-		assert.equal(h.messages.length, 1, "only the user's inspection message was sent");
+		assert.equal(h.messages.length, 0, "panel inspection never adds a model message");
 	} finally { await h.close(); }
 });
 
@@ -508,7 +524,7 @@ test("start keeps only task-specific guidance while the declaration describes li
 	} finally { await h.close(); }
 });
 
-test("tools, commands, widget and idle notifications share the same session jobs", async () => {
+test("tools, panel, widget and idle notifications share the same session jobs", async () => {
 	const h = harness();
 	try {
 		await h.handlers.get("session_start")({}, h.ctx);
@@ -519,17 +535,20 @@ test("tools, commands, widget and idle notifications share the same session jobs
 		assert.equal(job.status, "running");
 		parentSignal.abort();
 		assert.equal(h.calls[0].signal.aborted, false, "parent turn cancellation does not own the accepted background job");
-		assert.deepEqual(h.placements.get("background-tasks"), { placement: "aboveEditor" });
+		assert.deepEqual(h.placements.get("background-tasks"), { placement: "belowEditor" });
 		h.clock.advance(1000);
 		const widget = h.widgets.get("background-tasks");
-		assert.match(widget.render(140).join("\n"), /1s \/ 1m/);
+		assert.match(widget.render(140).join("\n"), /1 shell/);
 		for (const width of [1, 8, 40, 80]) assert.ok(widget.render(width).every((line) => visibleWidth(line) <= width));
 		assert.ok(h.widgets.has("scheduler") && h.widgets.has("herdr-subagents"));
 
 		h.calls[0].onData(Buffer.from("captured build output\n"));
-		await h.commands.get("bg").handler(`output ${job.id}`, h.ctx);
-		assert.match(h.messages.at(-1).message.content, /captured build output/);
-		assert.equal(h.messages.at(-1).options.triggerTurn, false);
+		h.open();
+		assert.match(h.panel.render(140).join("\n"), /captured build output/);
+		assert.match(h.panel.render(140).join("\n"), /Runtime:  1s/);
+		h.panel.handleInput("\x1b");
+		await flush();
+		assert.equal(h.messages.length, 0);
 		const output = await h.tool.execute("output", { action: "output", id: job.id });
 		assert.equal(output.structuredContent.output, "captured build output\n");
 		assert.equal(output.details.output, undefined);
@@ -544,7 +563,7 @@ test("tools, commands, widget and idle notifications share the same session jobs
 		assert.doesNotMatch(completed[0].message.content, /captured build output/);
 		assert.ok(!completed[0].message.content.includes(`background_task({action:"output",id:"${job.id}"})`), "complete small output needs no follow-up query");
 		assert.ok(completed[0].message.content.includes(job.log_path), "completion points at the log for progressive inspection");
-		assert.match(h.widgets.get("background-tasks").render(140).join("\n"), /failed/);
+		assert.match(h.widgets.get("background-tasks").render(140).join("\n"), /done/);
 		h.clock.advance(4999);
 		assert.ok(h.widgets.has("background-tasks"));
 		h.clock.advance(1);
@@ -567,9 +586,9 @@ test("cancel and shutdown are idempotent; new sessions cannot receive old comple
 		assert.equal((await cancel).structuredContent.task.status, "cancelled");
 		h.clock.advance(0);
 		const count = h.messages.length;
-		await h.commands.get("bg").handler(`cancel ${a.id}`, h.ctx);
+		await h.tool.execute("again", { action: "cancel", id: a.id });
 		assert.equal(h.messages.filter((m) => m.message.customType === "background-task-finished").length, 1);
-		assert.equal(h.messages.length, count + 1, "only the explicit command acknowledgement is added");
+		assert.equal(h.messages.length, count, "repeated cancel adds no notification");
 		const shutdown = h.handlers.get("session_shutdown")({ reason: "reload" }, h.ctx);
 		assert.equal(h.calls[1].signal.aborted, true);
 		h.calls[1].resolve();
@@ -591,7 +610,7 @@ for (const [mode, hasUI] of [["rpc", true], ["print", false], ["json", false]]) 
 			assert.equal(result.structuredContent.task.status, "running");
 			assert.equal(h.widgets.has("background-tasks"), false);
 			assert.equal(h.clock.timers.size, 1, "only the execution deadline exists");
-			if (hasUI) assert.match(h.statuses.get("background-tasks"), /1\/2/);
+			if (hasUI) assert.match(h.statuses.get("background-tasks"), /1 shell/);
 			h.calls[0].resolve();
 			await flush();
 			h.clock.advance(0);
@@ -602,7 +621,7 @@ for (const [mode, hasUI] of [["rpc", true], ["print", false], ["json", false]]) 
 	});
 }
 
-test("bad actions, irrelevant fields, aborted acceptance and command syntax fail visibly", async () => {
+test("bad actions, irrelevant fields and aborted acceptance fail visibly; no slash commands", async () => {
 	const h = harness();
 	try {
 		await h.handlers.get("session_start")({}, h.ctx);
@@ -617,8 +636,7 @@ test("bad actions, irrelevant fields, aborted acceptance and command syntax fail
 		}
 		const abort = new AbortController(); abort.abort();
 		assert.equal((await h.tool.execute("abort", { action: "start", command: "x" }, abort.signal)).isError, true);
-		await h.commands.get("bg").handler("start echo hello", h.ctx);
-		assert.equal(h.notices.at(-1).level, "error");
+		assert.equal(h.commands.size, 0);
 		assert.equal(h.calls.length, 0);
 	} finally { await h.close(); }
 });
@@ -640,3 +658,26 @@ for (const reason of ["new", "resume", "fork", "quit"]) {
 		} finally { await h.close(); }
 	});
 }
+
+test("widget opens one local panel; shutdown closes it and clears refresh timers", async () => {
+	const h = harness();
+	try {
+		await h.handlers.get("session_start")({}, h.ctx);
+		await h.tool.execute("a", { action: "start", command: "first" });
+		const widget = h.widgets.get("background-tasks");
+		widget.render(140);
+		widget.handleMouse({ type: "click", button: "left", x: 1, y: 0 });
+		const original = h.panel;
+		assert.ok(original);
+		h.open();
+		assert.equal(h.panel, original, "repeated open cannot stack interactions");
+		assert.match(original.render(140).join("\n"), /Command:  first/);
+		const shutdown = h.handlers.get("session_shutdown")({}, h.ctx);
+		assert.equal(h.panel, undefined);
+		assert.equal(h.calls[0].signal.aborted, true);
+		h.calls[0].resolve();
+		await shutdown;
+		assert.equal(h.clock.timers.size, 0);
+		assert.equal(h.widgets.has("background-tasks"), false);
+	} finally { await h.close(); }
+});

@@ -28,12 +28,12 @@ render = os.environ.get('BG_SMOKE_RENDER') == '1'
 capture = os.environ.get('BG_SMOKE_CAPTURE') == '1'
 env = dict(os.environ, PI_CODING_AGENT_DIR=str(work), PI_OFFLINE='1', BG_SMOKE_EVENTS=str(events_path), TERM='xterm-256color', COLORTERM='truecolor')
 env.pop('PI_HERDR_SUBAGENTS_CHILD', None)
-env.pop('HERDR_ENV', None)  # Keep this smoke run's widget-only path; Herdr views are covered by viewer.mjs.
+# Task UI is local and independent of terminal host.
 (work / 'settings.json').write_text(json.dumps({'quietStartup': True}))
 args = ['--no-extensions', '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-session', '--offline',
         '-e', 'builtin:codemode', '-e', str(PKG / 'extensions/background-tasks.ts'),
         '-e', str(ROOT / 'packages/scheduler/extensions/scheduler.ts'), '-e', str(PKG / 'tests/fixtures/provider.ts'),
-        '--tools', 'codemode,background_task,schedule', '--model', 'bg-fixture/deterministic', '--tui-mode', 'fullscreen']
+        '--tools', 'codemode,background_task,schedule', '--model', 'bg-fixture/deterministic', '--tui-mode', os.environ.get('BG_SMOKE_TUI_MODE', 'fullscreen')]
 size = os.get_terminal_size(sys.stdout.fileno()) if render else os.terminal_size((140, 42))
 terminal_settings = termios.tcgetattr(sys.stdin.fileno()) if render else None
 if render:
@@ -143,7 +143,13 @@ try:
     wait(lambda: len([e for e in events() if e.get('event') == 'settled']) > settled_count, 'foreground turn completion')
     assert not finished('succeeded'), 'Sleeping job must survive foreground turn completion'
     shot('running')
-    send('/bg output ' + first['id'])
+    child.send('\x1bj')
+    wait(lambda: 'active shells' in raw, 'shell list')
+    child.send('\r')
+    wait(lambda: 'Shell details' in raw, 'shell details')
+    shot('details')
+    child.send('\x1b')
+    pump(0.2)
     send('SMOKE_CANCEL')
     wait(lambda: bool(finished('cancelled')), 'cancel notification')
     wait(lambda: bool(finished('succeeded')), 'successful background notification')
@@ -183,7 +189,7 @@ try:
     assert all(not Path(path).exists() for path in logs), 'Session logs were not removed'
     (OUT / 'events.jsonl').write_text('\n'.join(json.dumps(e) for e in records) + '\n')
     (OUT / 'result.json').write_text(json.dumps({'passed': True, 'screenshots': screens,
-        'checks': ['two jobs', 'third rejected', 'Codemode background calls blocked', 'model returns while jobs live', 'Scheduler coexistence', '/bg output',
+        'checks': ['two jobs', 'third rejected', 'Codemode background calls blocked', 'model returns while jobs live', 'Scheduler coexistence', 'Alt+J list/details',
                    'cancel notification', 'success notification', 'main agent notification', 'no duplicate persisted notifications',
                    '5-second terminal row', 'reload cleanup', 'new-session cleanup', 'quit cleanup']}, indent=2))
 except Exception:

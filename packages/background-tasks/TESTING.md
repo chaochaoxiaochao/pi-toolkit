@@ -13,8 +13,8 @@ Tests use Node's built-in test runner. They resolve host peers from the installe
 - `tasks.mjs`: fake execution and clock at the task-manager interface; immediate return, two slots, validation, timeout/cancel races, final failure, disk budgets, write errors, bounded history and shutdown.
 - `output.mjs`: compares the shared 100-line/8-KiB preview with the real host Bash tool’s output, retaining unchanged small-output display parity and deliberately tighter truncation for large output. Covers line/byte limits, long lines, empty output, missing final newline, UTF-8 split across chunks, invalid UTF-8 and logs larger than 1 MiB. Checks both return paths carry the same tail, omission metadata reports total size, and full captured bytes remain on disk. The former Bash-sized display/1-MiB structured contract is retired; each retained fixture now verifies the bounded replacement.
 - `processes.mjs`: the native backend, a multi-line Python log check, non-blocking concurrency, PID-observed process-tree cleanup, silent busy-loop timeout and the default 32 MiB disk limit.
-- `extension.mjs`: real extension registration with fake execution/clock; schema errors, command parity, parent-signal independence, merged busy/idle notifications, terminal-output consumption and failed-read retention, abort/error boundaries, manual-compaction-style busy intervals without agent boundaries, other extensions' draft preservation, status-only completion text with log paths and progressive-inspection guidance, no automatic stdout/stderr injection or log-file reads, a 16-KiB status/path batch cap, lossless splitting of large metadata batches, explicit timeout/empty-result status, independent missing-log and healthy-sibling manual inspections, synchronous delivery-failure retention, above-editor placement, five-second retention, narrow/CJK rendering, coexistence and non-TUI modes. Checks fixed `model-only` exposure and separate concise declaration and task-specific start guidance, no start-text log path or redundant structured guidance field, and explicit running-task `list`/`output` availability; verifies 24-hour retention after an interrupt, output consumption while stopped, custom-wake isolation and restoration of automatic delivery by a new user-message run.
-- `viewer.mjs`: the Herdr task view with an in-memory Herdr CLI. One unfocused tab with one pane per running task, command header and log paths passed as arguments (never command text as shell syntax), result line, pane reuse, tab closing after the last task and after focus moves away, user-closed panes not cancelling tasks, `/bg watch` and widget-row clicks reopening and focusing the right pane, one warning for Herdr failures, immediate close on shutdown, and no Herdr calls outside Herdr or in subagent children. Also runs the real view script against a log file. `extension.mjs` and `tui-smoke.py` run without Herdr so their widget assertions stay independent of the host terminal.
+- `extension.mjs`: real extension registration with fake execution/clock; schema errors, local panel inspection parity, parent-signal independence, merged busy/idle notifications, terminal-output consumption and failed-read retention, abort/error boundaries, manual-compaction-style busy intervals without agent boundaries, other extensions' draft preservation, status-only completion text with log paths and progressive-inspection guidance, no automatic stdout/stderr injection or log-file reads, a 16-KiB status/path batch cap, lossless splitting of large metadata batches, explicit timeout/empty-result status, independent missing-log and healthy-sibling manual inspections, synchronous delivery-failure retention, below-editor placement, five-second retention, narrow/CJK rendering, coexistence and non-TUI modes. Checks fixed `model-only` exposure and separate concise declaration and task-specific start guidance, no start-text log path or redundant structured guidance field, and explicit running-task `list`/`output` availability; verifies 24-hour retention after an interrupt, output consumption while stopped, custom-wake isolation and restoration of automatic delivery by a new user-message run.
+- `panel.mjs`: singular/plural counter, mouse hit region, screenshot-style field alignment, original multiline command, one-second refresh, empty/output-error states, bounded sanitized output, long commands, narrow/CJK widths, arrows/Enter/click selection, selected-ID stability across completion, `x` cancellation, closing without stopping, history paging and timer disposal. The old `viewer.mjs` was removed because all of its Herdr tab/pane/follow-script contracts are retired; local execution, process-tree cleanup and notification assertions remain in their existing suites. `extension.mjs` additionally checks no slash commands, one panel at a time, inspection not consuming reminders, and shutdown closing the panel.
 - `media.mjs`: actual demo Python jobs stream in-place/line output and exit with 0/3 only after explicit release files; the offline provider issues exactly two direct starts, then returns without polling. This tests the fixtures used by the real recorder, not an invented screen.
 - `notifications.mjs`: isolated real Pi with model-issued background calls, default one-at-a-time queues and an offline provider. Sequential blocking fixtures hold one native tool batch open across two waves of actual failing shell jobs. The blocking fixture runs directly or through native Codemode, but background calls always come from the model. The next model request gets one merged notification for four completions, excluding reminders for zero, one or two first-wave terminal outputs read directly by the model before the boundary; no output bodies are attached to any completion notice; no extra requests follow the final report. Complete pending-batch consumption remains covered by the deterministic extension tests. Also verifies that the model receives distinct declaration/start guidance without a Codemode suffix, and that the next request receives status/log locations without command output, and that native Codemode cannot discover or call `background_task`. The blocking tool is a fixture, not a real Herdr child. `BG_TEST_EXTENSION=/absolute/path/to/background-tasks.ts` can run the queue regressions against an older implementation.
 - `compaction.mjs`: isolated native Pi SDK sessions call `session.compact()`, the same manual-compaction entry point used by `/compact` and RPC. Real shell jobs exit during a held offline summary request. Covers successful native compaction, a provider summary error and `abortCompaction()` cancellation; each must retain the pending completion while busy and automatically deliver status/log-location metadata once afterward, without another user prompt. Checks actual compaction lifecycle/events, saved compaction entries, completion timestamps/logs and exactly one automatic conversation request. Uses real timers and native `isIdle`/`isCompacting`, not injected busy state or replacement compaction results; no paid model call or TUI keyboard invocation of `/compact`. `BG_TEST_EXTENSION` also supports a negative-control extension.
@@ -28,7 +28,7 @@ Notification retry tests use the injected clock and session-idle interface. They
 
 Load-test uses an isolated temporary agent directory, the production extension and an offline fixture provider. It does not access real provider credentials or alter the user's installed packages. From the workspace, `npm --prefix packages/background-tasks run load-test -- --toolkit` loads the complete toolkit directory through its manifest and verifies exactly one background-task tool; the root load-test runs this check too.
 
-The deterministic registration test checks the approved per-task-log sentence in the `command` parameter description. The native offline-provider test verifies it is visible in the first model request, before starting a task. Viewer tests check single-task names, shared-tab renaming on start/watch/completion, stable task numbers when the left pane is closed and reopened, and pane reuse.
+The deterministic registration test checks the approved per-task-log sentence in the `command` parameter description. The native offline-provider test verifies it is visible in the first model request, before starting a task.
 
 ## Real Pi TUI
 
@@ -36,6 +36,7 @@ Requires Python 3 with the existing `pexpect` module; process fixtures use Bash,
 
 ```bash
 python3 packages/background-tasks/tests/tui-smoke.py .cache/verification/background-tui
+BG_SMOKE_TUI_MODE=regular python3 packages/background-tasks/tests/tui-smoke.py .cache/verification/background-tui-regular
 ```
 
 This starts a real Pi in a PTY with the production extension, Scheduler, the built-in Codemode tool and a deterministic fixture provider. It checks two jobs, rejection of a third, model turn completion while jobs remain alive and rejection of Codemode background calls, explicit output, cancellation, automatic main-agent notification, reload/new/quit cleanup and log removal. It observes both persisted boundary entries and idle custom messages by unique session-entry ID, and rejects duplicate notifications. No network model calls occur. Mocked UI tests separately verify the exact five-second boundary.
@@ -50,22 +51,22 @@ gnome-terminal.real --wait --window --title='Pi Background Tasks Smoke' --geomet
 
 It relays the real PTY output, captures only the test window, then closes it. Inspect the running, completed and history screenshots; check the widget has disappeared in the last one. Provider decisions are fixtures; tool execution, shell jobs, queues, TUI and cleanup are real.
 
-## Real Herdr view
-
-Run from a Pi or shell inside Herdr (`HERDR_ENV=1`). Start two real tasks through the production extension, for example one `printf 'tick %s\r'` loop that succeeds and one `sleep 6; exit 4` that fails. Check with `herdr tab list`, `herdr pane list` and `herdr pane read`:
-
-- One unfocused **BG · &lt;task description&gt;** tab with two panes while both run. Starting or watching a task updates the tab name; each pane has a numbered task name.
-- Each pane shows its task name above the command header, live output and a final result line (`[succeeded · exit 0 · …]`, `[failed · exit 4 · …]`). Check the name is visible with only one pane too.
-- With the tab focused after both tasks end, it stays open; after focus returns to another tab, it closes.
-- In a fullscreen Pi started in its own Herdr pane, an SGR click on each widget task row (`herdr pane send-text <pane> $'\e[<0;10;<row>M\e[<0;10;<row>m'`) focuses the tab and that task's pane (`herdr pane list`).
-- No warning is shown, and the private log directory is removed after session shutdown.
-
-For the original delayed-check scenario, also run one 60-second sleep + Python heredoc check against temporary build log/exit files. The normal regression uses a one-second delay to keep the suite short.
-
-## Media and workspace checks
+## Browser/TUI flow and media
 
 ```bash
-HERDR_MEDIA_WINDOW_ID=<visible-herdr-window-id> node scripts/capture-package-media.mjs background-tasks
+node scripts/capture-background-tasks-media.mjs .cache/background-ui
+node scripts/capture-package-media.mjs background-tasks
+```
+
+Requires Python 3, Chrome, the web-browser skill launcher, Pillow and an installed `@xterm/xterm` package. Set `XTERM_DIR` to its package directory if it is not under `~/.pi/agent/npm/node_modules/@xterm/xterm`. No Herdr or graphical desktop is required.
+
+The recorder starts a real Pi PTY with the production extension and offline provider. Chrome renders the actual ANSI stream through xterm.js. CDP sends real mouse press/release events to the shell counter and task rows, and keyboard events for selection, return, close, stop and Alt+J. It verifies single-shell details, two-shell list, aligned fields, live output, completion, cancellation, retained history and session-log cleanup. The Python bridge only transports PTY bytes; it does not draw replacement UI. Its local HTTP/WebSocket server uses a random path token and same-origin upgrade checks and is closed after the run.
+
+The unified media entry first runs `tests/tui-smoke.py`, then the browser/TUI recorder. `result.json`, tool events and raw screen text/screenshots are saved under `.cache/package-media/background-terminal`. The renderer builds `docs/screenshot.png`, `docs/shell-list.png` and `docs/demo.gif` from real captured states. The old Herdr pane screenshot and WebM are retired.
+
+Inspect the gallery in Chrome: `docs/package-media-gallery.html`. Verify images load and the GIF shows counter → details → list → selected details → completion/cancel → history. Record results in `docs/verification.md`.
+
+```bash
 node tests/package-layout.mjs
 node tests/release-check.mjs
 npm test
@@ -74,12 +75,4 @@ npm pack --dry-run
 git diff --check
 ```
 
-The media command requires the real-TUI screenshot prerequisites above, Pillow, and GStreamer (`ximagesrc`, VP8/WebM encoding/decoding, and PNG encoding). Select the X11 window that already displays a working Herdr client with `HERDR_MEDIA_WINDOW_ID`; the GNOME desktop must be unlocked. The recorder checks the lock state before starting and at each screenshot; hidden windows can return stale pixels.
-
-The command first reruns the existing real TUI checks, then invokes `scripts/capture-background-tasks-media.mjs`. The recorder creates only a temporary workspace, launches the production extension with an isolated offline provider and an explicit `dark` theme, and starts two actual Python demo jobs in sequence. It first verifies the single-pane tab name and visible task header, then adds the second task. It sends real fullscreen SGR mouse press/release events to both task rows, verifies each exact focused pane, checks live output and both terminal results, and verifies that a focused completed tab stays open until focus leaves. Demo-job release files control completion; output intervals and viewing holds only make the recording readable.
-
-The recorder captures the selected client window continuously, rejects uniform/blank screenshot centres, restores the original workspace/tab, and removes its own workspace. It never starts paid models or copies credentials. `result.json`, tool events and diagnostic frames are stored under `.cache/package-media/background-herdr`. The renderer publishes `docs/screenshot.png` (parent widget), `docs/task-panes.png` (actual task panes), `docs/demo.gif` (frames decoded from the recording), and the complete `docs/demo.webm`. No synthetic UI is drawn.
-
-Inspect both screenshots, the GIF and actual video playback through `docs/package-media-gallery.html` with Chrome. Check the click transitions and final parent view, not only media decoding. The root tarball must include all four media files under `packages/background-tasks/docs/`; the root default loadout must enable its extension exactly once. The standalone tarball remains independently loadable.
-
-Record actual checks and any missing prerequisites in `docs/verification.md`. A missing GUI, skipped browser check or unavailable Pi does not count as a successful end-to-end verification.
+Missing Chrome, a failed interaction or a skipped real-TUI check blocks release acceptance. Deterministic suites alone do not verify the mouse path.

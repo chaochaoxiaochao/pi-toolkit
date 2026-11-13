@@ -50,14 +50,14 @@ test("offline media provider issues exactly two direct background starts, then r
 	const next = [];
 	for await (const event of provider.streamSimple(model, { messages: [user, { role: "toolResult", toolCallId: calls[1].id, toolName: "background_task", content: [{ type: "text", text: "Started" }] }] })) next.push(event);
 	assert.equal(next.filter((event) => event.type === "toolcall_end").length, 0);
-	assert.match(next.find((event) => event.type === "text_end").content, /Click a task row/);
+	assert.match(next.find((event) => event.type === "text_end").content, /Click the shell count/);
 });
 
 for (const [prompt, kind] of [
 	["Start one background demo job: build progress.", "build"],
 	["Start the second background demo job: a test suite.", "tests"],
 ]) {
-	test(`offline media provider can start the ${kind} job separately for single-pane verification`, async () => {
+	test(`offline media provider can start the ${kind} job separately for single-shell verification`, async () => {
 		let provider;
 		register({ registerProvider(_name, value) { provider = value; }, on() {} });
 		const events = [];

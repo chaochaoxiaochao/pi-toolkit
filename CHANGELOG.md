@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Background Tasks: replace task rows and Herdr panes with a compact shell counter and local list/details panel; remove all `/bg` commands. Click or Alt+J to inspect, select with arrows, and stop with `x`.
+
 - Remove the built-in Herdr `analyst` Persona. Agent Team selects `reviewer` or `explorer` by task; migrate smoke/media configuration to `reviewer`. Existing `analyst` calls require a user-defined Persona or an explicit migration to a remaining role.
 
 ## 2026-11-05 - v0.14.8

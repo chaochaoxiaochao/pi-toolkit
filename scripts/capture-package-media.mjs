@@ -15,16 +15,14 @@ rmSync(captureDir, { recursive: true, force: true });
 mkdirSync(captureDir, { recursive: true });
 const pages = (name, values) => writeFileSync(join(captureDir, `${name}.json`), JSON.stringify(values, null, 2));
 
-// Background Tasks: drive the real Pi TUI with an offline provider, then capture its window.
+// Background Tasks: real Pi PTY regression, then browser-rendered terminal clicks.
 if (wanted("background-tasks")) {
   const output = join(captureDir, "background-live");
-  execFileSync("gnome-terminal.real", [
-    "--wait", "--window", "--title=Pi Background Tasks Smoke", "--geometry=140x42", "--",
-    "env", "BG_SMOKE_RENDER=1", "BG_SMOKE_CAPTURE=1", "python3",
-    join(root, "packages/background-tasks/tests/tui-smoke.py"), output,
-  ], { cwd: root, stdio: "inherit", timeout: 90_000 });
+  execFileSync("python3", [join(root, "packages/background-tasks/tests/tui-smoke.py"), output], {
+    cwd: root, stdio: "inherit", timeout: 90_000,
+  });
   const result = JSON.parse(readFileSync(join(output, "result.json"), "utf8"));
-  if (result.passed !== true) throw new Error("Background Tasks real-TUI capture did not pass");
+  if (result.passed !== true) throw new Error("Background Tasks real-TUI checks did not pass");
   execFileSync(process.execPath, [join(root, "scripts/capture-background-tasks-media.mjs"), captureDir], {
     cwd: root, stdio: "inherit", timeout: 120_000,
   });

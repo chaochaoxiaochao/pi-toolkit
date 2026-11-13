@@ -1,183 +1,208 @@
 #!/usr/bin/env node
-// Record real Pi/Herdr UI in an owned workspace of an existing visible client. The offline provider only
-// chooses tool calls; commands, output, widget hit-testing and tab cleanup are real.
+// Real Pi PTY rendered by xterm.js in Chrome. CDP clicks exercise native TUI hit-testing.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, closeSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { createServer as netServer } from "node:net";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { WebSocketServer } from "ws";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const output = join(resolve(process.argv[2] ?? join(root, ".cache/package-media")), "background-herdr");
-const windowId = process.env.HERDR_MEDIA_WINDOW_ID;
-if (process.env.HERDR_ENV !== "1" || !windowId) throw new Error("Run inside Herdr with HERDR_MEDIA_WINDOW_ID set to the visible X11 Herdr client window.");
-const env = { ...process.env };
-const command = (binary, args, options = {}) => execFileSync(binary, args, { cwd: root, env, encoding: "utf8", timeout: 15_000, ...options });
-function assertUnlocked() {
-  const active = command("gdbus", ["call", "--session", "--dest", "org.gnome.ScreenSaver", "--object-path", "/org/gnome/ScreenSaver", "--method", "org.gnome.ScreenSaver.GetActive"]).trim();
-  assert.equal(active, "(false,)", "Desktop is locked. Unlock it before recording; hidden windows can return stale pixels.");
-}
-assertUnlocked();
+const output = join(resolve(process.argv[2] ?? join(root, ".cache/package-media")), "background-terminal");
+const xterm = process.env.XTERM_DIR ?? join(homedir(), ".pi/agent/npm/node_modules/@xterm/xterm");
+for (const file of ["lib/xterm.js", "css/xterm.css"]) assert.ok(existsSync(join(xterm, file)), `Set XTERM_DIR to an installed @xterm/xterm package (${file})`);
 const work = mkdtempSync(join(tmpdir(), "pi-background-demo-"));
-const herdr = (...args) => {
-  const text = command("herdr", [...args]);
-  return text.trim() ? JSON.parse(text).result : {};
-};
+const token = randomUUID();
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
 async function until(check, label, timeout = 20_000) {
   const deadline = Date.now() + timeout;
-  for (;;) {
+  do {
     const value = await check();
     if (value) return value;
-    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${label}`);
     await pause(100);
-  }
+  } while (Date.now() < deadline);
+  throw new Error(`Timed out waiting for ${label}`);
 }
-const events = () => existsSync(join(work, "events.jsonl")) ? readFileSync(join(work, "events.jsonl"), "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)) : [];
-const tabs = (workspace) => herdr("tab", "list", "--workspace", workspace).tabs;
-const panes = (workspace) => herdr("pane", "list", "--workspace", workspace).panes;
-const visible = (pane) => command("herdr", ["pane", "read", pane, "--source", "visible"]);
-const quote = (text) => `'${text.replaceAll("'", "'\\''")}'`;
-let recorder, videoDone, parentPane, ownedWorkspace;
-const originalWorkspace = herdr("workspace", "list").workspaces.find((workspace) => workspace.focused);
+const events = () => existsSync(join(work, "events.jsonl")) ? readFileSync(join(work, "events.jsonl"), "utf8").trim().split("\n").filter(Boolean).map(JSON.parse) : [];
+const starts = () => events().filter((e) => e.event === "tool_end" && e.result?.structuredContent?.action === "start").map((e) => e.result.structuredContent.task);
+const free = netServer();
+await new Promise((done) => free.listen(0, "127.0.0.1", done));
+const debugPort = free.address().port;
+await new Promise((done) => free.close(done));
+const html = `<!doctype html><meta charset="utf-8"><title>Background Tasks — real Pi terminal</title>
+<link rel="stylesheet" href="/${token}/xterm.css"><style>html,body{margin:0;background:#0d1117}#terminal{padding:16px}</style>
+<div id="terminal" aria-label="Real Pi terminal"></div><script src="/${token}/xterm.js"></script><script>
+const term = window.term = new Terminal({cols:130,rows:36,fontSize:14,fontFamily:'DejaVu Sans Mono,monospace',theme:{background:'#0d1117'},scrollback:1000});
+term.open(document.getElementById('terminal')); term.focus();
+const socket = new WebSocket('ws://'+location.host+'/${token}/pty');
+term.onData(input=>socket.send(JSON.stringify({input})));
+socket.onmessage=e=>term.write(Uint8Array.from(atob(e.data),c=>c.charCodeAt(0)));
+window.screenLines=()=>Array.from({length:term.rows},(_,i)=>term.buffer.active.getLine(term.buffer.active.viewportY+i)?.translateToString(true)||'');
+</script>`;
+const server = createServer((req, res) => {
+  const files = { [`/${token}/xterm.js`]: ["lib/xterm.js", "text/javascript"], [`/${token}/xterm.css`]: ["css/xterm.css", "text/css"] };
+  const file = files[req.url];
+  if (req.url === `/${token}/`) { res.setHeader("Content-Type", "text/html; charset=utf-8"); res.end(html); }
+  else if (file) { res.setHeader("Content-Type", file[1]); res.end(readFileSync(join(xterm, file[0]))); }
+  else { res.writeHead(404); res.end(); }
+});
+const sockets = new WebSocketServer({ noServer: true });
+server.on("upgrade", (req, socket, head) => {
+  if (req.url !== `/${token}/pty` || req.headers.origin !== `http://127.0.0.1:${server.address().port}`) return socket.destroy();
+  sockets.handleUpgrade(req, socket, head, (ws) => sockets.emit("connection", ws));
+});
+let terminal, cdp, browser;
+const frames = [];
 const checks = [];
-
-mkdirSync(output, { recursive: true });
-mkdirSync(join(work, "agent"));
-writeFileSync(join(work, "agent/settings.json"), JSON.stringify({ quietStartup: true, theme: "dark" }));
-copyFileSync(join(root, "packages/background-tasks/tests/fixtures/media-job.py"), join(work, "demo-job.py"));
-const pi = process.env.PI_TEST_BINARY || "pi";
-const args = ["--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-session", "--offline",
-  "-e", join(root, "packages/background-tasks/extensions/background-tasks.ts"),
-  "-e", join(root, "packages/background-tasks/tests/fixtures/provider.ts"),
-  "--tools", "background_task", "--model", "bg-fixture/deterministic", "--tui-mode", "fullscreen"];
-writeFileSync(join(work, "run.sh"), `#!/bin/sh\ncd ${quote(work)}\nexport PI_CODING_AGENT_DIR=${quote(join(work, "agent"))} PI_OFFLINE=1 BG_SMOKE_EVENTS=${quote(join(work, "events.jsonl"))}\nunset PI_HERDR_SUBAGENTS_CHILD\nexec ${[pi, ...args].map(quote).join(" ")}\n`, { mode: 0o700 });
-const capture = async (name) => {
-  assertUnlocked();
-  assert.match(command("xprop", ["-id", windowId, "WM_NAME"]), /Background Tasks demo/, "the visible client must show the demo workspace, not stale unrelated content");
-  const image = join(output, `${name}.png`);
-  command("import", ["-window", windowId, image]);
-  const colours = Number(command("convert", [image, "-gravity", "center", "-crop", "80%x70%+0+0", "+repage", "-format", "%k", "info:"]));
-  assert.ok(colours > 16, `Captured a blank client surface (${name}); check HERDR_MEDIA_WINDOW_ID`);
-};
-async function hold(seconds = 1.5) {
-  await pause(seconds * 1000);
-} // Viewing time in the published recording, not test readiness.
-async function clickTask(workspace, parentTab, task, name) {
-  herdr("tab", "focus", parentTab);
-  await until(() => visible(parentPane).includes(task.id), "task row on screen");
-  await hold();
-  const lines = visible(parentPane).split("\n");
-  const row = lines.findIndex((line) => line.includes(task.id) && line.includes("running") && !line.includes("Started")) + 1;
-  assert.ok(row > 0, `No widget row for ${task.id}`);
-  // Real fullscreen mouse input, not a direct /bg watch or focus command.
-  herdr("pane", "send-text", parentPane, `\x1b[<0;8;${row}M\x1b[<0;8;${row}m`);
-  const focused = await until(() => panes(workspace).find((pane) => pane.label?.endsWith(` · ${task.description}`) && pane.focused), `click focuses ${task.id}`);
-  assert.equal(tabs(workspace).find((tab) => tab.tab_id === focused.tab_id).label, `BG · ${task.description}`);
-  checks.push({ check: "widget-click", taskId: task.id, paneId: focused.pane_id, row });
-  await until(() => visible(focused.pane_id).includes("demo-job.py"), "pane command header");
-  await hold(2);
-  await capture(name);
-  return focused;
-}
-async function stopVideo() {
-  if (!recorder) return;
-  const active = recorder;
-  recorder = undefined;
-  active.kill("SIGINT");
-  const exit = await videoDone;
-  assert.equal(exit.code, 0, `screen recorder failed: ${JSON.stringify(exit)}`);
-}
-
 try {
-  const created = herdr("workspace", "create", "--cwd", work, "--label", "Background Tasks demo", "--no-focus");
-  ownedWorkspace = created.workspace.workspace_id;
-  const workspaceId = ownedWorkspace;
-  const parentTab = created.tab.tab_id;
-  parentPane = created.root_pane.pane_id;
-  herdr("tab", "rename", parentTab, "Parent Pi");
-  herdr("workspace", "focus", workspaceId);
-  herdr("pane", "run", parentPane, `sh ${quote(join(work, "run.sh"))}`);
-  await until(() => events().some((event) => event.event === "loaded"), "real Pi extension startup");
-  await until(() => visible(parentPane).includes("deterministic"), "fullscreen Pi painted");
-  const log = openSync(join(output, "video.stderr"), "w");
-  recorder = spawn("gst-launch-1.0", ["-e", "-q", "ximagesrc", `xid=${Number.parseInt(windowId, 16)}`, "use-damage=false", "show-pointer=false",
-    "!", "video/x-raw,framerate=10/1", "!", "videoscale", "!", "video/x-raw,width=1280,height=728,pixel-aspect-ratio=1/1", "!", "videoconvert",
-    "!", "vp8enc", "deadline=1", "cpu-used=8", "threads=4", "target-bitrate=1600000", "keyframe-max-dist=30",
-    "!", "webmmux", "!", "filesink", `location=${join(output, "demo.webm")}`], { env, stdio: ["ignore", "ignore", log] });
-  videoDone = new Promise((done) => {
-    recorder.once("error", (error) => done({ error: error.message }));
-    recorder.once("exit", (code, signal) => { closeSync(log); done({ code, signal }); });
+  mkdirSync(output, { recursive: true });
+  mkdirSync(join(work, "agent"));
+  writeFileSync(join(work, "agent/settings.json"), JSON.stringify({ quietStartup: true, theme: "dark" }));
+  copyFileSync(join(root, "packages/background-tasks/tests/fixtures/media-job.py"), join(work, "demo-job.py"));
+  sockets.on("connection", (socket) => {
+    assert.equal(terminal, undefined, "only one terminal client per recording");
+    const args = [process.env.PI_TEST_BINARY || "pi", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-session", "--offline",
+      "-e", join(root, "packages/background-tasks/extensions/background-tasks.ts"), "-e", join(root, "packages/background-tasks/tests/fixtures/provider.ts"),
+      "--tools", "background_task", "--model", "bg-fixture/deterministic", "--tui-mode", "fullscreen"];
+    terminal = spawn("python3", [join(root, "packages/background-tasks/tests/fixtures/terminal.py"), ...args], {
+      cwd: work, env: { ...process.env, PI_CODING_AGENT_DIR: join(work, "agent"), PI_OFFLINE: "1", BG_SMOKE_EVENTS: join(work, "events.jsonl"), TERM: "xterm-256color", COLORTERM: "truecolor" },
+      stdio: ["pipe", "pipe", "inherit"],
+    });
+    createInterface({ input: terminal.stdout }).on("line", (line) => { if (socket.readyState === 1) socket.send(JSON.parse(line).output); });
+    socket.on("message", (data) => terminal.stdin.write(data + "\n"));
   });
-  await until(() => existsSync(join(output, "demo.webm")), "screen recorder output");
-  await hold(1);
-  herdr("pane", "send-text", parentPane, "Start one background demo job: build progress. I want to watch it in Herdr.");
-  herdr("pane", "send-keys", parentPane, "enter");
-  const singleTask = await until(() => events().find((event) => event.event === "tool_end" && event.name === "background_task" && event.result?.structuredContent?.action === "start")?.result.structuredContent.task, "one real accepted job");
-  await until(() => visible(parentPane).includes("One demo job is running"), "single task turn returned");
-  const singlePane = await clickTask(workspaceId, parentTab, singleTask, "single-task");
-  assert.equal(panes(workspaceId).filter((pane) => pane.tab_id === singlePane.tab_id).length, 1);
-  assert.ok(visible(singlePane.pane_id).includes("01 · Build progress"), "task name must be visible in a single pane");
-  checks.push({ check: "single-task-name", paneId: singlePane.pane_id });
-  herdr("tab", "focus", parentTab);
-  herdr("pane", "send-text", parentPane, "Start the second background demo job: a test suite. I want to watch both in Herdr.");
-  await hold();
-  herdr("pane", "send-keys", parentPane, "enter");
-  const tasks = await until(() => {
-    const starts = events().filter((event) => event.event === "tool_end" && event.name === "background_task" && event.result?.structuredContent?.action === "start");
-    return starts.length === 2 && starts.map((event) => event.result.structuredContent.task);
-  }, "two real accepted jobs");
-  const taskTab = await until(() => tabs(workspaceId).find((tab) => tab.label === "BG · Test suite" && tab.pane_count === 2), "two task panes in one tab");
-  assert.equal(taskTab.focused, false, "automatic creation must not steal focus");
-  checks.push({ check: "unfocused-tab", panes: taskTab.pane_count });
-  await until(() => visible(parentPane).includes("Both demo jobs are running"), "parent returned while jobs run");
-  await hold(2);
-  await capture("parent-widget");
-  const build = await clickTask(workspaceId, parentTab, tasks[0], "build-focused");
-  const before = visible(build.pane_id);
-  await until(() => visible(build.pane_id) !== before, "real command output advances");
-  const test = await clickTask(workspaceId, parentTab, tasks[1], "tests-focused");
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  // Use the browser skill's documented launcher, with an isolated endpoint.
+  execFileSync("node", [join(root, "skills/web-browser/scripts/start.js"), "--headless"], { env: { ...process.env, BROWSER_DEBUG_PORT: String(debugPort) }, stdio: "pipe", timeout: 30000 });
+  const targets = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
+  browser = new WebSocket(targets.find((target) => target.type === "page").webSocketDebuggerUrl);
+  await new Promise((done, reject) => { browser.onopen = done; browser.onerror = reject; });
+  let next = 0;
+  const pending = new Map();
+  browser.onmessage = ({ data }) => {
+    const message = JSON.parse(data);
+    if (!pending.has(message.id)) return;
+    const { resolve, reject, timer } = pending.get(message.id);
+    pending.delete(message.id); clearTimeout(timer);
+    if (message.error) reject(new Error(message.error.message)); else resolve(message.result);
+  };
+  cdp = (method, params = {}) => new Promise((resolve, reject) => {
+    const id = ++next;
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error(`CDP timeout: ${method}`)); }, 10000);
+    pending.set(id, { resolve, reject, timer });
+    browser.send(JSON.stringify({ id, method, params }));
+  });
+  const evaluate = async (expression) => {
+    const result = await cdp("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
+    if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
+    return result.result.value;
+  };
+  const screen = () => evaluate("screenLines()");
+  const waitText = (text) => until(async () => (await screen()).some((line) => line.includes(text)), text);
+  const key = async (name, extra = {}) => {
+    await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: name, ...extra });
+    await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: name, ...extra });
+    await pause(200); // Let terminal Escape decoding and editor focus settle before the next input.
+  };
+  const prompt = async (text) => { await cdp("Input.insertText", { text }); await key("Enter", { windowsVirtualKeyCode: 13 }); };
+  const clickText = async (text) => {
+    const lines = await screen();
+    const row = lines.findLastIndex((line) => line.includes(text));
+    assert.ok(row >= 0, `missing click target: ${text}`);
+    const col = lines[row].indexOf(text) + 2;
+    const rect = await evaluate("(()=>{const r=document.querySelector('.xterm-screen').getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()");
+    const point = { x: rect.x + (col + 0.5) * rect.width / 130, y: rect.y + (row + 0.5) * rect.height / 36, button: "left", clickCount: 1 };
+    await cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...point });
+    await cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...point });
+  };
+  const shot = async (name) => {
+    await pause(250);
+    const image = await cdp("Page.captureScreenshot", { format: "png" });
+    writeFileSync(join(output, `${name}.png`), Buffer.from(image.data, "base64"));
+    writeFileSync(join(output, `${name}.txt`), (await screen()).join("\n"));
+    frames.push(name);
+  };
+  await cdp("Emulation.setDeviceMetricsOverride", { width: 1140, height: 650, deviceScaleFactor: 1, mobile: false });
+  await cdp("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/${token}/` });
+  await until(() => events().some((e) => e.event === "loaded"), "Pi startup");
+  await waitText("deterministic");
+  assert.ok(!(await screen()).some((line) => /Extension issues|shortcut conflict/.test(line)));
+  assert.ok(!events().find((e) => e.event === "loaded").commands.includes("bg"));
+  await prompt("Start one background demo job: build progress.");
+  await until(() => starts().length === 1, "first shell");
+  await waitText("1 shell");
+  await shot("single-count");
+  await clickText("1 shell");
+  await waitText("Shell details");
+  await waitText("Compiling module");
+  const aligned = (await screen()).filter((line) => /^\s*(Status|Runtime|Command):/.test(line));
+  assert.equal(aligned.length, 3);
+  assert.ok(aligned.every((line) => line.indexOf(":") < 12 && line.slice(12).trim()), "detail values start at column 12");
+  await shot("single-details");
+  checks.push("real count click opens single-shell details and aligned fields");
+  await key("Escape", { windowsVirtualKeyCode: 27 });
+  await prompt("Start the second background demo job: a test suite.");
+  await until(() => starts().length === 2, "second shell");
+  await waitText("2 shells");
+  await shot("two-count");
+  await clickText("2 shells");
+  await waitText("2 active shells");
+  await shot("shell-list");
+  await key("ArrowDown", { windowsVirtualKeyCode: 40 });
+  await key("Enter", { windowsVirtualKeyCode: 13 });
+  await waitText("test_001");
+  await shot("tests-details");
+  checks.push("two shells open list; Down and Enter select second shell");
+  await key("ArrowLeft", { windowsVirtualKeyCode: 37 });
+  await waitText("2 active shells");
+  await clickText("python3 demo-job.py build");
+  await waitText("Shell details");
+  await waitText("Compiling module");
+  await shot("build-details");
   writeFileSync(join(work, "release-build"), "release");
-  await until(() => visible(build.pane_id).includes("[succeeded · exit 0"), "build result line");
-  checks.push({ check: "live-output-and-success", paneId: build.pane_id });
-  await hold(2);
-  await capture("build-completed");
-  writeFileSync(join(work, "release-tests"), "release");
-  await until(() => visible(test.pane_id).includes("[failed · exit 3"), "test result line");
-  assert.ok(tabs(workspaceId).some((tab) => tab.tab_id === taskTab.tab_id), "focused completed tab must stay open");
-  await hold(2);
-  await capture("tasks-completed");
-  herdr("tab", "focus", parentTab);
-  await until(() => !tabs(workspaceId).some((tab) => tab.tab_id === taskTab.tab_id), "completed tab closes after user leaves");
-  checks.push({ check: "focused-retention-and-cleanup" });
-  await until(() => visible(parentPane).includes("Background jobs finished"), "automatic completion reaches parent");
-  await hold(2);
-  await capture("parent-final");
-  await stopVideo();
-  command("gst-discoverer-1.0", [join(output, "demo.webm")]);
-  herdr("pane", "send-keys", parentPane, "ctrl+d");
-  await until(() => tasks.every((task) => !existsSync(task.log_path)), "session log cleanup");
-  assert.ok(!events().some((event) => JSON.stringify(event).includes("Herdr task view unavailable")));
+  await waitText("succeeded");
+  await shot("build-completed");
+  checks.push("list row click selects build; real output and completion refresh in place");
+  await key("ArrowLeft", { windowsVirtualKeyCode: 37 });
+  await waitText("1 active shell");
+  await clickText("python3 demo-job.py tests");
+  await waitText("Shell details");
+  await cdp("Input.insertText", { text: "x" });
+  await waitText("cancelled");
+  await shot("tests-cancelled");
+  checks.push("x cancels the selected native process without a model call");
+  await key("Escape", { windowsVirtualKeyCode: 27 });
+  await until(async () => !(await screen()).some((line) => /^\d+ shells? ·/.test(line)), "count expires");
+  await key("j", { code: "KeyJ", windowsVirtualKeyCode: 74, modifiers: 1 });
+  await waitText("Earlier in this session (2)");
+  await shot("history");
+  checks.push("Alt+J reopens finished history after count expires");
+  await key("Escape", { windowsVirtualKeyCode: 27 });
+  await key("d", { windowsVirtualKeyCode: 68, modifiers: 2 });
+  await until(() => starts().every((task) => !existsSync(task.log_path)), "session log cleanup");
+  writeFileSync(join(output, "result.json"), JSON.stringify({ passed: true, checks, frames, model: "bg-fixture/deterministic", terminal: "real Pi PTY in xterm.js / Chrome" }, null, 2));
   copyFileSync(join(work, "events.jsonl"), join(output, "events.jsonl"));
-  writeFileSync(join(output, "result.json"), JSON.stringify({ passed: true, checks, model: "bg-fixture/deterministic", theme: "dark", workspaceId }, null, 2));
-  console.log(`PASS real Background Tasks Herdr recording: ${checks.length} checks; ${output}`);
+  console.log(`PASS Background Tasks browser/TUI flow: ${checks.length} checks; ${output}`);
 } catch (error) {
   writeFileSync(join(output, "error.txt"), error.stack ?? String(error));
-  if (parentPane) {
-    try { writeFileSync(join(output, "parent-error.txt"), visible(parentPane)); } catch { /* retain original error */ }
+  if (cdp) {
+    try { writeFileSync(join(output, "error.png"), Buffer.from((await cdp("Page.captureScreenshot", { format: "png" })).data, "base64")); } catch { /* Keep original error. */ }
   }
   throw error;
 } finally {
-  try { await stopVideo(); }
-  finally {
-    if (ownedWorkspace) {
-      try { herdr("workspace", "close", ownedWorkspace); } catch { /* already closed */ }
-    }
-    if (originalWorkspace) {
-      herdr("workspace", "focus", originalWorkspace.workspace_id);
-      if (originalWorkspace.active_tab_id) herdr("tab", "focus", originalWorkspace.active_tab_id);
-    }
-    rmSync(work, { recursive: true, force: true });
+  if (terminal) {
+    terminal.stdin.end();
+    await until(() => terminal.exitCode !== null, "PTY shutdown", 15000);
   }
+  if (cdp) await cdp("Browser.close").catch(() => {});
+  browser?.close();
+  for (const socket of sockets.clients) socket.terminate();
+  sockets.close();
+  await new Promise((done) => server.close(done));
+  rmSync(work, { recursive: true, force: true });
 }

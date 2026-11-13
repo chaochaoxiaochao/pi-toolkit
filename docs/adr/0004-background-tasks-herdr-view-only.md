@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: deprecated
 ---
 
 # Background Tasks use Herdr only to display, never to execute
@@ -9,3 +9,7 @@ Users want to see what a background task runs and how its output updates, as the
 ## Consequences
 
 Status, exit codes, timeouts, cancellation, log limits and completion notifications behave the same inside and outside Herdr. The pane is a viewer: closing it never cancels the task, and Herdr failures only lose the view. Commands still run without a TTY, so tools that detect one may drop colour or animated progress. If that matters, the next step is a local PTY (for example `script -qfc`) with control sequences stripped from the model's output view, before considering execution inside Herdr.
+
+## Retirement
+
+The shell-panel redesign removes the Herdr Task View at the user’s request. Task inspection and explicit stopping now live in Pi’s editor-local panel, opened from the shell counter or Alt+J. The single local execution backend and its ownership, limits and completion semantics remain unchanged.

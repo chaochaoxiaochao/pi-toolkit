@@ -110,33 +110,18 @@ def render_cache_export():
 
 
 def render_background_tasks():
-    source = CAPTURE / "background-herdr"
+    source = CAPTURE / "background-terminal"
     result = json.loads((source / "result.json").read_text())
     if result.get("passed") is not True:
-        raise RuntimeError("Background Tasks Herdr recording did not pass")
-    gif_frames = source / "gif-frames"
-    shutil.rmtree(gif_frames, ignore_errors=True)
-    gif_frames.mkdir()
-    subprocess.run([
-        "gst-launch-1.0", "-q", "filesrc", f"location={source / 'demo.webm'}",
-        "!", "matroskademux", "!", "vp8dec", "!", "videorate",
-        "!", "video/x-raw,framerate=2/1", "!", "videoscale",
-        "!", "video/x-raw,width=1120,height=637,pixel-aspect-ratio=1/1", "!", "videoconvert",
-        "!", "pngenc", "!", "multifilesink", f"location={gif_frames / 'frame-%04d.png'}",
-    ], check=True, timeout=60)
-    frames = [Image.open(path).convert("RGB").quantize(colors=96)
-              for path in sorted(gif_frames.glob("frame-*.png"))]
-    if len(frames) < 10:
-        raise RuntimeError("Background Tasks GIF needs the actual full recorded flow")
+        raise RuntimeError("Background Tasks browser/TUI checks did not pass")
+    frames = [Image.open(source / f"{name}.png").convert("RGB")
+              for name in result["frames"]]
     docs = ROOT / "packages" / "background-tasks" / "docs"
     docs.mkdir(parents=True, exist_ok=True)
-    Image.open(source / "parent-widget.png").convert("RGB").save(
-        docs / "screenshot.png", optimize=True)
-    Image.open(source / "tests-focused.png").convert("RGB").save(
-        docs / "task-panes.png", optimize=True)
+    Image.open(source / "single-details.png").save(docs / "screenshot.png", optimize=True)
+    Image.open(source / "shell-list.png").save(docs / "shell-list.png", optimize=True)
     frames[0].save(docs / "demo.gif", save_all=True, append_images=frames[1:],
-                   duration=500, loop=0, optimize=True)
-    shutil.copyfile(source / "demo.webm", docs / "demo.webm")
+                   duration=1600, loop=0, optimize=True)
 
 
 def render_herdr_subagents():

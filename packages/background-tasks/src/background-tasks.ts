@@ -39,6 +39,7 @@ export interface StartParams {
 	timeout?: number;
 }
 interface Task {
+	command: string;
 	data: TaskSnapshot;
 	log: TaskLog;
 	controller: AbortController;
@@ -115,6 +116,7 @@ export class BackgroundTasks {
 		do { id = `bg-${randomUUID().replace(/-/g, "").slice(0, 12)}`; } while (this.tasks.has(id));
 		const log = new TaskLog(join(this.directory, `${id}.log`), this.logWrite);
 		const task: Task = {
+			command: params.command,
 			data: {
 				id, status: "running", description: summary(params.description || params.command.split("\n", 1)[0]), cwd,
 				started_at: this.clock.now(), timeout, elapsed_seconds: 0, log_path: log.path,
@@ -132,6 +134,9 @@ export class BackgroundTasks {
 	}
 
 	get(id: string): TaskSnapshot { return this.snapshot(this.find(id)); }
+
+	/** Original command for the local UI; not repeated in tool/notification metadata. */
+	command(id: string): string { return this.find(id).command; }
 
 	list(): TaskList {
 		const all = [...this.tasks.values()];

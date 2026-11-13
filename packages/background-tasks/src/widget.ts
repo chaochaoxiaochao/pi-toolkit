@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 import type { Clock, TaskSnapshot } from "./background-tasks.ts";
 
 export const WIDGET_KEY = "background-tasks";
@@ -16,17 +16,14 @@ export function duration(seconds: number): string {
 	return `${value}s`;
 }
 
+/** Compact, clickable shell count below the editor. The native footer stays intact. */
 export class BackgroundWidget {
-	private lines?: string[];
-	private width?: number;
+	private hitWidth = 0;
 	private readonly getTasks: () => TaskSnapshot[];
 	private readonly clock: Clock;
 	private readonly theme: Theme;
-	private readonly onSelect?: (id: string) => void;
-	private rows: string[] = [];
-
-	/** With `onSelect`, a primary click on a task row selects it (fullscreen mode only). */
-	constructor(getTasks: () => TaskSnapshot[], clock: Clock, theme: Theme, onSelect?: (id: string) => void) {
+	private readonly onSelect: () => void;
+	constructor(getTasks: () => TaskSnapshot[], clock: Clock, theme: Theme, onSelect: () => void) {
 		this.getTasks = getTasks;
 		this.clock = clock;
 		this.theme = theme;
@@ -34,34 +31,20 @@ export class BackgroundWidget {
 	}
 
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-		if (!this.onSelect || event.type !== "click" || event.button !== "left") return;
-		const id = this.rows[event.y - 1];
-		if (!id) return;
-		this.onSelect(id);
+		if (event.type !== "click" || event.button !== "left" || event.y !== 0 || event.x < 0 || event.x >= this.hitWidth) return;
+		this.onSelect();
 		return { handled: true, render: false };
 	}
 
 	render(width: number): string[] {
-		if (this.lines && this.width === width) return this.lines;
 		const tasks = visibleTasks(this.getTasks(), this.clock.now());
 		const active = tasks.filter((task) => task.status === "running").length;
-		const { theme } = this;
-		this.rows = tasks.map((task) => task.id);
-		this.lines = [
-			truncateToWidth(theme.fg("accent", `Background tasks ${active}/2`), width),
-			...tasks.map((task) => {
-				const color = task.status === "running" ? "accent" : task.status === "succeeded" ? "success" : task.status === "cancelled" ? "muted" : "error";
-				const marker = task.status === "running" ? "●" : task.status === "succeeded" ? "✓" : task.status === "cancelled" ? "○" : "✗";
-				const elapsed = ((task.ended_at ?? this.clock.now()) - task.started_at) / 1000;
-				return truncateToWidth(`  ${theme.fg(color, marker)} ${theme.fg("accent", task.id)} · ${duration(elapsed)} / ${duration(task.timeout)} · ${theme.fg(color, task.status)} · ${theme.fg("text", task.description)}`, width);
-			}),
-		];
-		this.width = width;
-		return this.lines;
+		const ended = tasks.length - active;
+		const label = `${active} ${active === 1 ? "shell" : "shells"}${ended ? ` · ${ended} done` : ""}`;
+		const text = truncateToWidth(this.theme.fg("accent", label), width);
+		this.hitWidth = tasks.length ? visibleWidth(text) : 0;
+		return [truncateToWidth(`${text}${this.theme.fg("dim", " · Alt+J")}`, width)];
 	}
 
-	invalidate(): void {
-		this.lines = undefined;
-		this.width = undefined;
-	}
+	invalidate(): void { this.hitWidth = 0; }
 }
