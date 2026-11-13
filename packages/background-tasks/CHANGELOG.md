@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2026-11-13 - v0.4.0
 
+- Replace Herdr task views and /bg commands with a local shell counter and details panel
 - Show `1 shell` / `N shells` below the editor. Click or press Alt+J to open local shell details or a selectable list. Align Status, Runtime and Command; refresh a bounded Output tail every second.
 - Support arrows, Enter, Escape, Space and `x` to inspect, return, dismiss and stop without a model call. Keep finished history accessible with Alt+J.
 - Remove all `/bg` commands and Herdr tab/pane creation, log-following processes, focus and cleanup code. Task execution, timeouts, log budgets and completion delivery stay local and unchanged.
