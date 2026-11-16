@@ -1,5 +1,12 @@
 # Package split verification
 
+## Verified bottom-footer publication (2026-11-16)
+
+- User approved tagging and publishing the current checkout. Source commit `f01bdcb` contains the bottom-footer control and clean-panel changes. The coordinated release script created release commit `ccac6cc`, bumped Background Tasks to `0.4.1` and toolkit to `0.15.1`, and atomically pushed `main`, `background-tasks-v0.4.1` and `v0.15.1`. Both tags point to the same commit.
+- The final-version release gate passed shared package layout, all 91 Background Tasks tests, standalone loading and child/root tarball checks. Herdr acceptance was not rerun by this gate because its source is unchanged since the previous root tag; the full root suite, root loading, fullscreen/regular TUI and both Chrome flows had already passed for this source change as recorded below.
+- [publish.yml run 43798863285](https://github.com/chaochaoxiaochao/pi-toolkit/actions/runs/43798863285) succeeded. `npm_config_prefer_online=true npm run release:check -- v0.15.1 --timeout 600 --interval 10` passed after registry propagation: both remote tags, exact npm versions, integrity, file modes and every packaged byte matched the tagged source (29 child files and 219 root files). Evidence: `.cache/verification/release-footer/release.log` and `post-release.log`.
+- Installed packages and active user sessions were not updated or reloaded. Finish session-owned tasks before reloading, because reload stops them.
+
 ## Background Tasks bottom footer and clean panels (2026-11-16, unreleased)
 
 - Corrected the UI contract: the clickable shell count occupies the last footer status row, beside editor status when present and alone otherwise. Both the list and details hide the entire footer; dismissing them restores current path, usage, model and statuses. Native execution, tool declarations, limits and notification delivery are unchanged.
