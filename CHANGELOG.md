@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-11-16 - v0.15.1
 
+- background-tasks v0.4.1: Fix bottom-footer shell controls and hide the footer during task inspection
 - Background Tasks: put the clickable shell count on the bottom status row beside editor status; hide the entire footer while inspecting shells and restore it on close.
 
 ## 2026-11-13 - v0.15.0

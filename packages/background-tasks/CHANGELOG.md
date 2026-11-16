@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2026-11-16 - v0.4.1
 
+- Fix bottom-footer shell controls and hide the footer during task inspection
 - Move the clickable shell count to the bottom footer status row, beside editor status when present; preserve Pi's native path, usage and model rendering.
 - Hide the entire footer while the shell list or details panel is open, and restore it on close.
 - Verify bottom-row placement and clean panels with real Chrome clicks, both with and without Codex Edit. Keep capture browsers isolated from existing browser sessions.
