@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { unlinkSync } from "node:fs";
 import { test } from "node:test";
 import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
+import { FooterComponent } from "@earendil-works/pi-coding-agent";
 import register from "../extensions/background-tasks.ts";
 import { fixture, flush } from "./helpers.mjs";
 
@@ -12,22 +13,35 @@ function harness(mode = "tui", hasUI = true) {
 	const handlers = new Map();
 	const commands = new Map();
 	const shortcuts = new Map();
-	let panel;
+	let panel, footer;
 	const messages = [];
 	const notices = [];
 	const widgets = new Map([["scheduler", { render: () => ["Scheduler"] }], ["herdr-subagents", { render: () => ["Fleet"] }]]);
-	const placements = new Map();
 	const statuses = new Map();
 	const idleChecks = [];
 	let tool, renders = 0, idle = true, failSend = false;
 	const theme = { fg: (_color, text) => text, bold: (text) => text };
+	const native = Object.assign(Object.create(FooterComponent.prototype), {
+		render: (width) => ["fixture/path (main)", "↑42k fixture-model", ...(
+			statuses.size ? [Array.from(statuses.values()).join(" ")] : []
+		)].map((line) => line.slice(0, width)),
+		invalidate() {},
+	});
+	const container = { children: [native] };
+	const tui = { children: [container], requestRender() { renders++; } };
 	const ctx = {
 		cwd: f.root, mode, hasUI, isIdle: () => { idleChecks.push(f.clock.now()); return idle; },
 		ui: {
-			setWidget(key, factory, options) {
+			setWidget(key, factory) {
 				if (!factory) { widgets.delete(key); return; }
-				widgets.set(key, factory({ requestRender() { renders++; } }, theme));
-				placements.set(key, options);
+				widgets.set(key, factory(tui, theme));
+			},
+			setFooter(factory) {
+				footer = undefined;
+				container.children = [];
+				if (factory) footer = factory(tui, theme, { getExtensionStatuses: () => statuses });
+				container.children = [footer ?? native];
+				tui.requestRender();
 			},
 			custom(factory) {
 				return new Promise((resolve) => {
@@ -50,10 +64,11 @@ function harness(mode = "tui", hasUI = true) {
 	};
 	register(pi, { operations: f.operations, clock: f.clock, logRoot: f.root });
 	return {
-		...f, handlers, commands, messages, notices, widgets, placements, statuses, idleChecks, ctx,
+		...f, handlers, commands, messages, notices, widgets, statuses, idleChecks, ctx, tui, native,
 		setIdle(value) { idle = value; },
 		failNextSend() { failSend = true; },
 		get panel() { return panel; },
+		get footer() { return footer; },
 		open() { void shortcuts.get("alt+j").handler(ctx); },
 		get tool() { return tool; }, get renders() { return renders; },
 		async close() {
@@ -75,7 +90,7 @@ test("completions during a synchronous tool are merged before the next model req
 		h.calls[1].resolve(2);
 		await flush();
 		assert.equal(h.messages.length, 0, "busy completions must not enter an irrevocable host queue");
-		assert.match(h.widgets.get("background-tasks").render(140).join("\n"), /done/);
+		assert.match(h.footer.render(140).join("\n"), /done/);
 		const existing = { type: "custom", customType: "other-extension", data: { preserved: true } };
 		const boundary = h.handlers.get("turn_end")({ entries: [existing], continue: true, outcome: "completed" }, h.ctx);
 		assert.equal(boundary.continue, true);
@@ -524,7 +539,7 @@ test("start keeps only task-specific guidance while the declaration describes li
 	} finally { await h.close(); }
 });
 
-test("tools, panel, widget and idle notifications share the same session jobs", async () => {
+test("tools, clean panel, bottom footer and idle notifications share the same session jobs", async () => {
 	const h = harness();
 	try {
 		await h.handlers.get("session_start")({}, h.ctx);
@@ -535,19 +550,22 @@ test("tools, panel, widget and idle notifications share the same session jobs", 
 		assert.equal(job.status, "running");
 		parentSignal.abort();
 		assert.equal(h.calls[0].signal.aborted, false, "parent turn cancellation does not own the accepted background job");
-		assert.deepEqual(h.placements.get("background-tasks"), { placement: "belowEditor" });
+		assert.equal(h.widgets.has("background-tasks"), false, "no counter above the native footer");
 		h.clock.advance(1000);
-		const widget = h.widgets.get("background-tasks");
-		assert.match(widget.render(140).join("\n"), /1 shell/);
-		for (const width of [1, 8, 40, 80]) assert.ok(widget.render(width).every((line) => visibleWidth(line) <= width));
+		const footer = h.footer;
+		h.statuses.set("codex-edit", "editor: apply_patch");
+		assert.equal(footer.render(140).at(-1), "editor: apply_patch · 1 shell · Alt+J");
+		for (const width of [1, 8, 40, 80]) assert.ok(footer.render(width).every((line) => visibleWidth(line) <= width));
 		assert.ok(h.widgets.has("scheduler") && h.widgets.has("herdr-subagents"));
 
 		h.calls[0].onData(Buffer.from("captured build output\n"));
 		h.open();
+		assert.deepEqual(footer.render(140), [], "hide path, usage, model, editor status and shell count while inspecting");
 		assert.match(h.panel.render(140).join("\n"), /captured build output/);
 		assert.match(h.panel.render(140).join("\n"), /Runtime:  1s/);
 		h.panel.handleInput("\x1b");
 		await flush();
+		assert.match(footer.render(140).at(-1), /editor: apply_patch · 1 shell/);
 		assert.equal(h.messages.length, 0);
 		const output = await h.tool.execute("output", { action: "output", id: job.id });
 		assert.equal(output.structuredContent.output, "captured build output\n");
@@ -563,11 +581,11 @@ test("tools, panel, widget and idle notifications share the same session jobs", 
 		assert.doesNotMatch(completed[0].message.content, /captured build output/);
 		assert.ok(!completed[0].message.content.includes(`background_task({action:"output",id:"${job.id}"})`), "complete small output needs no follow-up query");
 		assert.ok(completed[0].message.content.includes(job.log_path), "completion points at the log for progressive inspection");
-		assert.match(h.widgets.get("background-tasks").render(140).join("\n"), /done/);
+		assert.match(footer.render(140).join("\n"), /done/);
 		h.clock.advance(4999);
-		assert.ok(h.widgets.has("background-tasks"));
+		assert.match(footer.render(140).at(-1), /done/);
 		h.clock.advance(1);
-		assert.equal(h.widgets.has("background-tasks"), false);
+		assert.deepEqual(footer.render(140), h.native.render(140));
 		assert.equal(h.clock.timers.size, 0);
 		assert.equal((await h.tool.execute("history", { action: "output", id: job.id })).structuredContent.task.status, "failed");
 		assert.ok(h.renders > 0);
@@ -659,14 +677,14 @@ for (const reason of ["new", "resume", "fork", "quit"]) {
 	});
 }
 
-test("widget opens one local panel; shutdown closes it and clears refresh timers", async () => {
+test("footer count opens one local panel; shutdown closes it and clears refresh timers", async () => {
 	const h = harness();
 	try {
 		await h.handlers.get("session_start")({}, h.ctx);
 		await h.tool.execute("a", { action: "start", command: "first" });
-		const widget = h.widgets.get("background-tasks");
-		widget.render(140);
-		widget.handleMouse({ type: "click", button: "left", x: 1, y: 0 });
+		const footer = h.footer;
+		const lines = footer.render(140);
+		footer.handleMouse({ type: "click", button: "left", x: 1, y: lines.length - 1 });
 		const original = h.panel;
 		assert.ok(original);
 		h.open();
@@ -678,6 +696,16 @@ test("widget opens one local panel; shutdown closes it and clears refresh timers
 		h.calls[0].resolve();
 		await shutdown;
 		assert.equal(h.clock.timers.size, 0);
-		assert.equal(h.widgets.has("background-tasks"), false);
+		assert.equal(h.footer, undefined);
+	} finally { await h.close(); }
+});
+
+test("a pre-existing replacement footer fails visibly instead of silently losing the count", async () => {
+	const h = harness();
+	try {
+		h.tui.children = [{ render: () => ["another footer"], invalidate() {} }];
+		await assert.rejects(h.handlers.get("session_start")({}, h.ctx), /requires Pi's built-in footer/);
+		assert.equal(h.footer, undefined);
+		assert.equal(h.widgets.has("background-tasks"), false, "temporary capture widget is cleaned on failure");
 	} finally { await h.close(); }
 });

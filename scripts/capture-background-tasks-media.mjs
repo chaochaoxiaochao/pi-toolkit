@@ -14,6 +14,7 @@ import { WebSocketServer } from "ws";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const output = join(resolve(process.argv[2] ?? join(root, ".cache/package-media")), "background-terminal");
+const withEditor = process.env.BG_MEDIA_EDITOR !== "none";
 const xterm = process.env.XTERM_DIR ?? join(homedir(), ".pi/agent/npm/node_modules/@xterm/xterm");
 for (const file of ["lib/xterm.js", "css/xterm.css"]) assert.ok(existsSync(join(xterm, file)), `Set XTERM_DIR to an installed @xterm/xterm package (${file})`);
 const work = mkdtempSync(join(tmpdir(), "pi-background-demo-"));
@@ -67,8 +68,10 @@ try {
   sockets.on("connection", (socket) => {
     assert.equal(terminal, undefined, "only one terminal client per recording");
     const args = [process.env.PI_TEST_BINARY || "pi", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-session", "--offline",
-      "-e", join(root, "packages/background-tasks/extensions/background-tasks.ts"), "-e", join(root, "packages/background-tasks/tests/fixtures/provider.ts"),
-      "--tools", "background_task", "--model", "bg-fixture/deterministic", "--tui-mode", "fullscreen"];
+      "-e", join(root, "packages/background-tasks/extensions/background-tasks.ts"),
+      ...(withEditor ? ["-e", join(root, "packages/codex-edit/extensions/codex-edit.ts")] : []),
+      "-e", join(root, "packages/background-tasks/tests/fixtures/provider.ts"),
+      "--tools", withEditor ? "background_task,edit" : "background_task", "--model", "bg-fixture/deterministic", "--tui-mode", "fullscreen"];
     terminal = spawn("python3", [join(root, "packages/background-tasks/tests/fixtures/terminal.py"), ...args], {
       cwd: work, env: { ...process.env, PI_CODING_AGENT_DIR: join(work, "agent"), PI_OFFLINE: "1", BG_SMOKE_EVENTS: join(work, "events.jsonl"), TERM: "xterm-256color", COLORTERM: "truecolor" },
       stdio: ["pipe", "pipe", "inherit"],
@@ -78,7 +81,9 @@ try {
   });
   await new Promise((done) => server.listen(0, "127.0.0.1", done));
   // Use the browser skill's documented launcher, with an isolated endpoint.
-  execFileSync("node", [join(root, "skills/web-browser/scripts/start.js"), "--headless"], { env: { ...process.env, BROWSER_DEBUG_PORT: String(debugPort) }, stdio: "pipe", timeout: 30000 });
+  execFileSync("node", [join(root, "skills/web-browser/scripts/start.js"), "--headless"], {
+    env: { ...process.env, HOME: join(work, "browser-home"), BROWSER_DEBUG_PORT: String(debugPort) }, stdio: "pipe", timeout: 30000,
+  });
   const targets = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
   browser = new WebSocket(targets.find((target) => target.type === "page").webSocketDebuggerUrl);
   await new Promise((done, reject) => { browser.onopen = done; browser.onerror = reject; });
@@ -104,6 +109,17 @@ try {
   };
   const screen = () => evaluate("screenLines()");
   const waitText = (text) => until(async () => (await screen()).some((line) => line.includes(text)), text);
+  const assertCleanPanel = async () => {
+    const lines = await screen();
+    assert.ok(!lines.some((line) => /editor: edit|%\/128k|\(auto\)|bg-fixture\)/.test(line)), "panel hides the native footer, model, usage and extension statuses");
+    assert.ok(!lines.some((line) => line.includes(work)), "panel hides the working-directory footer");
+  };
+  const assertBottomCount = async (label) => {
+    const lines = await screen();
+    const bottom = lines.findLastIndex((line) => line.trim());
+    assert.match(lines[bottom], new RegExp(`^${withEditor ? "editor: edit · " : ""}${label} · Alt\\+J`), "clickable shell count is on the bottom status row, beside the editor when loaded");
+    assert.equal(lines.filter((line) => line.includes(`${label} · Alt+J`)).length, 1, "no duplicate below-editor counter");
+  };
   const key = async (name, extra = {}) => {
     await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: name, ...extra });
     await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: name, ...extra });
@@ -136,26 +152,34 @@ try {
   await prompt("Start one background demo job: build progress.");
   await until(() => starts().length === 1, "first shell");
   await waitText("1 shell");
+  await assertBottomCount("1 shell");
+  checks.push(withEditor ? "bottom shell count shares the native editor status row" : "bottom shell count works without an editor extension");
   await shot("single-count");
   await clickText("1 shell");
   await waitText("Shell details");
   await waitText("Compiling module");
+  await assertCleanPanel();
   const aligned = (await screen()).filter((line) => /^\s*(Status|Runtime|Command):/.test(line));
   assert.equal(aligned.length, 3);
   assert.ok(aligned.every((line) => line.indexOf(":") < 12 && line.slice(12).trim()), "detail values start at column 12");
   await shot("single-details");
   checks.push("real count click opens single-shell details and aligned fields");
   await key("Escape", { windowsVirtualKeyCode: 27 });
+  await assertBottomCount("1 shell");
+  checks.push("panel hides the entire native footer and closing restores it");
   await prompt("Start the second background demo job: a test suite.");
   await until(() => starts().length === 2, "second shell");
   await waitText("2 shells");
+  await assertBottomCount("2 shells");
   await shot("two-count");
   await clickText("2 shells");
   await waitText("2 active shells");
+  await assertCleanPanel();
   await shot("shell-list");
   await key("ArrowDown", { windowsVirtualKeyCode: 40 });
   await key("Enter", { windowsVirtualKeyCode: 13 });
   await waitText("test_001");
+  await assertCleanPanel();
   await shot("tests-details");
   checks.push("two shells open list; Down and Enter select second shell");
   await key("ArrowLeft", { windowsVirtualKeyCode: 37 });
@@ -177,9 +201,11 @@ try {
   await shot("tests-cancelled");
   checks.push("x cancels the selected native process without a model call");
   await key("Escape", { windowsVirtualKeyCode: 27 });
-  await until(async () => !(await screen()).some((line) => /^\d+ shells? ·/.test(line)), "count expires");
+  await until(async () => !(await screen()).some((line) => /\d+ shells? ·.*Alt\+J/.test(line)), "count expires");
+  if (withEditor) await waitText("editor: edit");
   await key("j", { code: "KeyJ", windowsVirtualKeyCode: 74, modifiers: 1 });
   await waitText("Earlier in this session (2)");
+  await assertCleanPanel();
   await shot("history");
   checks.push("Alt+J reopens finished history after count expires");
   await key("Escape", { windowsVirtualKeyCode: 27 });

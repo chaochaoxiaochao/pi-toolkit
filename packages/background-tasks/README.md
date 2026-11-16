@@ -70,15 +70,17 @@ List shows running tasks and the latest 20 finished tasks, with total and omitte
 
 ## User controls and status
 
-A compact **`1 shell` / `N shells`** counter sits below the editor without replacing Pi's footer. Click the count in fullscreen mode, or press **Alt+J** in either terminal mode. One active task opens **Shell details** directly; multiple tasks open **Background**. With no active tasks, Alt+J still opens retained history.
+A compact **`1 shell` / `N shells`** counter sits on the **bottom footer status row**, beside `editor: apply_patch` or other extension statuses. Without another status, it occupies that row alone. The existing native path, usage and model rows stay unchanged. Click the count in fullscreen mode, or press **Alt+J** in either terminal mode. One active task opens **Shell details** directly; multiple tasks open **Background**. With no active tasks, Alt+J still opens retained history.
 
 - **List:** ↑/↓ selects a shell, Enter opens its details, and clicking a task row opens that task. Running tasks appear first, followed by **Earlier in this session**. At most eight task rows are visible; selection scrolls the retained history (latest 20 finished tasks).
 - **Details:** `Status:`, `Runtime:` and `Command:` share a fixed value column. Long commands wrap for up to three lines with an ellipsis. **Output:** shows the last ten captured lines, clipped to the current width, refreshed every second. Empty output says `No output available`; truncated tails show the log path for further inspection. Finished tasks also show their exit code, reason and incomplete-capture warning when applicable.
-- **Controls:** ← returns to the list. Esc closes either view; Enter or Space also closes details. `x` stops only the selected running shell. Closing the panel leaves the task running. Inspecting output in the panel does not add model messages or consume a pending completion reminder.
+- **Controls:** ← returns to the list. Esc closes either view; Enter or Space also closes details. `x` stops only the selected running shell. While either panel is open, the entire footer is hidden: path, usage, model, extension statuses and shell count. Closing restores the current footer and leaves the task running. Inspecting output in the panel does not add model messages or consume a pending completion reminder.
 - **Counter:** recently finished tasks add `N done` for five seconds. Hiding the counter does not delete history. RPC receives an active count; print/JSON mode has no UI timer.
 - **No `/bg` commands or Herdr integration:** the extension creates no tabs, panes or log-following processes, including when Pi itself runs inside Herdr. Task execution always uses the same local backend.
 
 The preview is intentionally bounded, not a full log viewer. Use the retained log path for earlier output or long lines. Commands have no TTY, so TTY-only colour and progress rendering may be absent. Other extensions' widgets remain intact.
+
+The extension wraps Pi's exported native `FooterComponent`, found through the public TUI container tree; it does not copy usage accounting or patch host methods. A temporary zero-line widget captures that component before `setFooter()` clears its container, then is removed. Pi has no public footer-composition getter. Extensions that also replace the entire footer are therefore not composable: a replacement present at startup produces an explicit extension error, and one installed later can replace this footer. Use the built-in footer with `setStatus()` extensions such as Codex Edit. A host-provided composable/clickable status API would remove this constraint.
 
 ## Completion delivery
 

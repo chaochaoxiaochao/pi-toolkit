@@ -1,5 +1,5 @@
-import type { Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
+import { FooterComponent, type Theme } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth, type Component, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 import type { Clock, TaskSnapshot } from "./background-tasks.ts";
 
 export const WIDGET_KEY = "background-tasks";
@@ -16,35 +16,61 @@ export function duration(seconds: number): string {
 	return `${value}s`;
 }
 
-/** Compact, clickable shell count below the editor. The native footer stays intact. */
-export class BackgroundWidget {
-	private hitWidth = 0;
+/** Locate the exported native component through the public TUI container tree. */
+export function findNativeFooter(children: Component[]): FooterComponent | undefined {
+	for (const child of children) {
+		if (child instanceof FooterComponent) return child;
+		if ("children" in child && Array.isArray(child.children)) {
+			const footer = findNativeFooter(child.children);
+			if (footer) return footer;
+		}
+	}
+}
+
+/** Keep native usage/model rendering; add a clickable count to its final status row. */
+export class BackgroundFooter {
+	private hit?: { x: number; y: number; width: number };
+	private readonly native: Component;
 	private readonly getTasks: () => TaskSnapshot[];
 	private readonly clock: Clock;
 	private readonly theme: Theme;
+	private readonly hasStatuses: () => boolean;
+	private readonly panelOpen: () => boolean;
 	private readonly onSelect: () => void;
-	constructor(getTasks: () => TaskSnapshot[], clock: Clock, theme: Theme, onSelect: () => void) {
+	constructor(native: Component, getTasks: () => TaskSnapshot[], clock: Clock, theme: Theme, hasStatuses: () => boolean, panelOpen: () => boolean, onSelect: () => void) {
+		this.native = native;
 		this.getTasks = getTasks;
 		this.clock = clock;
 		this.theme = theme;
+		this.hasStatuses = hasStatuses;
+		this.panelOpen = panelOpen;
 		this.onSelect = onSelect;
 	}
 
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-		if (event.type !== "click" || event.button !== "left" || event.y !== 0 || event.x < 0 || event.x >= this.hitWidth) return;
+		const hit = this.hit;
+		if (this.panelOpen() || !hit || event.type !== "click" || event.button !== "left" || event.y !== hit.y || event.x < hit.x || event.x >= hit.x + hit.width) return;
 		this.onSelect();
 		return { handled: true, render: false };
 	}
 
 	render(width: number): string[] {
+		this.hit = undefined;
+		if (this.panelOpen()) return [];
+		const lines = this.native.render(width);
 		const tasks = visibleTasks(this.getTasks(), this.clock.now());
+		if (!tasks.length) return lines;
 		const active = tasks.filter((task) => task.status === "running").length;
 		const ended = tasks.length - active;
 		const label = `${active} ${active === 1 ? "shell" : "shells"}${ended ? ` · ${ended} done` : ""}`;
-		const text = truncateToWidth(this.theme.fg("accent", label), width);
-		this.hitWidth = tasks.length ? visibleWidth(text) : 0;
-		return [truncateToWidth(`${text}${this.theme.fg("dim", " · Alt+J")}`, width)];
+		const hint = width >= visibleWidth(label) + 8 ? this.theme.fg("dim", " · Alt+J") : "";
+		const text = truncateToWidth(this.theme.fg("accent", label) + hint, width, "");
+		const status = this.hasStatuses() ? lines.pop()! : "";
+		const available = width - visibleWidth(text) - 3;
+		const prefix = status && available > 0 ? truncateToWidth(status, available, "…") + " · " : "";
+		this.hit = { x: visibleWidth(prefix), y: lines.length, width: Math.min(visibleWidth(label), visibleWidth(text)) };
+		return [...lines, prefix + text];
 	}
 
-	invalidate(): void { this.hitWidth = 0; }
+	invalidate(): void { this.hit = undefined; this.native.invalidate(); }
 }

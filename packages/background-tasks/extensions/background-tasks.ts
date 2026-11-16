@@ -5,7 +5,7 @@ import { stripVTControlCharacters } from "node:util";
 import { Type } from "typebox";
 import { BackgroundTasks, errorText, summary, systemClock, type Clock, type TaskSnapshot } from "../src/background-tasks.ts";
 import { BackgroundPanel } from "../src/panel.ts";
-import { BackgroundWidget, FINISHED_VISIBLE_MS, WIDGET_KEY, duration, visibleTasks } from "../src/widget.ts";
+import { BackgroundFooter, findNativeFooter, FINISHED_VISIBLE_MS, WIDGET_KEY, duration, visibleTasks } from "../src/widget.ts";
 
 const actions = ["start", "list", "output", "cancel"] as const;
 const startNotice = "Completion is reported automatically. Continue other work, or end the turn if nothing else remains; do not sleep, tail logs or query just to wait.";
@@ -72,7 +72,7 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 	let completedNormally = true;
 	let interrupted = false;
 	const pending = new Map<string, TaskSnapshot>();
-	let mounted: { widget: BackgroundWidget; tui: { requestRender(): void } } | undefined;
+	let mounted: { footer: BackgroundFooter; tui: { requestRender(): void } } | undefined;
 	let panel: { close(): void } | undefined;
 
 	const clearNotificationTimer = () => {
@@ -158,6 +158,7 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 		if (!current?.hasUI || current.mode !== "tui" || !tasks || panel) return;
 		const interaction = { close: () => {} };
 		panel = interaction;
+		mounted?.tui.requestRender();
 		try {
 			await current.ui.custom<void>((tui, theme, keybindings, done) => {
 				const component = new BackgroundPanel(tasks, clock, theme, keybindings, () => tui.requestRender(), () => done());
@@ -168,6 +169,7 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 			if (context === current) current.ui.notify(`Cannot show shells: ${errorText(error)}`, "error");
 		} finally {
 			if (panel === interaction) panel = undefined;
+			mounted?.tui.requestRender();
 		}
 	};
 	pi.registerShortcut("alt+j", { description: "Show background shells", handler: openPanel });
@@ -183,24 +185,11 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 			return;
 		}
 		const visible = visibleTasks(list.tasks, clock.now());
+		mounted?.footer.invalidate();
+		mounted?.tui.requestRender();
 		if (visible.length === 0) {
 			clearTimer();
-			if (mounted) {
-				context.ui.setWidget(WIDGET_KEY, undefined);
-				mounted.tui.requestRender();
-				mounted = undefined;
-			}
 			return;
-		}
-		if (mounted) {
-			mounted.widget.invalidate();
-			mounted.tui.requestRender();
-		} else {
-			context.ui.setWidget(WIDGET_KEY, (tui, theme) => {
-				const widget = new BackgroundWidget(() => manager?.list().tasks ?? [], clock, theme, () => { void openPanel(); });
-				mounted = { widget, tui };
-				return widget;
-			}, { placement: "belowEditor" });
 		}
 		if (timer === undefined) {
 			const delay = Math.min(1000, ...visible.filter((task) => task.ended_at !== undefined).map((task) => task.ended_at! + FINISHED_VISIBLE_MS - clock.now()));
@@ -223,7 +212,7 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 		try {
 			if (previousContext?.hasUI) {
 				previousContext.ui.setStatus(WIDGET_KEY, undefined);
-				if (previousContext.mode === "tui") previousContext.ui.setWidget(WIDGET_KEY, undefined);
+				if (previousContext.mode === "tui" && mounted) previousContext.ui.setFooter(undefined);
 			}
 			mounted = undefined;
 		} finally {
@@ -243,6 +232,25 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 				scheduleNotification();
 			},
 		});
+		if (ctx.hasUI && ctx.mode === "tui") {
+			// setFooter clears its container before invoking the factory. Capture the
+			// native component first, using a temporary, zero-line widget factory.
+			try {
+				ctx.ui.setWidget(WIDGET_KEY, (tui) => {
+					const native = findNativeFooter(tui.children);
+					if (!native) throw new Error("Background Tasks requires Pi's built-in footer; another extension has replaced it.");
+					ctx.ui.setFooter((footerTui, theme, data) => {
+						const footer = new BackgroundFooter(native, () => manager?.list().tasks ?? [], clock, theme,
+							() => data.getExtensionStatuses().size > 0, () => panel !== undefined, () => { void openPanel(); });
+						mounted = { footer, tui: footerTui };
+						return footer;
+					});
+					return { render: () => [], invalidate() {} };
+				});
+			} finally {
+				ctx.ui.setWidget(WIDGET_KEY, undefined);
+			}
+		}
 	});
 	pi.on("session_shutdown", dispose);
 

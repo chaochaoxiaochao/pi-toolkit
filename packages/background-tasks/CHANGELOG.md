@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Move the clickable shell count to the bottom footer status row, beside editor status when present; preserve Pi's native path, usage and model rendering.
+- Hide the entire footer while the shell list or details panel is open, and restore it on close.
+- Verify bottom-row placement and clean panels with real Chrome clicks, both with and without Codex Edit. Keep capture browsers isolated from existing browser sessions.
+
 ## 2026-11-13 - v0.4.0
 
 - Replace Herdr task views and /bg commands with a local shell counter and details panel
