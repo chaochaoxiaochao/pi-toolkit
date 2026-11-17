@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-11-17 - v0.1.2
 
+- Add a 20-second default interval for shorthand prompts
 - Add `/schedule <prompt>` with a 20-second interval. Keep explicit intervals and existing management commands.
 
 ## 2026-10-09 - v0.1.1

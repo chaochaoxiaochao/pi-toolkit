@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-11-17 - v0.15.3
 
+- scheduler v0.1.2: Add a 20-second default interval for shorthand prompts
 - Scheduler: add `/schedule <prompt>` with a 20-second default interval.
 
 ## 2026-11-17 - v0.15.2
