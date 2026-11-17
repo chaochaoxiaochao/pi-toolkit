@@ -1,5 +1,12 @@
 # Package split verification
 
+## Verified Scheduler shortcut publication (2026-11-17)
+
+- Source commit `652dc00` added the shortcut. The coordinated release script passed the final-version checks and atomically pushed `main`, `scheduler-v0.1.2` and `v0.15.3`; both tags point to release commit `df874498789cebca4eed99fdd81e483af62c01a6`.
+- [publish.yml run 44099152239](https://github.com/chaochaoxiaochao/pi-toolkit/actions/runs/44099152239) succeeded. npm initially exposed the main package's version metadata while its tarball returned HTTP 404, so the first post-release checks could not complete. The tarball later returned HTTP 200; no new tag or republish was needed.
+- `npm_config_prefer_online=true npm run release:check -- v0.15.3 --timeout 180 --interval 10` then passed. Both remote tags, exact npm versions, integrity, modes and every packaged byte matched the tagged source: 8 Scheduler files and 219 toolkit files. Evidence: `.cache/verification/scheduler-default/{release,post-release,post-release-retry,artifact-wait}.log`.
+- Installed packages and active sessions were not updated or reloaded.
+
 ## Scheduler default prompt shortcut (2026-11-17)
 
 - `/schedule <prompt>` creates a session-scoped schedule with a 20-second interval. Explicit `/schedule add <interval> <prompt>` and the Agent tool retain their existing contracts. The management words `add`, `list`, `trigger`, `cancel` and `clear` stay reserved; an explicit `add` can schedule prompts beginning with those words.
