@@ -1,5 +1,13 @@
 # Package split verification
 
+## Blocked compact-preview publication (2026-11-17)
+
+- Committed all approved changes as source commit `a5a35d5`. The coordinated release script passed its final-version gates, created release commit `b4d78dd`, and atomically pushed `main`, `background-tasks-v0.4.2` and `v0.15.2`. Both remote tags point to `b4d78dd99af798ae18d9b5ce22d4c7717f51c355`.
+- The final gate passed all 93 Background Tasks tests, standalone loading, shared package layout and both dry-run packs. Its real-Herdr check was skipped because Herdr source is unchanged. Full workspace, browser and native-TUI acceptance had already passed as recorded below.
+- [publish.yml run 44073717260](https://github.com/chaochaoxiaochao/pi-toolkit/actions/runs/44073717260) failed in attempts 1 and 2: npm returned `E404` on the child package's publish `PUT`. Root publication was skipped. Existing versions `0.4.1` and `0.15.1` remain readable; the new exact versions were absent. Post-release verification therefore failed, and publication is not complete.
+- GitHub reports that `NPM_TOKEN` was last updated on `2026-08-18`; expiration or lost publish permission is suspected, not confirmed from the secret metadata. A maintainer must refresh or verify the secret before rerunning the existing workflow. No new version/tag or local npm publication is needed. After recovery, rerun `npm_config_prefer_online=true npm run release:check -- v0.15.2 --timeout 600 --interval 10`.
+- Evidence: `.cache/verification/release-compact-command/{release,post-release,post-release-retry,ci-failure,ci-attempt2}.log` and `ci-secret-metadata.json`. No credentials were read or changed. Installed packages and active sessions remain unchanged.
+
 ## Compact-preview and global-review release preflight (2026-11-17)
 
 - User approved including all current staged changes in one coordinated patch release: Background Tasks `0.4.2` and toolkit `0.15.2`. The global instructions add a standalone Subagent section with a Review item for over-defensive code. Release contents follow the current checkout.
