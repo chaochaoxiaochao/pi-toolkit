@@ -1,3 +1,7 @@
+## Unreleased
+
+- Scheduler: add `/schedule <prompt>` with a 20-second default interval.
+
 ## 2026-11-17 - v0.15.2
 
 - background-tasks v0.4.2: Keep multiline shell previews compact without changing script execution

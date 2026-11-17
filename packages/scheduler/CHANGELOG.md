@@ -1,3 +1,7 @@
+## Unreleased
+
+- Add `/schedule <prompt>` with a 20-second interval. Keep explicit intervals and existing management commands.
+
 ## 2026-10-09 - v0.1.1
 
 - add clear-all controls and multi-line widget coexistence

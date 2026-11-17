@@ -31,12 +31,15 @@ schedule({ action: "clear" })
 ## User command
 
 ```text
+/schedule Check CI; report completion or failure.
 /schedule add 5m Check CI; report completion or failure.
 /schedule list
 /schedule trigger schedule-1
 /schedule cancel schedule-1
 /schedule clear
 ```
+
+`/schedule <prompt>` creates a schedule with a **20-second** interval. Use `/schedule add <interval> <prompt>` for a different interval. The first words `add`, `list`, `trigger`, `cancel`, and `clear` are reserved for commands; to schedule a prompt that starts with one of them, use the explicit form, for example `/schedule add 20s list all checks`. An empty `/schedule` lists active schedules. The Agent tool still requires an explicit `every` value.
 
 Manual trigger queues one prompt and does not move the regular next time. A multi-line widget above the editor shows one row per active schedule with its ID, interval, next trigger, pending state, and prompt. Herdr Fleet remains below the editor, so the two live displays do not compete for the same area or overwrite each other.
 

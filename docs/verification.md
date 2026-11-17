@@ -1,5 +1,13 @@
 # Package split verification
 
+## Scheduler default prompt shortcut (2026-11-17)
+
+- `/schedule <prompt>` creates a session-scoped schedule with a 20-second interval. Explicit `/schedule add <interval> <prompt>` and the Agent tool retain their existing contracts. The management words `add`, `list`, `trigger`, `cancel` and `clear` stay reserved; an explicit `add` can schedule prompts beginning with those words.
+- The new integration assertion failed on the original implementation, which rejected the shortcut. After the change, fake-timer tests passed for the 20-second delay, preserved prompt whitespace, timed and manual `followUp` delivery, pending suppression, cancellation, explicit intervals, reserved commands, clear and session shutdown. Existing core cadence and lifecycle coverage remains enabled.
+- In a real Pi TUI with an offline fixture provider, created a shortcut schedule, manually triggered it, observed its automatic 20-second trigger and provider request, cancelled it, then verified explicit interval creation and clear. The recorded elapsed time was 20.1 seconds. Evidence: `.cache/verification/scheduler-default/tui.log`, `tui-events.jsonl` and `tui.ansi`.
+- Passed Scheduler tests, standalone extension loading and child dry-run pack, full root `npm test` (including 21 Cache Export browser E2E checks without skips), root extension loading, root dry-run pack and `git diff --check`. Evidence: `.cache/verification/scheduler-default/tests.log`. Existing Scheduler media remains unchanged because the widget and core state-machine display did not change.
+- The user authorized direct work on `main` and coordinated publication. The release script checks final versioned contents before pushing tags; installed packages and active sessions were not updated or reloaded.
+
 ## Verified compact-preview publication (2026-11-17)
 
 - After the user updated the npm token configuration and repository secret, attempt 4 of [publish.yml run 44073717260](https://github.com/chaochaoxiaochao/pi-toolkit/actions/runs/44073717260) succeeded. Background Tasks `0.4.2` and toolkit `0.15.2` are published. The original tags still point to release commit `b4d78dd`; no additional version or tag was created.

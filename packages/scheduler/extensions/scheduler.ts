@@ -31,7 +31,8 @@ function parseCommand(input: string): { action: ScheduleAction; every?: string; 
 	if (action === "add") return { action, every: first, prompt: rest.join(" ") };
 	if (action === "trigger" || action === "cancel") return { action, id: first };
 	if (action === "clear") return { action };
-	throw new Error("usage: /schedule add <interval> <prompt> | list | trigger <id> | cancel <id> | clear");
+	if (action === "list") throw new Error("usage: /schedule [prompt] | add <interval> <prompt> | list | trigger <id> | cancel <id> | clear");
+	return { action: "add", every: "20s", prompt: text };
 }
 
 const WIDGET_KEY = "scheduler";
