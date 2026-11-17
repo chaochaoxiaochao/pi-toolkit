@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-11-17 - v0.15.2
 
+- background-tasks v0.4.2: Keep multiline shell previews compact without changing script execution
 - Global instructions: add a dedicated Subagent section requiring implementation reviewers to check for over-defensive code.
 - Background Tasks: display multiline commands as compact continuous previews; keep script execution unchanged.
 

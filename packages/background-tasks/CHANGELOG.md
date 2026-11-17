@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2026-11-17 - v0.4.2
 
+- Keep multiline shell previews compact without changing script execution
 - Fold script line breaks and indentation into a compact, width-wrapped command preview, so setup lines do not hide the actual command. Keep the executed script unchanged.
 
 ## 2026-11-16 - v0.4.1
