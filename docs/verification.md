@@ -1,13 +1,20 @@
 # Package split verification
 
-## Blocked compact-preview publication (2026-11-17)
+## Verified compact-preview publication (2026-11-17)
+
+- After the user updated the npm token configuration and repository secret, attempt 4 of [publish.yml run 44073717260](https://github.com/chaochaoxiaochao/pi-toolkit/actions/runs/44073717260) succeeded. Background Tasks `0.4.2` and toolkit `0.15.2` are published. The original tags still point to release commit `b4d78dd`; no additional version or tag was created.
+- The initial post-release check waited for npm version visibility and was interrupted after child verification. A resumed background check completed successfully: `npm_config_prefer_online=true npm run release:check -- v0.15.2 --timeout 180 --interval 5`.
+- Verified both remote tags, exact npm versions, integrity, file modes and every packaged byte against the tagged source: 29 child files and 219 root files matched. Evidence: `.cache/verification/release-compact-command/post-release-final-resume.log`.
+- Installed packages and active sessions were not updated or reloaded. Tokens were not committed or copied into release logs.
+
+## Initial publication failures and recovery (2026-11-17)
 
 - Committed all approved changes as source commit `a5a35d5`. The coordinated release script passed its final-version gates, created release commit `b4d78dd`, and atomically pushed `main`, `background-tasks-v0.4.2` and `v0.15.2`. Both remote tags point to `b4d78dd99af798ae18d9b5ce22d4c7717f51c355`.
 - The final gate passed all 93 Background Tasks tests, standalone loading, shared package layout and both dry-run packs. Its real-Herdr check was skipped because Herdr source is unchanged. Full workspace, browser and native-TUI acceptance had already passed as recorded below.
-- [publish.yml run 44073717260](https://github.com/chaochaoxiaochao/pi-toolkit/actions/runs/44073717260) failed in attempts 1 and 2: npm returned `E404` on the child package's publish `PUT`. Root publication was skipped. Existing versions `0.4.1` and `0.15.1` remain readable; the new exact versions were absent. Post-release verification therefore failed, and publication is not complete.
+- [publish.yml run 44073717260](https://github.com/chaochaoxiaochao/pi-toolkit/actions/runs/44073717260) failed in attempts 1 and 2: npm returned `E404` on the child package's publish `PUT`. Root publication was skipped. Existing versions `0.4.1` and `0.15.1` remained readable; the new exact versions were absent. Post-release verification therefore failed, and publication was incomplete at that point.
 - Before recovery, GitHub reported that `NPM_TOKEN` was last updated on `2026-08-18`; expiration or lost publish permission was suspected, not confirmed from the secret metadata.
 - With explicit user authorization, refreshed `NPM_TOKEN` through encrypted GitHub CLI stdin on `2026-11-17` and reran the same workflow. Attempt 3 failed with `E403`: npm requires two-factor authentication or a granular token with bypass 2FA enabled. Root publication was skipped again. The replacement token must meet that npm requirement; GitHub browser 2FA is not the blocker for this CLI path.
-- A maintainer must create a suitable replacement token with package write access and bypass 2FA enabled. Rotate tokens shared in chat; enter replacements through the local CLI prompt rather than chat. No new version/tag or local npm publication is needed. After recovery, rerun `npm_config_prefer_online=true npm run release:check -- v0.15.2 --timeout 600 --interval 10`.
+- Recovery required a suitable replacement token with package write access and bypass 2FA enabled. Rotate tokens shared in chat; enter replacements through the local CLI prompt rather than chat. No new version/tag or local npm publication was needed. Successful final verification is recorded above.
 - Evidence: `.cache/verification/release-compact-command/{release,post-release,post-release-retry,post-release-recovery,ci-failure,ci-attempt2,ci-attempt3}.log` and `ci-secret-metadata.json`. No credentials were committed or copied into release logs. Installed packages and active sessions remain unchanged.
 
 ## Compact-preview and global-review release preflight (2026-11-17)
