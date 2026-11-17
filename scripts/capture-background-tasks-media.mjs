@@ -162,6 +162,8 @@ try {
   const aligned = (await screen()).filter((line) => /^\s*(Status|Runtime|Command):/.test(line));
   assert.equal(aligned.length, 3);
   assert.ok(aligned.every((line) => line.indexOf(":") < 12 && line.slice(12).trim()), "detail values start at column 12");
+  assert.match(aligned.find((line) => line.includes("Command:")), /Command:  set -e export BG_DEMO=1 export CI=1 python3 demo-job\.py build$/);
+  checks.push("four-line script is previewed continuously, keeping the actual command visible after exports");
   await shot("single-details");
   checks.push("real count click opens single-shell details and aligned fields");
   await key("Escape", { windowsVirtualKeyCode: 27 });

@@ -44,8 +44,8 @@ test("offline media provider issues exactly two direct background starts, then r
 	for await (const event of provider.streamSimple(model, { messages: [user] })) events.push(event);
 	const calls = events.filter((event) => event.type === "toolcall_end").map((event) => event.toolCall);
 	assert.deepEqual(calls.map((call) => [call.name, call.arguments.command, call.arguments.description]), [
-		["background_task", "python3 demo-job.py build", "Build progress"],
-		["background_task", "python3 demo-job.py tests", "Test suite"],
+		["background_task", "set -e\nexport BG_DEMO=1\nexport CI=1\npython3 demo-job.py build", "Build progress"],
+		["background_task", "set -e\nexport BG_DEMO=1\nexport CI=1\npython3 demo-job.py tests", "Test suite"],
 	]);
 	const next = [];
 	for await (const event of provider.streamSimple(model, { messages: [user, { role: "toolResult", toolCallId: calls[1].id, toolName: "background_task", content: [{ type: "text", text: "Started" }] }] })) next.push(event);
@@ -65,6 +65,6 @@ for (const [prompt, kind] of [
 		const calls = events.filter((event) => event.type === "toolcall_end").map((event) => event.toolCall);
 		assert.equal(calls.length, 1);
 		assert.equal(calls[0].name, "background_task");
-		assert.equal(calls[0].arguments.command, `python3 demo-job.py ${kind}`);
+		assert.equal(calls[0].arguments.command, `set -e\nexport BG_DEMO=1\nexport CI=1\npython3 demo-job.py ${kind}`);
 	});
 }

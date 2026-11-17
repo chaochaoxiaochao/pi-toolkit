@@ -1,5 +1,22 @@
 # Package split verification
 
+## Compact-preview and global-review release preflight (2026-11-17)
+
+- User approved including all current staged changes in one coordinated patch release: Background Tasks `0.4.2` and toolkit `0.15.2`. The global instructions add a standalone Subagent section with a Review item for over-defensive code. Release contents follow the current checkout.
+- Passed the standalone Background Tasks suite (93 tests, zero failures/skips), standalone load and child dry-run pack. Passed full root `npm test`, including 21 Cache Export browser E2E checks with zero failures/skips, full root loading and root dry-run pack. The complete toolkit registered exactly one background-task tool.
+- Repeated the real Pi PTY smoke in fullscreen and regular modes: 14 checks passed in each. Repeated Chrome/CDP flows with Codex Edit and without an editor extension: eight checks passed in each, including the compact four-line command preview, real counter/task clicks, footer hiding/restoration, keyboard selection, live output, cancellation, history and session-log cleanup.
+- Regenerated package media through `node scripts/capture-package-media.mjs background-tasks`. Inspected the actual details screenshot and gallery in an isolated Chrome. All 16 gallery images decoded, all seven GIFs decoded every frame, and the retained WebM loaded without error. Background Tasks retains nine captured interaction frames. Syntax and whitespace checks passed.
+- Evidence: `.cache/verification/release-compact-command/` and `.cache/package-media/`. Herdr source is unchanged since `v0.15.1`; its deterministic tests passed in the root suite, and the final release gate decides whether a real-Herdr rerun is required. No installed packages or active sessions were updated or reloaded.
+
+## Background Tasks compact command previews (2026-11-16, unreleased)
+
+- Details now fold script line breaks, blank lines and indentation into a continuous, width-wrapped preview. Inline spaces remain intact. The original script still reaches the execution backend unchanged. The existing three-visual-line / 8192-character preview bounds remain; no full-command viewer or execution rewrite was added.
+- Before the implementation change, three panel assertions failed on preserved newlines and hidden command content. Afterward, all 93 Background Tasks tests passed, including the existing native process, notification, interruption and compaction coverage. New checks cover the reported Java setup, CR/LF variants, narrow wrapping, inline quoted spaces, post-folding length limits and unchanged execution input.
+- Standalone and complete-toolkit load tests passed; each registered exactly one background-task tool. `npm run test:root`, child/root `npm pack --dry-run`, script syntax and `git diff --check` passed. Reviewed root/package manifests and repository AGENTS; no wiring or instruction change is needed.
+- Real Pi PTY smoke passed in fullscreen and regular modes, with all 14 checks in each. Real Chrome/CDP flows passed all eight checks both with Codex Edit and without an editor extension. A native four-line job with two exports must display its actual Python command on the same row. Real clicks, selection, footer hiding/restoration, output refresh, cancellation, history and session cleanup also passed.
+- Regenerated screenshots and GIF with `node scripts/capture-package-media.mjs background-tasks`. Inspected the compact command screenshot and the gallery in isolated Chrome: all 16 images decoded and the retained video loaded its metadata. The Background Tasks GIF contains nine real captured states. Evidence: `.cache/verification/compact-command/` and `.cache/package-media/background-terminal/`.
+- Full unrelated workspace suites were not rerun. No publication, installed-package update or active-session reload was performed. The pre-existing `global/AGENTS.md` edits remain untouched.
+
 ## Verified bottom-footer publication (2026-11-16)
 
 - User approved tagging and publishing the current checkout. Source commit `f01bdcb` contains the bottom-footer control and clean-panel changes. The coordinated release script created release commit `ccac6cc`, bumped Background Tasks to `0.4.1` and toolkit to `0.15.1`, and atomically pushed `main`, `background-tasks-v0.4.1` and `v0.15.1`. Both tags point to the same commit.

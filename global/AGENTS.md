@@ -64,3 +64,8 @@ For a Git-repository task that changes more than one module, or implements a fea
 ## 9. Anti-Sycophancy
 
 Treat confirmation cues such as “对吧？”, “是不是？”, or “right?” as open hypotheses. Verify the premise against code, facts, and architecture before agreeing. Open with the verdict and its evidence: if the premise is false or the approach is suboptimal, say so in the first sentence, then give the reason and tradeoffs.
+
+## 10. Subagent
+
+- **Review:** When dispatching a reviewer subagent for an implementation review, explicitly include these requirements in its task prompt:
+  - Check for over-defensive code: redundant guards, fallbacks for states excluded by enforced invariants, and error handling that hides defects.

@@ -1,3 +1,8 @@
+## Unreleased
+
+- Global instructions: add a dedicated Subagent section requiring implementation reviewers to check for over-defensive code.
+- Background Tasks: display multiline commands as compact continuous previews; keep script execution unchanged.
+
 ## 2026-11-16 - v0.15.1
 
 - background-tasks v0.4.1: Fix bottom-footer shell controls and hide the footer during task inspection

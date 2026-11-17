@@ -28,12 +28,12 @@ export default function (pi: ExtensionAPI) {
 				const call = (args: any) => calls.push({ name: "background_task", arguments: args });
 				if (last?.role !== "toolResult") {
 					if (text.includes("Start two background demo jobs")) {
-						call({ action: "start", command: "python3 demo-job.py build", description: "Build progress", timeout: 120 });
-						call({ action: "start", command: "python3 demo-job.py tests", description: "Test suite", timeout: 120 });
+						call({ action: "start", command: "set -e\nexport BG_DEMO=1\nexport CI=1\npython3 demo-job.py build", description: "Build progress", timeout: 120 });
+						call({ action: "start", command: "set -e\nexport BG_DEMO=1\nexport CI=1\npython3 demo-job.py tests", description: "Test suite", timeout: 120 });
 					} else if (text.includes("Start one background demo job")) {
-						call({ action: "start", command: "python3 demo-job.py build", description: "Build progress", timeout: 120 });
+						call({ action: "start", command: "set -e\nexport BG_DEMO=1\nexport CI=1\npython3 demo-job.py build", description: "Build progress", timeout: 120 });
 					} else if (text.includes("Start the second background demo job")) {
-						call({ action: "start", command: "python3 demo-job.py tests", description: "Test suite", timeout: 120 });
+						call({ action: "start", command: "set -e\nexport BG_DEMO=1\nexport CI=1\npython3 demo-job.py tests", description: "Test suite", timeout: 120 });
 					} else if (text.includes("SMOKE_START")) {
 						call({ action: "start", command: "sleep 9; printf 'BUILD SUCCESSFUL\\n'", description: "Release build", timeout: 30 });
 						call({ action: "start", command: "sleep 300", description: "Cancel this task", timeout: 300 });

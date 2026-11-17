@@ -143,9 +143,10 @@ export class BackgroundPanel {
 	private details(width: number, task: TaskSnapshot): string[] {
 		const { theme } = this;
 		const field = (name: string, value: string) => `${theme.bold(name.padEnd(10))}${value}`;
-		const commandLines = wrapTextWithAnsi(clean(this.tasks.command(task.id)).slice(0, 8192), Math.max(1, width - 10));
+		const preview = clean(this.tasks.command(task.id)).split("\n").map((line) => line.trim()).filter(Boolean).join(" ");
+		const commandLines = wrapTextWithAnsi(preview.slice(0, 8192), Math.max(1, width - 10));
 		const command = commandLines.slice(0, 3);
-		if (commandLines.length > 3 || this.tasks.command(task.id).length > 8192) command[command.length - 1] = truncateToWidth(command.at(-1)! + "…", Math.max(1, width - 10), "…");
+		if (commandLines.length > 3 || preview.length > 8192) command[command.length - 1] = truncateToWidth(command.at(-1)! + "…", Math.max(1, width - 10), "…");
 		const lines = [theme.fg("accent", theme.bold("Shell details")), "",
 			field("Status:", theme.fg(color(task), this.stopping.has(task.id) ? "stopping" : task.status)),
 			field("Runtime:", duration(task.elapsed_seconds)),
