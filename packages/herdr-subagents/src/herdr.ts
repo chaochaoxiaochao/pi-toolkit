@@ -51,14 +51,34 @@ export interface HerdrAutomation {
 	closeTab(tabId: string, signal?: AbortSignal): Promise<void>;
 }
 
+interface ForegroundProcess {
+	name?: string;
+	argv0?: string;
+	argv?: string[];
+}
+
 interface HerdrResponse {
 	result?: {
 		tab?: { tab_id?: string; focused?: boolean };
 		root_pane?: { pane_id?: string };
 		pane?: { pane_id?: string };
 		agent?: { status?: string; agent_status?: string };
-		process_info?: { foreground_processes?: Array<{ name?: string; argv0?: string; argv?: string[] }> };
+		process_info?: { foreground_processes?: ForegroundProcess[] };
 	};
+}
+
+// Gate 2: identify Pi in the pane's foreground process list. Gate 1 (waiting
+// for interactive readiness) remains Herdr's responsibility in agent start.
+function isPiForegroundProcess(process: ForegroundProcess): boolean {
+	// macOS can expose Node's runtime title as argv0 without the full argv.
+	if (process.name === "pi" || process.argv0 === "pi") return true;
+	return (process.argv ?? []).some((argument) => {
+		const normalized = argument.replaceAll("\\", "/");
+		const file = normalized.split("/").at(-1);
+		return file === "pi"
+			|| (/pi-coding-agent/.test(normalized) && /(?:^|\/)cli\.js$/.test(normalized))
+			|| /pi-coding-agent\/dist\/bundle\//.test(normalized);
+	});
 }
 
 export class HerdrCommandError extends Error {
@@ -224,16 +244,7 @@ export class CliHerdrAutomation implements HerdrAutomation {
 	async isTaskRunning(paneId: string, signal?: AbortSignal): Promise<boolean> {
 		try {
 			const response = parseResponse(await runCommand(this.binary, ["pane", "process-info", "--pane", paneId], signal), "herdr pane process-info");
-			return (response.result?.process_info?.foreground_processes ?? []).some((process) => {
-				// On macOS the Node executable is `node`, while its runtime title is `pi`.
-				// Herdr can expose that title as argv0 even when the full argv is unavailable.
-				if (process.name === "pi" || process.argv0 === "pi") return true;
-				return (process.argv ?? []).some((argument) => {
-					const normalized = argument.replaceAll("\\", "/");
-					const file = normalized.split("/").at(-1);
-					return file === "pi" || (/pi-coding-agent/.test(normalized) && /(?:^|\/)cli\.js$/.test(normalized)) || /pi-coding-agent\/dist\/bundle\//.test(normalized);
-				});
-			});
+			return (response.result?.process_info?.foreground_processes ?? []).some(isPiForegroundProcess);
 		} catch (error) {
 			if (error instanceof HerdrCommandError && /pane[_ -]?not[_ -]?found|unknown pane/i.test(`${error.message}\n${error.stderr}`)) return false;
 			throw error;
