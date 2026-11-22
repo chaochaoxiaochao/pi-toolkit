@@ -27,12 +27,15 @@ try {
 		[[{ name: "pi" }], true],
 		[[{ name: "node", argv0: "pi" }], true],
 		[[{ name: "node", argv0: "pi", argv: [] }], true],
+		[[{ name: "zsh" }, { name: "node", argv0: "pi", argv: [] }], true],
+		[[{ name: "node", argv: ["C:\\Tools\\bin\\pi"] }], true],
+		[[{ name: "node", argv: ["C:\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\bundle\\cli.js"] }], true],
 		[[{ name: "node", argv0: "node" }], false],
 		[[{ name: "node", argv0: "piper" }], false],
 		[[{ name: "node", argv: ["node", "/opt/pi-coding-agent/dist/cli.js"] }], true],
 		[[{ name: "node", argv: ["node", "/opt/pi-coding-agent/dist/bundle/cli.js"] }], true],
 		[[{ name: "node", argv: ["node", "/tmp/cli.js"] }], false],
-		[[{ name: "bash", argv: ["bash"] }], false], [[], false],
+		[[{ name: "bash", argv: ["bash"] }], false], [[], false], [undefined, false],
 	]) {
 		writeJson(settings, { result: { process_info: { foreground_processes: processes } } });
 		assert.equal(await herdr.isTaskRunning("one"), expected);
