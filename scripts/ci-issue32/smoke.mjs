@@ -33,7 +33,7 @@ const provider = createServer(async (req,res)=>{
 });
 await new Promise((resolve,reject)=>{provider.once("error",reject);provider.listen(0,"127.0.0.1",resolve)});
 const model="mac-smoke/issue32-fixture";
-const cfg={providers:{"mac-smoke":{baseUrl:"http://127.0.0.1:"+provider.address().port+"/v1",apiKey:"fixture-not-a-secret",api:"openai-completions",models:[{id:"issue32-fixture",name:"Issue 32 offline fixture",reasoning:false,input:["text"],cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:65536,maxTokens:2048}]}}};
+const cfg={providers:{"mac-smoke":{baseUrl:"http://127.0.0.1:"+provider.address().port+"/v1",apiKey:"fixture-not-a-secret",api:"openai-completions",models:[{id:"issue32-fixture",name:"Issue 32 offline fixture",reasoning:true,input:["text"],cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:65536,maxTokens:2048}]}}};
 mkdirSync(configPath,{recursive:true});
 writeFileSync(join(configPath,"models.json"),JSON.stringify(cfg));
 try {
