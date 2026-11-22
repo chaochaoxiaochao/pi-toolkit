@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 const [packagePath, _workRoot, evidencePath, configPath] = process.argv.slice(2);
 assert.ok(packagePath && evidencePath && configPath);
 assert.equal(process.env.HERDR_ENV, "1");
@@ -37,8 +37,10 @@ const cfg={providers:{"mac-smoke":{baseUrl:"http://127.0.0.1:"+provider.address(
 mkdirSync(configPath,{recursive:true});
 writeFileSync(join(configPath,"models.json"),JSON.stringify(cfg));
 try {
+ const piBinary=process.env.PATH.split(delimiter).map(dir=>join(dir,"pi")).find(existsSync);
+ assert.ok(piBinary, "Pinned Pi executable is missing.");
  const child=spawn("bash",["scripts/release-check.sh","herdr-subagents"],{
-  cwd:root,env:{...process.env,HERDR_SUBAGENTS_E2E_MODEL:model,HERDR_SUBAGENTS_E2E_FOCUS_CLEANUP:"1"},stdio:"inherit",signal:AbortSignal.timeout(150000),
+  cwd:root,env:{...process.env,PI_TEST_BINARY:piBinary,HERDR_SUBAGENTS_E2E_MODEL:model,HERDR_SUBAGENTS_E2E_FOCUS_CLEANUP:"1"},stdio:"inherit",signal:AbortSignal.timeout(150000),
  });
  const code=await new Promise((resolve,reject)=>{child.once("error",reject);child.once("close",resolve);});
  event("release-check-settled",{code,requests});
