@@ -38,6 +38,12 @@ jobs:
           # Node does not strip TypeScript under node_modules. Use unchanged npm files.
           cp -R "$target/node_modules/@maxiaochao/pi-herdr-subagents" "$target/released-package"
           python3 scripts/issue32/pty-run.py "$target/herdr" "$target/released-package" "$target/evidence/baseline.json"
+      - name: Print redacted synthetic evidence
+        if: always()
+        shell: bash
+        run: |
+          evidence="$RUNNER_TEMP/issue32/evidence/baseline.json"
+          if [[ -f "$evidence" ]]; then cat "$evidence"; fi
       - name: Upload synthetic startup evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
