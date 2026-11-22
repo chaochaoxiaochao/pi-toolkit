@@ -25,6 +25,10 @@ const herdr = new CliHerdrAutomation(binary);
 try {
 	for (const [processes, expected] of [
 		[[{ name: "pi" }], true],
+		[[{ name: "node", argv0: "pi" }], true],
+		[[{ name: "node", argv0: "pi", argv: [] }], true],
+		[[{ name: "node", argv0: "node" }], false],
+		[[{ name: "node", argv0: "piper" }], false],
 		[[{ name: "node", argv: ["node", "/opt/pi-coding-agent/dist/cli.js"] }], true],
 		[[{ name: "node", argv: ["node", "/opt/pi-coding-agent/dist/bundle/cli.js"] }], true],
 		[[{ name: "node", argv: ["node", "/tmp/cli.js"] }], false],
