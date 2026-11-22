@@ -77,7 +77,7 @@ jobs:
           export PATH="$target/node_modules/.bin:$PATH"
           cp -R "$GITHUB_WORKSPACE/packages/herdr-subagents" "$target/candidate-package"
           python3 scripts/issue32/pty-run.py "$target/herdr" "$target/candidate-package" "$target/evidence/candidate.json"
-      - name: Validate both release tarballs and run real concurrent Herdr acceptance
+      - name: Validate release tarballs and true Herdr concurrency (pinned Pi)
         shell: bash
         run: |
           set -euo pipefail
