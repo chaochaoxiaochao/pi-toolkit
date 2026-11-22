@@ -57,7 +57,7 @@ interface HerdrResponse {
 		root_pane?: { pane_id?: string };
 		pane?: { pane_id?: string };
 		agent?: { status?: string; agent_status?: string };
-		process_info?: { foreground_processes?: Array<{ name?: string; argv?: string[] }> };
+		process_info?: { foreground_processes?: Array<{ name?: string; argv0?: string; argv?: string[] }> };
 	};
 }
 
@@ -225,7 +225,9 @@ export class CliHerdrAutomation implements HerdrAutomation {
 		try {
 			const response = parseResponse(await runCommand(this.binary, ["pane", "process-info", "--pane", paneId], signal), "herdr pane process-info");
 			return (response.result?.process_info?.foreground_processes ?? []).some((process) => {
-				if (process.name === "pi") return true;
+				// On macOS the Node executable is `node`, while its runtime title is `pi`.
+				// Herdr can expose that title as argv0 even when the full argv is unavailable.
+				if (process.name === "pi" || process.argv0 === "pi") return true;
 				return (process.argv ?? []).some((argument) => {
 					const normalized = argument.replaceAll("\\", "/");
 					const file = normalized.split("/").at(-1);
