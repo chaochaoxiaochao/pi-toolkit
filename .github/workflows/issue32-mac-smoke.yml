@@ -8,14 +8,14 @@ permissions:
 jobs:
   mac-arm64:
     runs-on: macos-15
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: "24"
+          node-version: "24.22.3"
       - name: Install pinned runtime
         shell: bash
         run: |
@@ -29,7 +29,17 @@ jobs:
           chmod 755 "$target/herdr"
           "$target/herdr" --version | grep -Fx "herdr 0.9.5"
           HOME="$target/version-home" PI_CODING_AGENT_DIR="$target/version-agent" "$target/node_modules/.bin/pi" --version | grep -Fx "1.5.2"
-      - name: Run real Herdr and Pi startup with offline fixture
+      - name: Candidate deterministic contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/issue32"
+          mkdir -p "$target/test-home" "$target/test-agent"
+          export HOME="$target/test-home" PI_CODING_AGENT_DIR="$target/test-agent"
+          export PI_TEST_BINARY="$target/node_modules/.bin/pi"
+          export PATH="$target/node_modules/.bin:$PATH"
+          npm --prefix packages/herdr-subagents test
+      - name: Baseline published 0.10.1 Mac smoke (known failing control)
         shell: bash
         run: |
           set -euo pipefail
@@ -37,18 +47,49 @@ jobs:
           export PATH="$target/node_modules/.bin:$PATH"
           # Node does not strip TypeScript under node_modules. Use unchanged npm files.
           cp -R "$target/node_modules/@maxiaochao/pi-herdr-subagents" "$target/released-package"
-          python3 scripts/issue32/pty-run.py "$target/herdr" "$target/released-package" "$target/evidence/baseline.json"
+          if python3 scripts/issue32/pty-run.py "$target/herdr" "$target/released-package" "$target/evidence/baseline.json"; then
+            echo "Expected published 0.10.1 baseline to reproduce issue 32"
+            exit 1
+          fi
+          node - "$target/evidence/baseline.json" <<'NODE'
+          const assert = require("node:assert/strict");
+          const trace = JSON.parse(require("node:fs").readFileSync(process.argv[2], "utf8"));
+          for (const n of [1,2,3]) {
+            const events = trace.filter(x => x.round === n);
+            const start = events.find(x => x.kind === "start");
+            const probe = events.find(x => x.kind === "probe");
+            const classified = events.find(x => x.event === "isTaskRunning-end");
+            const settled = events.find(x => x.event === "settled");
+            assert(start?.ready && start.status === "idle");
+            assert(probe?.foreground.some(p => p.name === "node" && p.argv0 === "pi" && p.argvCount === 0));
+            assert.equal(classified?.alive, false);
+            assert.equal(settled?.error, "Child Pi exited without submitting a subagent_report.");
+            assert.equal(settled?.requests, 0);
+            assert.equal(settled?.attemptIdPresent, false);
+          }
+          console.log("Published baseline reproduced the exact issue 32 classifier failure in 3/3 rounds");
+          NODE
+      - name: Candidate Mac smoke (branch implementation)
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/issue32"
+          export PATH="$target/node_modules/.bin:$PATH"
+          cp -R "$GITHUB_WORKSPACE/packages/herdr-subagents" "$target/candidate-package"
+          python3 scripts/issue32/pty-run.py "$target/herdr" "$target/candidate-package" "$target/evidence/candidate.json"
       - name: Print redacted synthetic evidence
         if: always()
         shell: bash
         run: |
-          evidence="$RUNNER_TEMP/issue32/evidence/baseline.json"
-          if [[ -f "$evidence" ]]; then cat "$evidence"; fi
+          for label in baseline candidate; do
+            evidence="$RUNNER_TEMP/issue32/evidence/$label.json"
+            if [[ -f "$evidence" ]]; then echo "$label JSON"; cat "$evidence"; echo; fi
+          done
       - name: Upload synthetic startup evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: issue32-arm64-baseline
+          name: issue32-arm64-baseline-and-candidate
           path: ${{ runner.temp }}/issue32/evidence/
           if-no-files-found: ignore
           retention-days: 3
