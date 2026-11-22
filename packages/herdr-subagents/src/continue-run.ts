@@ -63,8 +63,7 @@ async function continueQueuedTasks(runDirectory: string, runFile: string, herdr:
 			Object.assign(task, { tabId: run.tabId, paneId, paneLabel, agentName, attempt: Number(task.attempt ?? 0) + 1, startedAt: new Date().toISOString() });
 			await writeJsonAtomic(taskFile, task);
 			await options.onUpdate?.();
-			const prompted = await promptLiveAgent({ herdr, task: { ...task, id: task.id, sessionFile: task.sessionFile }, paneId, prompt: task.prompt, systemPromptFile: join(directory, "system-prompt.md"), agentName, signal: options.signal, stalledWarningMs: run.stalledWarningSeconds ? Number(run.stalledWarningSeconds) * 1000 : undefined, onStalled: () => options.onStalled?.(`${task.name ?? task.agent} appears stalled; it is still running.`) });
-			task.currentAttemptId = prompted.attemptId;
+			const prompted = await promptLiveAgent({ herdr, task: { ...task, id: task.id, sessionFile: task.sessionFile }, paneId, prompt: task.prompt, systemPromptFile: join(directory, "system-prompt.md"), agentName, signal: options.signal, stalledWarningMs: run.stalledWarningSeconds ? Number(run.stalledWarningSeconds) * 1000 : undefined, onStalled: () => options.onStalled?.(`${task.name ?? task.agent} appears stalled; it is still running.`), onAttemptPersisted: (id) => { task.currentAttemptId = id; } });
 			applyReport(task, prompted.report);
 		} catch (error) {
 			await settleAttemptFailure(task, reportFile, {
