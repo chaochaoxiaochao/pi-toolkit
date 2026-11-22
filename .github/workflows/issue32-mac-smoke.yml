@@ -69,7 +69,7 @@ jobs:
           }
           console.log("Published baseline reproduced the exact issue 32 classifier failure in 3/3 rounds");
           NODE
-      - name: Candidate Mac smoke (branch implementation)
+      - name: Candidate Mac smoke (two-gate refactor)
         shell: bash
         run: |
           set -euo pipefail
