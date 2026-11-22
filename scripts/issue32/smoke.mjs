@@ -1,7 +1,7 @@
 // Published parent implementation + real Herdr; model responses are synthetic loopback SSE.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -13,6 +13,47 @@ const selfTest = process.env.ISSUE32_PROVIDER_SELFTEST === "1";
 if (!selfTest) {
  assert.equal(process.env.HERDR_ENV, "1");
  assert.ok(process.env.HERDR_WORKSPACE_ID);
+}
+// Capture buffered stdout of the exact existing command in memory; no retries/probes added.
+const captured = [];
+if (!selfTest) {
+ const file = join(packagePath, "src/herdr.ts");
+ let source = readFileSync(file, "utf8");
+ const start = 'await runCommand(this.binary, ["agent", "start", request.name, "--kind", request.kind, "--pane", request.paneId, "--", ...request.args], request.signal);';
+ const probe = 'const response = parseResponse(await runCommand(this.binary, ["pane", "process-info", "--pane", paneId], signal), "herdr pane process-info");';
+ assert.equal(source.split(start).length, 2);
+ assert.equal(source.split(probe).length, 2);
+ source = source.replace(start, 'const stdout = ' + start + '\n\t\t(globalThis as any).__issue32Capture("start", stdout);');
+ source = source.replace(probe, 'const stdout = await runCommand(this.binary, ["pane", "process-info", "--pane", paneId], signal);\n\t\t\t(globalThis as any).__issue32Capture("probe", stdout);\n\t\t\tconst response = parseResponse(stdout, "herdr pane process-info");');
+ const region = source.indexOf("async isTaskRunning(paneId:");
+ assert.ok(region >= 0);
+ source = source.slice(0, region) + source.slice(region).replace('} catch (error) {', '} catch (error) {\n\t\t\t(globalThis as any).__issue32Capture("probe-error", error);');
+ globalThis.__issue32Capture = (kind, raw) => { if (captured.length < 20) captured.push({kind, raw, at:performance.now()}); };
+ writeFileSync(file, source);
+}
+function safeName(value) {
+ const name=String(value??"").replaceAll("\\","/").split("/").at(-1);
+ return /^(pi|node|zsh|-zsh|bash|-bash|env|sh|-sh|herdr|cli\.js)$/i.test(name)?name:(name?"other":null);
+}
+function safeReply({kind,raw,at}, session, began) {
+ const result={kind,observedMs:Math.round(at-began)};
+ if(kind==="probe-error"){
+  return {...result,unknownPane:/pane[_ -]?not[_ -]?found|unknown pane/i.test(String(raw?.message)+" "+String(raw?.stderr)),errorCode:Number.isInteger(raw?.code)?raw.code:null};
+ }
+ let data;
+ try{data=JSON.parse(raw)}catch{return {...result,invalidJSON:true};}
+ if(kind==="start"){
+  const a=data.result?.agent;
+  return {...result,ready:a?.interactive_ready===true,status:["idle","done","working","unknown","blocked"].includes(a?.agent_status)?a.agent_status:null};
+ }
+ const p=data.result?.process_info;
+ return {...result,hasProcessInfo:!!p,shellPid:p?.shell_pid??null,foregroundGroup:p?.foreground_process_group_id??null,
+  foreground:(p?.foreground_processes??[]).map(x=>({
+   pid:x.pid??null,name:safeName(x.name),argv0:safeName(x.argv0),argv0Present:typeof x.argv0==="string",argv0HasPiPath:typeof x.argv0==="string"&&/pi-coding-agent\/dist\/bundle\/|(?:^|\/)pi$/.test(x.argv0),
+   argvCount:x.argv?.length??0,argvFirst:safeName(x.argv?.[0]),nameMatch:x.name==="pi",
+   argvMatchesPublished:(x.argv??[]).some(arg=>{const n=String(arg).replaceAll("\\","/");return n.split("/").at(-1)==="pi" || (/pi-coding-agent/.test(n)&&/(?:^|\/)cli\.js$/.test(n)) || /pi-coding-agent\/dist\/bundle\//.test(n);}),
+   sessionMatch:!!session&&(x.argv??[]).includes(session),
+  }))};
 }
 const { runHerdrSubagentsBatch } = await import(pathToFileURL(join(packagePath, "src/batch-runner.ts")));
 const { CliHerdrAutomation } = await import(pathToFileURL(join(packagePath, "src/herdr.ts")));
@@ -58,11 +99,27 @@ try {
   began=performance.now();
   const requestsBefore=requests;
   const herdr=new CliHerdrAutomation();
+  captured.length=0;
+  let session;
+  const previousClose=herdr.closeTab.bind(herdr);
+  herdr.closeTab=async (...args)=>{
+   if(session){
+    // Independent corroboration only after the failure/report decision, not used by the classifier.
+    const ps=spawnSync("/bin/ps",["-axo","pid=,ppid=,pgid=,comm=,args="],{encoding:"utf8",timeout:1200,maxBuffer:4194304});
+    const sessionProcesses=(ps.stdout??"").split("\n").filter(l=>l.includes(session)).map(l=>{
+     const v=l.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+/);
+     return v?{pid:Number(v[1]),ppid:Number(v[2]),pgid:Number(v[3]),name:safeName(v[4])}:null;
+    }).filter(Boolean);
+    event("after-decision-before-close",{sessionProcesses,psOK:ps.status===0});
+   }
+   return previousClose(...args);
+  };
   for(const method of ["startAgent","promptAgent","isTaskRunning"]){
    const original=herdr[method].bind(herdr);
    let seen=0;
    herdr[method]=async (...args)=>{
     const poll=++seen;
+    if(method==="startAgent"){const argv=args[0]?.args??[];const pos=argv.indexOf("--session");if(pos>=0)session=argv[pos+1];}
     if(method!=="isTaskRunning" || poll<=4) event(method+"-begin",{poll});
     try{
      const result=await original(...args);
@@ -82,6 +139,7 @@ try {
    assert.equal(record.currentAttemptId,report.attemptId);
    assert.ok(record.currentAttemptId && requests>requestsBefore);
   }catch(err){failures.push("round "+round+": "+err.message);event("failed",{error:String(err)});}
+  finally { for (const item of captured) event("native-reply",safeReply(item,session,began)); }
  }
  if(failures.length) throw new Error(failures.join("; "));
 } finally {
