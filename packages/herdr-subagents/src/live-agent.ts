@@ -77,6 +77,7 @@ export async function promptLiveAgent(options: {
 	stalledWarningMs?: number;
 	onStalled?: () => void;
 	onRuntimeUpdate?: (task: TaskRecord) => void | Promise<void>;
+	onAttemptPersisted?: (attemptId: string) => void;
 	attemptId?: string;
 }): Promise<{ report: PersistedReport; agentName: string; attemptId: string }> {
 	const taskDirectory = dirname(options.task.sessionFile);
@@ -91,6 +92,7 @@ export async function promptLiveAgent(options: {
 	const durableTask = JSON.parse(await readFile(taskFile, "utf8")) as Record<string, unknown>;
 	durableTask.currentAttemptId = attemptId;
 	await writeJsonAtomic(taskFile, durableTask);
+	options.onAttemptPersisted?.(attemptId);
 	const agentName = options.agentName ?? liveAgentName(options.task.id);
 	if (options.start !== false) await options.herdr.startAgent({
 		name: agentName, kind: "pi", paneId: options.paneId,
