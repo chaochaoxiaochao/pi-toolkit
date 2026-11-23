@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-11-23 - v0.11.0
 
+- Fix false child exit detection on macOS when Herdr reports Pi only in argv0, and preserve the attempt ID on startup failure. (#32)
 - Remove the built-in `analyst` Persona and its selection guidance. Keep `explorer`, `reviewer`, and `worker`; Agent Team selects a read-only role by task. Smoke tests and media now use reviewer configuration. Move any `personas.analyst` settings to the selected remaining Persona; custom definitions named `analyst` remain supported, but no implicit alias or configuration migration is added. Fix smoke focus restoration across workspaces by restoring the caller workspace's selected tab before global focus.
 
 ## 2026-11-03 - v0.10.1
