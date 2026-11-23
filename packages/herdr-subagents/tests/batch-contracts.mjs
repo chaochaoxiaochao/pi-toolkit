@@ -1,16 +1,17 @@
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mock } from "node:test";
 import { runHerdrSubagentsBatch } from "../src/batch-runner.ts";
+import { continueQueuedRun } from "../src/continue-run.ts";
 import { executeHerdrSubagents, executeHerdrSubagentsControl } from "../src/tool.ts";
 import { HERDR_ACTIONS, validateControlParams } from "../src/validation.ts";
 import { listSubagentHistory } from "../src/history.ts";
 import { aggregateTaskStatus } from "../src/run-status.ts";
 import { isAbortError } from "../src/errors.ts";
 import registerReport from "../extensions/subagent-report.ts";
-import { batchFixture, batchTask, readJson, readTask, waitGate, writeJson } from "./fixtures/herdr.mjs";
+import { batchFixture, batchTask, durableRun, readJson, readTask, waitGate, writeJson } from "./fixtures/herdr.mjs";
 
 process.env.HERDR_ENV = "1";
 process.env.HERDR_WORKSPACE_ID = "test-workspace";
@@ -80,7 +81,18 @@ console.log("PASS public failed-plus-cancelled batch returns partial with matchi
 for (const method of ["createTab", "splitPane", "startAgent"]) {
 	const f = batchFixture();
 	const failures = [];
-	f.herdr[method] = async (...args) => { failures.push(args); throw new Error(`${method}: uncertain result`); };
+	const attemptsAtStart = new Map();
+	f.herdr[method] = async (...args) => {
+		failures.push(args);
+		if (method === "startAgent") {
+			const argv = args[0].args;
+			const directory = dirname(argv[argv.indexOf("--session") + 1]);
+			const attempt = readTask(directory).currentAttemptId;
+			assert.match(attempt, /^[0-9a-f-]{36}$/i);
+			attemptsAtStart.set(directory, attempt);
+		}
+		throw new Error(`${method}: uncertain result`);
+	};
 	try {
 		const result = await runHerdrSubagentsBatch(["one", "two", "three"].map((name) => batchTask(name)), options(f));
 		assert.ok(["partial", "failed"].includes(result.status));
@@ -91,12 +103,40 @@ for (const method of ["createTab", "splitPane", "startAgent"]) {
 		const delivered = f.calls.filter(([name]) => name === "promptAgent");
 		assert.equal(delivered.length, method === "splitPane" ? 1 : 0);
 		assert.equal(readJson(join(result.recordDirectory, "run.json")).status, result.status);
-		for (const task of result.tasks) assert.equal(readTask(task.recordDirectory).status, task.status);
+		for (const task of result.tasks) {
+			const record = readTask(task.recordDirectory);
+			assert.equal(record.status, task.status);
+			if (method === "startAgent") {
+				assert.ok(attemptsAtStart.has(task.recordDirectory));
+				assert.equal(record.currentAttemptId, attemptsAtStart.get(task.recordDirectory), "startup failure must preserve the persisted attempt identity");
+			}
+		}
 		assert.equal(existsSync(join(result.recordDirectory, ".queue.lock")), false);
 		assert.equal(existsSync(join(result.recordDirectory, ".state.lock")), false);
 	} finally { f.close(); }
 }
 console.log("PASS create/split/start uncertain failures never duplicate execution and all workers settle durably");
+
+{
+	const f = batchFixture();
+	try {
+		const queued = durableRun(f.root, "resume-queue", "running", { cwd: f.root, paneIds: [], tabId: undefined, effectiveConcurrency: 1 });
+		writeJson(queued.taskFile, { ...queued.task, status: "queued", prompt: "Run resumed queue fixture." });
+		let attempt;
+		f.herdr.startAgent = async () => {
+			attempt = readTask(queued.taskDirectory).currentAttemptId;
+			assert.match(attempt, /^[0-9a-f-]{36}$/i);
+			throw new Error("resumed queue launch failed");
+		};
+		await continueQueuedRun(queued.directory, f.herdr, { cleanup: false });
+		const settled = readTask(queued.taskDirectory);
+		assert.equal(settled.status, "failed");
+		assert.equal(settled.error, "resumed queue launch failed");
+		assert.equal(settled.currentAttemptId, attempt);
+	} finally { f.close(); }
+}
+console.log("PASS failed continued queue launch retains the attempt identity");
+
 
 for (const [label, report] of [
 	["json", "{broken"], ["status", { status: "unknown", summary: "bad", documents: [] }],

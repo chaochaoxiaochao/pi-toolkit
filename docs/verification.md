@@ -1,5 +1,11 @@
 # Package split verification
 
+## macOS arm64 Herdr startup regression (2026-11-23)
+
+- [Issue #32](https://github.com/chaochaoxiaochao/pi-toolkit/issues/32): Herdr reported Pi ready on macOS, but exposed it as `name: "node"`, `argv0: "pi"` with no full argument list. The parent misclassified it as exited. The fix recognizes the exact Pi title and keeps the durable attempt ID when startup fails in a new or continued batch.
+- [macOS arm64 run 45012775753](https://github.com/chaochaoxiaochao/pi-toolkit/actions/runs/45012775753) tested Herdr 0.9.5 and Pi 1.5.2. The published 0.10.1 control reproduced the failure in 3/3 runs before any model request. The candidate completed 3/3 runs with the expected session file and matching task/report attempt IDs.
+- The same run passed package tests, source loading, dry-run packs for the child and toolkit, and native Herdr serial and read-only concurrent batch checks with focus-aware tab cleanup. The release candidate retains the maintained regressions; the one-off diagnostic harness remains on its branch.
+
 ## Verified Scheduler shortcut publication (2026-11-17)
 
 - Source commit `652dc00` added the shortcut. The coordinated release script passed the final-version checks and atomically pushed `main`, `scheduler-v0.1.2` and `v0.15.3`; both tags point to release commit `df874498789cebca4eed99fdd81e483af62c01a6`.
