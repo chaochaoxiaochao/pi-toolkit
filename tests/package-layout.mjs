@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 const root = JSON.parse(readFileSync("package.json", "utf8"));
 const children = [
+  ["claude-cage", "@maxiaochao/pi-claude-cage", "extensions/claude-cage.ts", false],
   ["todo", "@maxiaochao/pi-todo", "extensions/todo.ts", false],
   ["cache-export", "@maxiaochao/pi-cache-export", "extensions/cache-export.ts", true],
   ["codex-edit", "@maxiaochao/pi-codex-edit", "extensions/codex-edit.ts", true],

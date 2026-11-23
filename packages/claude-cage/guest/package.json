@@ -1,0 +1,12 @@
+{
+  "name": "pi-claude-cage-guest",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "1.6.0"
+  }
+}

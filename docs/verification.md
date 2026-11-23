@@ -1,5 +1,12 @@
 # Package split verification
 
+## Claude Cage: standalone host extension and packaged Linux guest (2026-11-23)
+
+- Pi 1.6.0, Node 22 host: deterministic host/client/service tests, extension loading, root test suite, root loadout and both dry-run packs passed. The child tarball contains the guest lockfile and both systemd units; the root tarball does not contain this provider.
+- Isolated installer test: temporary HOME, simulated systemctl for install and reinstall; real systemd socket activation, pinned upstream `d5b5e04`, fake Claude and loopback model responses. Tool IDs survived cold replay; linear turns reused the CLI. Cancellation, billing rejection, refusal of stdout-only success and no host-side retry after disconnect were exercised.
+- Real Cage Wired 0.2.0-wired.1 on Linux, Debian 13 guest: systemd user manager reachable; guest Claude CLI `2.1.330` responds to `--version`. Real Cage stdio, guest Unix socket and mock model completed multiple turns with distinct tool IDs and cleaned up after cancellation. No persistent deployment or real Claude login, discovery or model request in this acceptance.
+- Gallery: generated the Claude Cage PNG/GIF from a real bridge session with a mock model. Reproduction commands and remaining live-account checks: [Claude Cage TESTING](../packages/claude-cage/TESTING.md).
+
 ## macOS arm64 Herdr startup regression (2026-11-23)
 
 - [Issue #32](https://github.com/chaochaoxiaochao/pi-toolkit/issues/32): Herdr reported Pi ready on macOS, but exposed it as `name: "node"`, `argv0: "pi"` with no full argument list. The parent misclassified it as exited. The fix recognizes the exact Pi title and keeps the durable attempt ID when startup fails in a new or continued batch.

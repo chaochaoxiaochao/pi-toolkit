@@ -25,6 +25,7 @@ def has_cjk(text):
                for character in text)
 
 PACKAGES = {
+    "claude-cage": ("Pi Claude Cage", "Real host bridge and guest socket; isolated model fixture"),
     "todo": ("Pi Todo", "Production state-machine output"),
     "scheduler": ("Pi Scheduler", "Production scheduler with deterministic time"),
     "codex-edit": ("Pi Codex Edit", "Production parser and patch application"),

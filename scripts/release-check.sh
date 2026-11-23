@@ -39,6 +39,11 @@ if [[ -n "$SLUG" ]]; then
     run npm --prefix "$PACKAGE_DIR" run load-test
   fi
 
+  if [[ "$SLUG" == claude-cage ]]; then
+    run npm --prefix "$PACKAGE_DIR" run test:upstream
+    run npm --prefix "$PACKAGE_DIR" run test:wired
+  fi
+
   echo "==> release check: child package contents: $SLUG"
   run npm pack "./$PACKAGE_DIR" --dry-run
 else

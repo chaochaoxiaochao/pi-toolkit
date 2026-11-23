@@ -1,0 +1,20 @@
+{
+  "name": "@maxiaochao/pi-claude-cage",
+  "version": "0.1.0",
+  "description": "Use a guest-local Claude Code provider through Claude Cage while Pi executes tools on the host.",
+  "type": "module",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/chaochaoxiaochao/pi-toolkit.git", "directory": "packages/claude-cage" },
+  "keywords": ["pi-package", "claude-cage"],
+  "files": ["extensions", "src", "guest", "tests", "docs", "README.md", "TESTING.md", "CHANGELOG.md"],
+  "pi": { "extensions": ["./extensions/claude-cage.ts"] },
+  "engines": { "node": ">=22.19.0" },
+  "peerDependencies": { "@earendil-works/pi-ai": ">=1.6.0", "@earendil-works/pi-coding-agent": ">=1.6.0" },
+  "scripts": {
+    "test": "node --test tests/host.test.mjs guest/guest.test.mjs",
+    "load-test": "pi -ne -ns --no-session -e ./extensions/claude-cage.ts",
+    "test:upstream": "bash tests/installed-upstream.sh",
+    "test:wired": "node tests/wired-smoke.mjs --run"
+  },
+  "publishConfig": { "access": "public" }
+}

@@ -1,0 +1,11 @@
+[Unit]
+Description=Private socket for the Pi Claude Cage guest
+
+[Socket]
+ListenStream=%t/pi-claude-cage/service.sock
+DirectoryMode=0700
+SocketMode=0600
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

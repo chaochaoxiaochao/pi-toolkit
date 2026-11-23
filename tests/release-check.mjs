@@ -9,7 +9,7 @@ import { join } from "node:path";
 const root = mkdtempSync(join(tmpdir(), "release-routing-"));
 mkdirSync(join(root, "scripts"));
 copyFileSync(new URL("../scripts/release-check.sh", import.meta.url), join(root, "scripts/release-check.sh"));
-for (const slug of ["openai-account-pool", "background-tasks", "herdr-subagents", "worktree"]) {
+for (const slug of ["claude-cage", "openai-account-pool", "background-tasks", "herdr-subagents", "worktree"]) {
 	mkdirSync(join(root, "packages", slug), { recursive: true });
 	copyFileSync(new URL(`../packages/${slug}/package.json`, import.meta.url), join(root, "packages", slug, "package.json"));
 }
@@ -26,6 +26,9 @@ function plan(slug, extraEnv = {}) {
 }
 
 try {
+	const cage = plan("claude-cage");
+	assert.match(cage, /npm --prefix packages\/claude-cage run test:upstream/);
+	assert.match(cage, /npm --prefix packages\/claude-cage run test:wired/);
 	const accountPool = plan("openai-account-pool");
 	assert.match(accountPool, /node tests\/package-layout\.mjs/);
 	assert.match(accountPool, /npm --prefix packages\/openai-account-pool test/);

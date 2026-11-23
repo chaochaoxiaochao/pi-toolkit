@@ -1,3 +1,7 @@
+## Unreleased
+
+- Add optional `pi-claude-cage` (separate install; does not change the bundled loadout).
+
 ## 2026-11-23 - v0.15.4
 
 - herdr-subagents v0.11.0: Fix false child exit detection on macOS when Herdr reports Pi only in argv0, and preserve the attempt ID on startup failure. (#32)

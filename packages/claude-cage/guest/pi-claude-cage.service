@@ -1,0 +1,15 @@
+[Unit]
+Description=Pi Claude Cage guest
+Requires=pi-claude-cage.socket
+After=pi-claude-cage.socket
+
+[Service]
+Type=simple
+WorkingDirectory=%t/pi-claude-cage
+ExecStart="%h/.local/share/pi-claude-cage/node" --experimental-transform-types "%h/.local/share/pi-claude-cage/service.mjs"
+Environment="HOME=%h"
+EnvironmentFile=-%h/.config/pi-claude-cage/environment
+UnsetEnvironment=NODE_OPTIONS NODE_PATH LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT
+UMask=0077
+Restart=on-failure
+TimeoutStopSec=10s

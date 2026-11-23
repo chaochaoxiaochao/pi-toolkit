@@ -15,6 +15,14 @@ rmSync(captureDir, { recursive: true, force: true });
 mkdirSync(captureDir, { recursive: true });
 const pages = (name, values) => writeFileSync(join(captureDir, `${name}.json`), JSON.stringify(values, null, 2));
 
+// Capture schema, tool calls and replies from an isolated bridge session (mock model).
+if (wanted("claude-cage")) {
+  execFileSync(process.execPath, ["--test", "--test-name-pattern=one profile carries",
+    "packages/claude-cage/tests/host.test.mjs"], {
+    cwd: root, stdio: "inherit", env: { ...process.env, CAGE_CAPTURE_MEDIA: join(captureDir, "claude-cage.json") },
+  });
+}
+
 // Background Tasks: real Pi PTY regression, then browser-rendered terminal clicks.
 if (wanted("background-tasks")) {
   const output = join(captureDir, "background-live");
