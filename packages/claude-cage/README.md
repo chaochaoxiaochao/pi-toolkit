@@ -2,9 +2,38 @@
 
 Use the host's Pi tools and build environment with Claude Code installed in a **running Linux Cage VM**. This optional provider does not replace the `claude-code` provider. No host Claude executable is needed. The guest uses [pi-claude-code](https://github.com/earendil-works/pi-claude-code/tree/d5b5e04c314d3452d357174d16d10dda34daa2d2) for transcript conversion, CLI launch, billing checks and response streaming.
 
-```text
-host Pi — cage run (stdio) — guest client — private Unix socket — guest Node service
-                                                                      └─ upstream adapter + CLI + relay → Anthropic
+## Where each component runs
+
+```mermaid
+flowchart TB
+    subgraph Host[Host machine]
+        Pi["Pi"]
+        Tools["Host tools: read, bash, builds"]
+        Provider["pi-claude-cage · Pi provider"]
+        Cage["Cage CLI · cage run"]
+        Pi <-->|tool calls and results| Tools
+        Pi <-->|transcript and model events| Provider
+        Provider <-->|NDJSON over stdio| Cage
+    end
+
+    subgraph Guest[Cage Linux VM]
+        Client["Short-lived Node client · client.mjs"]
+        Socket["Private Unix socket · systemd user activation"]
+        subgraph Service[Persistent Node service]
+            Handler["Bridge · service.mjs"]
+            Adapter["Pinned pi-claude-code adapter"]
+            Relay["Upstream loopback relay"]
+        end
+        Claude["Official Claude Code CLI · claude -p"]
+        Client <--> Socket
+        Socket <--> Handler
+        Handler <-->|calls adapter and streams events| Adapter
+        Adapter <-->|launches CLI and streams events| Claude
+        Claude <-->|model request and response| Relay
+    end
+
+    Cage <-->|guest stdio| Client
+    Relay <-->|HTTPS| Anthropic["Anthropic model service"]
 ```
 
 The **service** persists across calls. The stdio client is disposable; one call does not hold a Cage terminal open indefinitely. The upstream adapter owns CLI process reuse. Pi executes tool calls on the host and supplies the matching tool results in subsequent turns. Tool outputs become model input; this does not sandbox host tools. No LAN listener or extra project share is needed.
@@ -68,7 +97,21 @@ Merge this into existing settings. Keep any other sources that the Persona needs
 
 ## Update and stop
 
-Run `pi update npm:@maxiaochao/pi-claude-cage` (or update the local checkout), then `/reload`. Rerun `/claude-cage-setup` to deploy the matching guest revision. Do not update the installed guest source separately. Protocol mismatches fail. Active guest turns can be interrupted by an upgrade. To stop the guest endpoint, run `systemctl --user disable --now pi-claude-cage.socket` then `systemctl --user stop pi-claude-cage.service` **inside the VM**. Removing the host extension alone does not uninstall guest files. See [guest setup](guest/SETUP.md) and [verification](TESTING.md).
+### Update the host and guest bridge together
+
+Run `pi update npm:@maxiaochao/pi-claude-cage` (or update the local checkout), then `/reload`. When no Cage turns are active, run `/claude-cage-setup` and confirm to deploy the matching guest files. The host update by itself does not change the guest. Protocol mismatches fail rather than falling back to a different provider.
+
+### Update the upstream adapter
+
+[The guest installer](guest/install.sh) pins an exact `pi-claude-code` Git commit. Setup downloads that commit and copies its source into `~/.local/share/pi-claude-cage/upstream/` **inside the VM**. Check `upstream/REVISION` in that directory to see what is installed. This is not a Pi package installation. Updating or removing a host `pi-claude-code` plugin does not affect it.
+
+To ship a newer upstream adapter, a maintainer changes the pin, updates the guest dependency lockfile if needed, and runs the [package acceptance checks](TESTING.md) before releasing `pi-claude-cage`. Users then follow the host and guest update steps above. Rerunning setup on the same package version reinstalls the same pin; it does not fetch upstream `HEAD`.
+
+The **official Claude Code CLI** is a separate guest installation. The bridge does not install, pin, or update that CLI.
+
+### Stop the guest endpoint
+
+Inside the VM, run `systemctl --user disable --now pi-claude-cage.socket`, then `systemctl --user stop pi-claude-cage.service`. Removing the host extension alone does not uninstall guest files. See [guest setup](guest/SETUP.md).
 
 ![Tool result delivered to host Pi](docs/screenshot.png)
 
