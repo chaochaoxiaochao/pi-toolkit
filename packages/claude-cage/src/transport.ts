@@ -1,36 +1,63 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { accessSync, constants, statSync } from "node:fs";
 import { finished } from "node:stream/promises";
-import { CLIENT_TIMEOUT_MS, MAX_LINE_BYTES, encode, isRecord as isProtocolRecord } from "../guest/protocol.mjs";
+import { dirname, join } from "node:path";
+import {
+	CLIENT_TIMEOUT_MS, MAX_FRAME_BYTES, PROTOCOL_VERSION, encodeFrame, isRecord as isProtocolRecord,
+	readFrames, writeEncodedFrame, writeFrame,
+} from "../guest/protocol.mjs";
 import type { CageProfile } from "./profile.ts";
 
-const READY = '{"type":"ready","version":1}';
 const MAX_PREAMBLE_BYTES = 128 * 1024;
 const STARTUP_MS = 10_000;
 const METADATA_MS = 35_000;
+const CLEANUP_MS = 12_000;
+const READY = JSON.stringify({ type: "ready", version: PROTOCOL_VERSION });
+const FATAL_PREFIX = "Claude Cage connection failed and is closed.";
+const RELOAD_SUFFIX = "Run /reload before using Claude Cage again.";
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-	return isProtocolRecord(value);
-}
-
-export type CageRequest = { op: "status" | "models" } | { op: "close"; sessionId: string } | {
+export type CageRequest = { op: "status" | "models" } | {
 	op: "turn";
-	sessionId: string;
 	model: object;
 	context: { messages: unknown[] };
 	options: { timeoutMs?: number };
 };
 
-function launch(profile: CageProfile, command: readonly string[]) {
-	try {
-		if (!statSync(profile.config).isFile()) throw new Error();
-		accessSync(profile.config, constants.R_OK);
-		if (!statSync(profile.executable).isFile()) throw new Error();
-		accessSync(profile.executable, constants.X_OK);
-	} catch {
-		throw new Error("Check the Cage executable and profile paths in claude-cage.json");
-	}
+export type RequestOptions = {
+	signal?: AbortSignal;
+	onEvent?: (event: Record<string, unknown>) => void | Promise<void>;
+};
+
+type TranscriptBase = { hash: string; digests: string[] };
+
+type Remaining = AsyncIterable<Buffer>;
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+	return isProtocolRecord(value);
+}
+
+function fatalError(detail: string): Error {
+	return new Error(`${FATAL_PREFIX} ${detail.replace(/[\x00-\x1f\x7f]/g, " ").trim()} ${RELOAD_SUFFIX}`);
+}
+
+function connectionFailure(value: unknown): Error & { connectionFatal: true } {
+	const error = value instanceof Error ? value : new Error(String(value));
+	(error as Error & { connectionFatal?: boolean }).connectionFatal = true;
+	return error as Error & { connectionFatal: true };
+}
+
+export function isFatalConnectionError(value: unknown): boolean {
+	const message = value instanceof Error ? value.message : String(value);
+	return message.startsWith(FATAL_PREFIX);
+}
+
+function checkedFile(path: string, mode: number) {
+	if (!statSync(path).isFile()) throw new Error();
+	accessSync(path, mode);
+}
+
+function hostEnvironment(profile: CageProfile): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = { CLAUDE_CAGE_CONFIG: profile.config };
 	for (const name of [
 		"HOME", "USER", "LOGNAME", "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR",
@@ -38,86 +65,99 @@ function launch(profile: CageProfile, command: readonly string[]) {
 	]) {
 		if (process.env[name] !== undefined) env[name] = process.env[name];
 	}
+	return env;
+}
+
+function launchService(profile: CageProfile): ChildProcessWithoutNullStreams {
+	try {
+		checkedFile(profile.config, constants.R_OK);
+		checkedFile(profile.executable, constants.X_OK);
+	} catch {
+		throw new Error("Check the Cage executable and profile paths in claude-cage.json");
+	}
+	const nodePath = join(dirname(profile.servicePath), "node");
+	const command = [
+		"env", "-u", "NODE_OPTIONS", "-u", "NODE_PATH", "-u", "LD_PRELOAD", "-u", "LD_LIBRARY_PATH", "-u", "LD_AUDIT",
+		nodePath, "--experimental-transform-types", profile.servicePath, "--stdio",
+	];
 	return spawn(profile.executable, ["run", "--workdir", "/tmp", "--", ...command], {
-		env, cwd: "/tmp", stdio: ["pipe", "pipe", "pipe"],
+		env: hostEnvironment(profile), cwd: "/tmp", stdio: ["pipe", "pipe", "pipe"],
 	});
 }
 
-async function waitForClose(child: ChildProcessWithoutNullStreams, closed: Promise<number | null>) {
-	child.stdin.end();
-	child.stdout.resume();
-	const terminate = setTimeout(() => child.kill("SIGTERM"), 300);
-	const kill = setTimeout(() => child.kill("SIGKILL"), 650);
-	let giveUp: NodeJS.Timeout | undefined;
-	try {
-		await Promise.race([closed, new Promise<void>((resolve) => { giveUp = setTimeout(resolve, 1_000); })]);
-	} finally {
-		clearTimeout(terminate);
-		clearTimeout(kill);
-		clearTimeout(giveUp);
-		child.stdin.destroy();
-		child.stdout.destroy();
-		child.stderr.destroy();
-		child.unref();
-	}
+function digest(value: unknown): string {
+	return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-async function runProxy<T>(
-	profile: CageProfile,
-	command: readonly string[],
-	signal: AbortSignal | undefined,
-	run: (io: {
-		child: ChildProcessWithoutNullStreams;
-		signal: AbortSignal;
-		closed: Promise<number | null>;
-		deadline: (ms: number, message: string) => void;
-	}) => Promise<T>,
-): Promise<T> {
-	signal?.throwIfAborted();
-	const child = launch(profile, command);
-	const failure = new AbortController();
-	const active = signal ? AbortSignal.any([signal, failure.signal]) : failure.signal;
-	const closed = new Promise<number | null>((resolve) => child.once("close", resolve));
-	let timer: NodeJS.Timeout | undefined;
-	let hasStderr = false;
-	// Drain diagnostics so they cannot block the proxy. Do not relay guest stderr,
-	// which can contain credentials, escape codes, or arbitrary retry keywords.
-	child.stderr.on("data", () => { hasStderr = true; });
-	child.stderr.on("error", () => {});
-	child.on("error", () => failure.abort(new Error("Could not launch the configured Cage executable")));
-	const abort = () => {
-		child.stdin.end();
-		child.stdout.destroy();
+function transcriptPlan(messages: unknown[], base: TranscriptBase | undefined) {
+	const digests = messages.map(digest);
+	const append = !!base && messages.length >= base.digests.length &&
+		base.digests.every((value, index) => value === digests[index]);
+	return {
+		wire: append
+			? { mode: "append", baseHash: base.hash, messages: messages.slice(base.digests.length) }
+			: { mode: "full", messages },
+		digests,
+		hash: digest(messages),
 	};
-	active.addEventListener("abort", abort, { once: true });
-	function deadline(ms: number, message: string) {
-		clearTimeout(timer);
-		timer = setTimeout(() => failure.abort(new Error(message)), ms);
-	}
-	// A proxy may write a complete response and exit while the pipe is closing.
-	// Let stdout or the deadline decide whether the response completed.
-	child.stdin.on("error", () => {});
+}
+
+function operationTimeout(request: CageRequest) {
+	if (request.op === "turn") return request.options.timeoutMs === undefined
+		? CLIENT_TIMEOUT_MS : request.options.timeoutMs + 20_000;
+	return METADATA_MS;
+}
+
+async function waitForExit(closed: Promise<number | null>, timeoutMs: number) {
+	let timer: NodeJS.Timeout | undefined;
 	try {
-		const result = await run({ child, signal: active, closed, deadline });
-		active.throwIfAborted();
-		return result;
-	} catch (error) {
-		const reason = active.aborted ? active.reason : error;
-		if (signal?.aborted || !hasStderr) throw reason;
-		const message = reason instanceof Error ? reason.message : "Cage command failed";
-		throw new Error(`${message} (Cage wrote to stderr; inspect the configured profile)`);
+		return await Promise.race([
+			closed,
+			new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), timeoutMs); }),
+		]);
 	} finally {
 		clearTimeout(timer);
-		active.removeEventListener("abort", abort);
-		await waitForClose(child, closed);
 	}
 }
 
-function parseFrame(line: string): unknown {
-	try {
-		return JSON.parse(line);
-	} catch {
-		throw new Error("Invalid JSON from the Cage proxy");
+async function stopChild(child: ChildProcessWithoutNullStreams, closed: Promise<number | null>) {
+	child.stdin.end();
+	if (await waitForExit(closed, CLEANUP_MS) !== undefined) return;
+	child.kill("SIGTERM");
+	if (await waitForExit(closed, 1_000) !== undefined) return;
+	child.kill("SIGKILL");
+	await waitForExit(closed, 1_000);
+}
+
+async function readyStream(child: ChildProcessWithoutNullStreams, signal: AbortSignal): Promise<Remaining> {
+	const iterator = child.stdout[Symbol.asyncIterator]();
+	let pending = Buffer.alloc(0);
+	let consumedBytes = 0;
+	for (;;) {
+		signal.throwIfAborted();
+		const next = await withAbort(iterator.next(), signal);
+		if (next.done) throw new Error("Cage service exited before its ready line");
+		pending = pending.length ? Buffer.concat([pending, next.value]) : next.value;
+		for (;;) {
+			const newline = pending.indexOf(10);
+			if (newline < 0) break;
+			const line = pending.subarray(0, newline).toString("utf8");
+			pending = pending.subarray(newline + 1);
+			consumedBytes += newline + 1;
+			if (consumedBytes > MAX_PREAMBLE_BYTES) throw new Error("Cage service preamble is too large");
+			if (line !== READY) continue;
+			return {
+				async *[Symbol.asyncIterator]() {
+					if (pending.length) yield pending;
+					for (;;) {
+						const item = await iterator.next();
+						if (item.done) return;
+						yield item.value;
+					}
+				},
+			};
+		}
+		if (consumedBytes + pending.length > MAX_PREAMBLE_BYTES) throw new Error("Cage service preamble is too large");
 	}
 }
 
@@ -130,88 +170,261 @@ export function withAbort<T>(task: T | PromiseLike<T>, signal: AbortSignal): Pro
 	});
 }
 
-export async function requestCage(profile: CageProfile, request: CageRequest, options: {
-	signal?: AbortSignal;
-	onSubmit?: () => void;
-	onEvent?: (event: Record<string, unknown>) => void | Promise<void>;
-	startupMs?: number;
-	responseMs?: number;
-} = {}): Promise<unknown> {
-	const id = randomUUID();
-	const input = encode({ ...request, id });
-	return runProxy(profile, ["node", profile.clientPath], options.signal, async ({ child, signal, deadline }) => {
-		const closing = request.op === "close";
-		deadline(options.startupMs ?? (closing ? 4_000 : STARTUP_MS), "Cage proxy did not become ready before its deadline");
-		let ready = false;
-		let preambleBytes = 0;
-		let lineBytes = 0;
-		let parts: Buffer[] = [];
-		for await (const chunk of child.stdout.iterator({ destroyOnReturn: false })) {
-			signal.throwIfAborted();
-			let start = 0;
-			while (start < chunk.length) {
-				const newline = chunk.indexOf(10, start);
-				const end = newline < 0 ? chunk.length : newline;
-				lineBytes += end - start;
-				if (lineBytes > MAX_LINE_BYTES || (!ready && preambleBytes + lineBytes > MAX_PREAMBLE_BYTES)) {
-					throw new Error(ready ? "Cage response line is too large" : "Cage proxy preamble is too large");
+export class CageConnection {
+	#profile: CageProfile;
+	#state: "unopened" | "starting" | "idle" | "busy" | "installing" | "fatal" | "closed" = "unopened";
+	#child?: ChildProcessWithoutNullStreams;
+	#closed?: Promise<number | null>;
+	#frames?: AsyncIterator<unknown>;
+	#failure?: AbortController;
+	#fatal?: Error;
+	#nextId = 0;
+	#base?: TranscriptBase;
+	#launch: (profile: CageProfile) => ChildProcessWithoutNullStreams;
+
+	constructor(profile: CageProfile, options: { launch?: (profile: CageProfile) => ChildProcessWithoutNullStreams } = {}) {
+		this.#profile = profile;
+		this.#launch = options.launch ?? launchService;
+	}
+
+	get state() { return this.#state; }
+	get fatalError() { return this.#fatal; }
+
+	async #start() {
+		if (this.#state === "fatal") throw this.#fatal;
+		if (this.#state === "closed") throw new Error("Claude Cage connection is closed");
+		if (this.#state !== "unopened") return;
+		this.#state = "starting";
+		const failure = new AbortController();
+		this.#failure = failure;
+		let hasStderr = false;
+		try {
+			const child = this.#launch(this.#profile);
+			this.#child = child;
+			this.#closed = new Promise((resolve) => child.once("close", resolve));
+			child.stdin.on("error", () => {});
+			child.stderr.on("data", () => { hasStderr = true; });
+			child.stderr.on("error", () => {});
+			child.on("error", () => failure.abort(new Error("Could not launch the configured Cage executable")));
+			child.once("close", (code) => {
+				if (!["closed", "unopened"].includes(this.#state)) {
+					failure.abort(new Error(`Cage service exited unexpectedly${code === null ? "" : ` (exit ${code})`}`));
 				}
-				parts.push(chunk.subarray(start, end));
-				if (newline < 0) break;
-				const line = Buffer.concat(parts, lineBytes).toString("utf8");
-				start = newline + 1;
-				parts = [];
-				preambleBytes += ready ? 0 : lineBytes + 1;
-				lineBytes = 0;
-				if (!ready) {
-					if (line !== READY) continue;
-					ready = true;
-					deadline(options.responseMs ?? (request.op === "turn" ? CLIENT_TIMEOUT_MS : closing ? 4_000 : METADATA_MS),
-						"Cage request did not complete before its deadline");
-					child.stdin.write(input);
-					options.onSubmit?.();
+			});
+			const startup = AbortSignal.any([failure.signal, AbortSignal.timeout(STARTUP_MS)]);
+			const stream = await readyStream(child, startup);
+			failure.signal.throwIfAborted();
+			this.#frames = readFrames(stream, { maxBytes: MAX_FRAME_BYTES })[Symbol.asyncIterator]();
+			this.#state = "idle";
+		} catch (error) {
+			const detail = error instanceof Error ? error.message : "Cage service startup failed";
+			await this.#becomeFatal(new Error(hasStderr ? `${detail} (Cage wrote to stderr)` : detail));
+			throw this.#fatal;
+		}
+	}
+
+	async #becomeFatal(error: Error) {
+		if (this.#state === "fatal") return;
+		this.#fatal = fatalError(error.message);
+		this.#state = "fatal";
+		this.#base = undefined;
+		this.#failure?.abort(this.#fatal);
+		if (this.#child && this.#closed) await stopChild(this.#child, this.#closed);
+	}
+
+	async request(request: CageRequest, options: RequestOptions = {}): Promise<unknown> {
+		if (this.#state === "fatal") throw this.#fatal;
+		if (this.#state === "busy" || this.#state === "starting" || this.#state === "installing") {
+			throw new Error("Another Claude Cage operation is in progress");
+		}
+		await this.#start();
+		if (this.#state !== "idle" || !this.#child || !this.#frames || !this.#failure) throw new Error("Claude Cage connection is not ready");
+		this.#state = "busy";
+		const id = ++this.#nextId;
+		const turn = request.op === "turn";
+		const planned = turn ? transcriptPlan(request.context.messages, this.#base) : undefined;
+		const frame = turn
+			? { ...request, id, context: undefined, transcript: planned!.wire }
+			: { ...request, id };
+		let submitted = false;
+		let accepted = false;
+		let cancelled = false;
+		let cancelWrite: Promise<void> | undefined;
+		let cancelTimer: NodeJS.Timeout | undefined;
+		let timer: NodeJS.Timeout | undefined;
+		const operationFailure = new AbortController();
+		const active = AbortSignal.any([this.#failure.signal, operationFailure.signal]);
+		const requestAbort = () => {
+			cancelled = true;
+			if (submitted && !cancelWrite) {
+				cancelWrite = writeFrame(this.#child!.stdin, { type: "cancel", id }, { signal: this.#failure!.signal })
+					.then(() => {
+						cancelTimer = setTimeout(() => operationFailure.abort(
+							connectionFailure("Cage did not confirm cancellation cleanup"),
+						), CLEANUP_MS);
+					})
+					.catch((error) => { operationFailure.abort(connectionFailure(error)); });
+			}
+		};
+		options.signal?.addEventListener("abort", requestAbort, { once: true });
+		try {
+			// A user abort never slices a JSON frame. Lifecycle failure may stop it because the connection is already fatal.
+			const body = encodeFrame(frame, MAX_FRAME_BYTES);
+			try {
+				await writeEncodedFrame(this.#child.stdin, body, { signal: this.#failure.signal });
+			} catch (error) {
+				throw connectionFailure(error);
+			}
+			submitted = true;
+			if (cancelled || options.signal?.aborted) requestAbort();
+			timer = setTimeout(() => operationFailure.abort(new Error("Cage request did not complete before its deadline")),
+				operationTimeout(request));
+			for (;;) {
+				let next;
+				try {
+					next = await withAbort(this.#frames.next(), active);
+				} catch (error) {
+					if (active.aborted) throw error;
+					throw connectionFailure(error);
+				}
+				if (next.done) throw connectionFailure("Cage service disconnected before a terminal response");
+				const response = next.value;
+				if (!isRecord(response) || response.id !== id || typeof response.type !== "string") {
+					throw connectionFailure("Cage response did not match the active request");
+				}
+				if (response.type === "accepted" && turn) {
+					if (accepted || typeof response.transcriptHash !== "string" || response.transcriptHash !== planned!.hash) {
+						throw connectionFailure("Cage transcript acceptance did not match the host transcript");
+					}
+					accepted = true;
 					continue;
 				}
-				const frame = parseFrame(line);
-				if (!isRecord(frame) || frame.id !== id) throw new Error("Cage response did not match this request");
-				if (frame.type === "error" && typeof frame.message === "string") {
-					throw new Error(frame.message);
+				if (response.type === "error" && typeof response.message === "string") {
+					this.#base = undefined;
+					if (response.fatal === true) {
+						throw connectionFailure(response.message);
+					}
+					if (cancelled && options.signal?.aborted) throw options.signal.reason;
+					throw new Error(response.message);
 				}
-				if (request.op !== "turn" && frame.type === "value" && Object.hasOwn(frame, "value")) {
-					child.stdin.end();
-					return frame.value;
+				if (!turn && response.type === "value" && Object.hasOwn(response, "value")) {
+					if (options.signal?.aborted) throw options.signal.reason;
+					return response.value;
 				}
-				if (request.op !== "turn" || frame.type !== "event" || !isRecord(frame.event)) {
-					throw new Error("Unexpected response from the Cage proxy");
+				if (!turn || response.type !== "event" || !isRecord(response.event)) {
+					throw connectionFailure("Unexpected response from the Cage service");
 				}
-				if (frame.event.type === "done" || frame.event.type === "error") {
-					child.stdin.end();
-					await withAbort(options.onEvent?.(frame.event), signal);
-					return frame.event;
+				try {
+					await options.onEvent?.(response.event);
+				} catch (error) {
+					if (options.signal?.aborted) throw options.signal.reason;
+					throw connectionFailure(error instanceof Error ? error : "Cage event reconstruction failed");
 				}
-				await withAbort(options.onEvent?.(frame.event), signal);
+				if (response.event.type === "done") {
+					if (!accepted) throw connectionFailure("Cage turn completed before transcript acceptance");
+					this.#base = { hash: planned!.hash, digests: planned!.digests };
+					return response.event;
+				}
+				if (response.event.type === "error") {
+					this.#base = undefined;
+					return response.event;
+				}
 			}
+		} catch (error) {
+			this.#base = undefined;
+			if (options.signal?.aborted && cancelled && !(active.aborted && active.reason !== options.signal.reason)) {
+				throw options.signal.reason;
+			}
+			if (operationFailure.signal.aborted) error = connectionFailure(operationFailure.signal.reason);
+			if (responseIsOperationError(error, this.#failure.signal)) throw error;
+			await this.#becomeFatal(error instanceof Error ? error : new Error("Cage connection failed"));
+			throw this.#fatal;
+		} finally {
+			clearTimeout(timer);
+			options.signal?.removeEventListener("abort", requestAbort);
+			await cancelWrite?.catch(() => {});
+			clearTimeout(cancelTimer);
+			if (this.#state === "busy") this.#state = "idle";
 		}
-		signal.throwIfAborted();
-		throw new Error(ready ? "Cage proxy disconnected before a final response" : "Cage proxy exited before its ready line");
-	});
+	}
+
+	async beginSetup() {
+		if (this.#state === "fatal") throw this.#fatal;
+		if (["busy", "starting", "installing"].includes(this.#state)) throw new Error("Wait for the current Claude Cage operation to finish");
+		if (this.#state === "idle" && this.#child && this.#closed) await stopChild(this.#child, this.#closed);
+		this.#child = undefined;
+		this.#closed = undefined;
+		this.#frames = undefined;
+		this.#failure = undefined;
+		this.#base = undefined;
+		this.#state = "installing";
+	}
+
+	finishSetup() {
+		if (this.#state === "installing") this.#state = "unopened";
+	}
+
+	async shutdown() {
+		if (this.#state === "closed") return;
+		const child = this.#child;
+		const closed = this.#closed;
+		this.#state = "closed";
+		this.#base = undefined;
+		this.#failure?.abort(new Error("Claude Cage session closed"));
+		if (child && closed) await stopChild(child, closed);
+	}
 }
 
-export async function runCageSetupStep(
+function responseIsOperationError(error: unknown, connectionSignal: AbortSignal) {
+	if (connectionSignal.aborted) return false;
+	if (!(error instanceof Error)) return false;
+	if ((error as Error & { connectionFatal?: boolean }).connectionFatal) return false;
+	return true;
+}
+
+export function createCageConnection(profile: CageProfile, options?: ConstructorParameters<typeof CageConnection>[1]) {
+	return new CageConnection(profile, options);
+}
+
+async function runSetupProcess(
 	profile: CageProfile, script: string, input: Buffer | undefined, signal: AbortSignal, timeoutMs: number,
 ): Promise<string> {
-	return runProxy(profile, ["bash", "-c", script], signal, async ({ child, signal: active, closed, deadline }) => {
-		deadline(timeoutMs, "Cage setup step did not complete before its deadline");
-		child.stdin.end(input);
-		const chunks: Buffer[] = [];
-		let bytes = 0;
-		child.stdout.on("data", (chunk: Buffer) => {
-			bytes += chunk.length;
-			if (bytes <= MAX_PREAMBLE_BYTES) chunks.push(chunk);
-			else child.stdout.destroy(new Error("Cage setup output is too large"));
-		});
-		await finished(child.stdout, { signal: active, cleanup: true });
-		if (await withAbort(closed, active) !== 0) throw new Error("Cage setup command failed");
-		return Buffer.concat(chunks).toString("utf8");
+	try {
+		checkedFile(profile.config, constants.R_OK);
+		checkedFile(profile.executable, constants.X_OK);
+	} catch {
+		throw new Error("Check the Cage executable and profile paths in claude-cage.json");
+	}
+	const child = spawn(profile.executable, ["run", "--workdir", "/tmp", "--", "bash", "-c", script], {
+		env: hostEnvironment(profile), cwd: "/tmp", stdio: ["pipe", "pipe", "pipe"],
 	});
+	const closed = new Promise<number | null>((resolve) => child.once("close", resolve));
+	let launchError: Error | undefined;
+	child.once("error", (error) => { launchError = error; });
+	child.stdin.on("error", () => {});
+	child.stderr.resume();
+	child.stdin.end(input);
+	const chunks: Buffer[] = [];
+	let bytes = 0;
+	child.stdout.on("data", (chunk: Buffer) => {
+		bytes += chunk.length;
+		if (bytes <= MAX_PREAMBLE_BYTES) chunks.push(chunk);
+		else child.stdout.destroy(new Error("Cage setup output is too large"));
+	});
+	const deadline = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
+	try {
+		await finished(child.stdout, { signal: deadline, cleanup: true });
+		const code = await withAbort(closed, deadline);
+		if (launchError) throw launchError;
+		if (code !== 0) throw new Error("Cage setup command failed");
+		return Buffer.concat(chunks).toString("utf8");
+	} finally {
+		if (child.exitCode === null) await stopChild(child, closed);
+	}
+}
+
+export function runCageSetupStep(
+	profile: CageProfile, script: string, input: Buffer | undefined, signal: AbortSignal, timeoutMs: number,
+): Promise<string> {
+	return runSetupProcess(profile, script, input, signal, timeoutMs);
 }

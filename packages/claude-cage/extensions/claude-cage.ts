@@ -2,10 +2,17 @@ import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { loadCatalog, loadProfile, saveCatalog, type CageProfile } from "../src/profile.ts";
 import { createCageProvider, parseModels, PROVIDER_ID } from "../src/provider.ts";
 import { checkGuest, installGuest } from "../src/setup.ts";
-import { isRecord, requestCage } from "../src/transport.ts";
+import { isFatalConnectionError, isRecord } from "../src/transport.ts";
 
 function diagnostic(error: unknown): string {
 	return error instanceof Error ? error.message.slice(0, 800).replace(/[\x00-\x1f\x7f]/g, " ") : "Unknown failure";
+}
+
+function commandFailure(prefix: string, error: unknown) {
+	if (isFatalConnectionError(error)) {
+		return (error instanceof Error ? error.message : String(error)).replace(/[\x00-\x1f\x7f]/g, " ");
+	}
+	return `${prefix}: ${diagnostic(error)}`;
 }
 
 export default function claudeCage(pi: ExtensionAPI) {
@@ -44,7 +51,7 @@ export default function claudeCage(pi: ExtensionAPI) {
 			busy = true;
 			try {
 				if (action === "models") {
-					const models = parseModels(await requestCage(profile, { op: "models" }, { signal: bridge.signal }));
+					const models = parseModels(await bridge.request({ op: "models" }, { signal: bridge.signal }));
 					bridge.setModels(models);
 					const result = await ctx.modelRegistry.refresh({ providers: [PROVIDER_ID], allowNetwork: false, signal: bridge.signal });
 					if (result.errors.has(PROVIDER_ID)) throw result.errors.get(PROVIDER_ID);
@@ -54,7 +61,7 @@ export default function claudeCage(pi: ExtensionAPI) {
 					ctx.ui.notify(`Claude Cage: ${models.length} models available in /model.${warning}`, warning ? "warning" : "info");
 					return;
 				}
-				const status = await requestCage(profile, { op: "status" }, { signal: bridge.signal });
+				const status = await bridge.request({ op: "status" }, { signal: bridge.signal });
 				if (!isRecord(status) || ![status.available, status.loggedIn, status.subscription].every((value) => typeof value === "boolean") ||
 					(status.plan !== null && (typeof status.plan !== "string" || !/^[a-zA-Z0-9 _-]{1,48}$/.test(status.plan)))) {
 					throw new Error("Invalid status from the Cage guest");
@@ -63,7 +70,7 @@ export default function claudeCage(pi: ExtensionAPI) {
 					`login ${status.loggedIn ? "present" : "missing"}; subscription ${status.subscription ? (status.plan ?? "present") : "not detected"}.`,
 					status.available && status.loggedIn && status.subscription ? "info" : "warning");
 			} catch (error) {
-				if (!bridge.signal.aborted) ctx.ui.notify(`Claude Cage: ${diagnostic(error)}`, "error");
+				if (!bridge.signal.aborted) ctx.ui.notify(commandFailure("Claude Cage", error), "error");
 			} finally {
 				busy = false;
 			}
@@ -87,18 +94,20 @@ export default function claudeCage(pi: ExtensionAPI) {
 			}
 			busy = true;
 			try {
+				await bridge.beginSetup();
 				await checkGuest(profile, bridge.signal);
 				const confirmed = await ctx.ui.confirm("Install or update the Claude Cage guest bridge?",
-					`Profile: ${profile.config}\nClient: ${profile.clientPath}\n` +
-					"This downloads the pinned adapter and enables a systemd user socket. It does not log in or run a model.",
+					`Profile: ${profile.config}\nService: ${profile.servicePath}\n` +
+					"This downloads the pinned adapter and installs a session-owned stdio service. It does not log in or run a model.",
 					{ signal: bridge.signal });
 				if (!confirmed) return;
 				if (!ctx.isIdle()) throw new Error("Wait for the current turn to finish before installing");
 				await installGuest(profile, bridge.signal);
 				ctx.ui.notify("Claude Cage guest bridge installed. Use /claude-cage-status to check it.", "info");
 			} catch (error) {
-				if (!bridge.signal.aborted) ctx.ui.notify(`Claude Cage setup: ${diagnostic(error)}`, "error");
+				if (!bridge.signal.aborted) ctx.ui.notify(commandFailure("Claude Cage setup", error), "error");
 			} finally {
+				bridge.finishSetup();
 				busy = false;
 			}
 		},

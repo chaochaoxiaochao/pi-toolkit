@@ -1,16 +1,12 @@
 import assert from "node:assert/strict";
-import { execFile, execFileSync } from "node:child_process";
-import { once } from "node:events";
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { registerHooks } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { promisify } from "node:util";
-import { createGuestServer } from "../guest/service.mjs";
-import { MAX_LINE_BYTES } from "../guest/protocol.mjs";
 
 const piBinary = process.env.PI_TEST_BINARY || execFileSync("sh", ["-c", "command -v pi"], { encoding: "utf8" }).trim();
 const piPath = realpathSync(piBinary);
@@ -28,20 +24,15 @@ registerHooks({
 });
 
 const { default: register } = await import("../extensions/claude-cage.ts");
-const { loadProfile, saveCatalog } = await import("../src/profile.ts");
+const { saveCatalog } = await import("../src/profile.ts");
 const { parseModels } = await import("../src/provider.ts");
-const { requestCage } = await import("../src/transport.ts");
-const { normalizeContext, isRetryableAssistantError, isContextOverflow, retryAssistantCall } = await import("@earendil-works/pi-ai");
-const extension = fileURLToPath(new URL("../extensions/claude-cage.ts", import.meta.url));
+const { normalizeContext, isRetryableAssistantError, retryAssistantCall } = await import("@earendil-works/pi-ai");
+
 const model = {
 	id: "claude-mock", provider: "upstream", api: "upstream-api", baseUrl: "process://upstream",
 	name: "Mock Claude", input: ["text", "image"], reasoning: true,
 	contextWindow: 200_000, maxTokens: 16_000,
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-};
-const usage = {
-	input: 15, output: 2, cacheRead: 3, cacheWrite: 4, totalTokens: 24,
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 const user = (content) => ({ role: "user", content, timestamp: 5 });
 
@@ -84,306 +75,207 @@ async function fakeProfile(t, { mode, setup = false } = {}) {
 	const executable = join(dir, "cage executable");
 	const config = join(dir, "wired profile.json");
 	const log = join(dir, "operations.jsonl");
-	const runtime = join(dir, "run");
-	const clientPath = setup ? "/fixture home/.local/share/pi-claude-cage/client.mjs" :
-		fileURLToPath(new URL("../guest/client.mjs", import.meta.url));
-	const fixture = { log, runtime, clientPath, mode };
+	const servicePath = setup ? "/fixture home/.local/share/pi-claude-cage/service.mjs" : "/fixture guest/service.mjs";
+	const fixture = { log, servicePath, mode };
 	writeFileSync(config, JSON.stringify(fixture));
-	const profile = { executable, config, clientPath };
+	const profile = { executable, config, servicePath };
 	writeFileSync(join(dir, "claude-cage.json"), JSON.stringify(profile));
 	const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 	const mock = fileURLToPath(new URL("./mock-cage.mjs", import.meta.url));
 	writeFileSync(executable, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(mock)} "$@"\n`, { mode: 0o700 });
-	return { dir, profile, runtime, fixture,
-		operations: () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").map(JSON.parse) : [],
+	return {
+		dir, profile, fixture,
+		operations: () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse) : [],
 	};
 }
 
-async function mockSocket(t, runtime) {
-	const directory = join(runtime, "pi-claude-cage");
-	await mkdir(directory, { recursive: true, mode: 0o700 });
-	const socket = join(directory, "service.sock");
-	const retained = new Map();
-	const closed = [];
-	const calls = [];
-	const guest = createGuestServer({
-		async getClaudeStatus() { return { available: true, loggedIn: true, subscription: true, plan: "max" }; },
-		async discoverClaudeModels() { return [{ ...model, headers: { Authorization: "not-for-host" } }]; },
-		modelFromDiscovery: (entry) => entry,
-		async *streamClaudeCode(model, context, options) {
-			calls.push({ model, context, options });
-			const attempt = (retained.get(options.sessionId) ?? 0) + 1;
-			retained.set(options.sessionId, attempt);
-			const output = {
-				role: "assistant", api: model.api, provider: model.provider, model: model.id,
-				content: [], usage, timestamp: Date.now(), stopReason: "pending",
-			};
-			if (context.messages.at(-1).content === "raw guest failure") {
-				yield { type: "error", reason: "error", error: {
-					...output, stopReason: "error", errorMessage: "rate limit; 503; prompt is too long",
-				} };
-				return;
-			}
-			yield { type: "start", partial: output };
-			if (context.messages.at(-1).content === "hold") {
-				await once(options.signal, "abort");
-				return;
-			}
-			if (attempt === 1) {
-				const tool = { type: "toolCall", id: "tool-1", name: "echo", arguments: { phrase: "甲" } };
-				const partial = { ...output, content: [tool] };
-				yield { type: "toolcall_start", contentIndex: 0, partial };
-				yield { type: "toolcall_end", contentIndex: 0, partial, toolCall: tool };
-				yield { type: "done", reason: "toolUse", message: { ...partial, stopReason: "toolUse" } };
-			} else {
-				const text = `收到：${context.messages.at(-1).content[0].text}`;
-				const partial = { ...output, content: [{ type: "text", text }] };
-				yield { type: "text_start", contentIndex: 0, partial: { ...output, content: [{ type: "text", text: "" }] } };
-				yield { type: "text_delta", contentIndex: 0, partial, delta: text };
-				yield { type: "text_end", contentIndex: 0, partial, content: text };
-				yield { type: "done", reason: "stop", message: { ...partial, stopReason: "stop" } };
-			}
-		},
-		async closeClaudeProcesses(sessionId) {
-			if (sessionId) { closed.push(sessionId); retained.delete(sessionId); }
-		},
-	});
-	const listening = once(guest.server, "listening");
-	guest.server.listen(socket);
-	await listening;
-	await chmod(socket, 0o600);
-	t.after(() => guest.stop());
-	return { calls, retained, closed };
-}
-
-const retry = { enabled: true, maxRetries: 2, baseDelayMs: 10 };
-
-test("no profile or invalid config launches nothing, even for explicit commands", async (t) => {
+test("invalid profile launches nothing and an old clientPath profile gives an exact migration error", async (t) => {
 	const { dir, profile, operations } = await fakeProfile(t);
 	const path = join(dir, "claude-cage.json");
-	for (const invalid of [undefined, { ...profile, clientPath: "relative" }, { ...profile, token: "no" }]) {
+	for (const invalid of [undefined, { executable: profile.executable, config: profile.config, clientPath: "/old/client.mjs" },
+		{ ...profile, servicePath: "relative" }]) {
 		if (invalid === undefined) await rm(path);
 		else writeFileSync(path, JSON.stringify(invalid));
 		const app = mount(dir);
 		await app.command("status");
-		await app.command("setup");
-		assert.equal(await app.provider.auth.apiKey.check({}), undefined);
-		assert.deepEqual(app.provider.getModels(), []);
-		const failed = await app.provider.streamSimple(parseModels([model])[0], normalizeContext({ messages: [user("cage")] })).result();
+		const failed = await app.provider.streamSimple(parseModels([model])[0], normalizeContext({ messages: [user("x")] })).result();
 		assert.equal(failed.stopReason, "error");
-		assert.match(failed.errorMessage, /claude-cage.json/);
+		if (invalid && "clientPath" in invalid) assert.match(failed.errorMessage, /replace clientPath with .*servicePath/i);
 		await app.shutdown();
 	}
 	assert.deepEqual(operations(), []);
 });
 
-test("one profile carries status, models, two complete Pi turns and one scoped close", { timeout: 15_000 }, async (t) => {
-	const { dir, profile, runtime, operations } = await fakeProfile(t);
-	const guest = await mockSocket(t, runtime);
+test("one Pi runtime keeps one Cage process for status, models, and multiple transcript-synchronized turns", async (t) => {
+	const { dir, profile, operations } = await fakeProfile(t);
 	const app = mount(dir);
 	assert.deepEqual(app.provider.getModels(), []);
-	assert.deepEqual(await app.provider.auth.apiKey.resolve({}), { auth: {}, source: "Cage profile" });
-	assert.deepEqual(operations(), [], "config and auth checks must not launch a proxy");
 	await app.command("status");
 	assert.match(app.notifications.at(-1).message, /subscription max/);
 	await app.command("status", "models");
 	const picked = app.provider.getModels()[0];
-	assert.deepEqual([picked.provider, picked.api, picked.headers], ["claude-cage", "claude-cage", undefined]);
-	const image = { type: "image", mimeType: "image/png", data: "AAAA" };
-	const context = normalizeContext({
-		systemPrompt: "Retain Pi's complete transcript", messages: [user([{ type: "text", text: "第一轮" }, image])],
-		tools: [{ name: "echo", description: "Return input", parameters: { type: "object", properties: { phrase: { type: "string" } } } }],
-	});
-	const options = {
-		apiKey: "test-secret", headers: { Authorization: "test-secret" }, env: { CLAUDE_CAGE_CONFIG: "/other" },
-		sessionId: "untrusted-session", reasoning: "high", cacheRetention: "short", timeoutMs: 999_000, maxTokens: 400,
-		maxRetries: 5, metadata: { secret: "test-secret" },
-		onPayload(payload) { return { ...payload, options: { ...payload.options, apiKey: "test-secret" } }; },
-	};
+	const image = { type: "image", mimeType: "image/png", data: "A".repeat(4096) };
+	const context = normalizeContext({ messages: [user([{ type: "text", text: "第一轮" }, image])] });
 	const events = [];
-	const first = await app.provider.streamSimple({ ...picked, baseUrl: "https://test-secret", headers: options.headers }, context, {
-		...options, onProviderStreamEvent(event) { events.push(event.type); },
+	const first = await app.provider.streamSimple(picked, context, {
+		reasoning: "high", cacheRetention: "short", timeoutMs: 9_999_999, maxTokens: 400,
+		onProviderStreamEvent(event) { events.push(event); },
 	}).result();
-	assert.deepEqual(events, ["start", "toolcall_start", "toolcall_end", "done"]);
 	assert.equal(first.stopReason, "toolUse");
-	assert.deepEqual(first.usage, usage);
+	assert.deepEqual(events.map(({ type }) => type), ["start", "toolcall_start", "toolcall_end", "done"]);
+	assert(events.slice(0, -1).every(({ partial }) => partial === events[0].partial), "partial identity must be shared");
 	const round = normalizeContext({ messages: [
-		...context.messages, first, { role: "toolResult", toolName: "echo", toolCallId: "tool-1", isError: false, timestamp: 8,
-			content: [{ type: "text", text: "第二轮" }, image] },
+		...context.messages, first,
+		{ role: "toolResult", toolName: "echo", toolCallId: "tool-1", isError: false, timestamp: 8,
+			content: [{ type: "text", text: "第二轮" }] },
 	] });
-	const second = await app.provider.stream(picked, round).result();
+	const second = await app.provider.streamSimple(picked, round).result();
 	assert.equal(second.content[0].text, "收到：第二轮");
+	const changed = normalizeContext({ messages: [user("changed history")] });
+	assert.equal((await app.provider.streamSimple(picked, changed).result()).stopReason, "stop");
 	if (process.env.CAGE_CAPTURE_MEDIA) {
 		writeFileSync(process.env.CAGE_CAPTURE_MEDIA, JSON.stringify([
 			app.notifications.map(({ message }) => message).join("\n"),
 			`First turn: ${first.stopReason}\n${JSON.stringify(first.content, null, 2)}`,
-			`Second turn: ${second.stopReason}\n${second.content[0].text}\nGuest calls: ${operations().length}`,
+			`Second turn: ${second.stopReason}\n${second.content[0].text}\nOne persistent Cage process`,
 		]));
 	}
-	assert.deepEqual(guest.calls[0].context, context);
-	assert.deepEqual(guest.calls[1].context, round);
-	assert.equal(guest.calls[0].model.provider, first.provider);
-	assert.equal(guest.calls[0].model.api, first.api);
-	assert.equal(guest.calls[0].model.baseUrl, "process://claude-code");
-	assert.equal(guest.calls[0].model.headers, undefined);
-	const { signal, sessionId, ...settings } = guest.calls[0].options;
-	assert.deepEqual(settings, { reasoning: "high", cacheRetention: "short", maxTokens: 400, timeoutMs: 180_000 });
-	assert.notEqual(sessionId, options.sessionId);
-	assert.equal(guest.calls[1].options.sessionId, sessionId);
-	const other = mount(dir);
-	assert.equal(other.provider.getModels()[0].id, picked.id, "a new session reads its local catalog without probing the guest");
-	assert.equal(operations().length, 4);
-	await other.provider.streamSimple(picked, context, options).result();
-	assert.notEqual(guest.calls[2].options.sessionId, sessionId);
+
+	const log = operations();
+	assert.equal(log.filter(({ phase }) => phase === "proxy").length, 1);
+	assert.deepEqual(log.filter(({ phase }) => phase === "turn").map(({ context }) => context.messages),
+		[context.messages, round.messages, changed.messages]);
+	const wire = log.filter(({ phase, op }) => phase === "wire" && op === "turn");
+	assert.deepEqual(wire.map(({ mode }) => mode), ["full", "append", "full"]);
+	assert.deepEqual(wire.map(({ containsImage }) => containsImage), [true, false, false]);
+	assert(wire[1].transcriptBytes < wire[0].transcriptBytes, "append must not repeat the inline image");
+	assert.equal(log.find(({ phase }) => phase === "turn").options.timeoutMs, 1_200_000);
+	assert(log.every(({ config }) => config === profile.config));
 	await app.shutdown();
-	await app.shutdown();
-	assert.deepEqual(guest.closed, [sessionId]);
-	assert(guest.retained.has(guest.calls[2].options.sessionId));
-	await other.shutdown();
-	assert.deepEqual(guest.closed, [sessionId, guest.calls[2].options.sessionId]);
-	assert.equal(guest.retained.size, 0);
-	assert(operations().every((entry) => entry.config === profile.config));
-	writeFileSync(join(dir, "claude-cage.json"), JSON.stringify({ ...profile, config: join(dir, "other profile.json") }));
-	assert.deepEqual(mount(dir).provider.getModels(), [], "catalog does not cross profile boundaries");
+	assert(log.filter(({ phase }) => phase === "closed").length <= 1);
 });
 
-test("cancel after a partial event becomes aborted; upstream error text cannot trigger retries", async (t) => {
-	const { dir, runtime } = await fakeProfile(t);
-	const guest = await mockSocket(t, runtime);
+test("a separate Pi runtime owns a separate Cage process and upstream session", async (t) => {
+	const { dir, operations } = await fakeProfile(t);
+	saveCatalog(dir, JSON.parse(readFileSync(join(dir, "claude-cage.json"), "utf8")), [model]);
+	const left = mount(dir);
+	const right = mount(dir);
+	const picked = left.provider.getModels()[0];
+	await left.provider.streamSimple(picked, normalizeContext({ messages: [user("left")] })).result();
+	await right.provider.streamSimple(picked, normalizeContext({ messages: [user("right")] })).result();
+	const log = operations();
+	assert.equal(log.filter(({ phase }) => phase === "proxy").length, 2);
+	assert.equal(new Set(log.filter(({ phase }) => phase === "turn").map(({ sessionId }) => sessionId)).size, 2);
+	await left.shutdown();
+	await right.shutdown();
+});
+
+test("an existing Pi transcript continues after reload through a new full-transfer connection", async (t) => {
+	const { dir, operations } = await fakeProfile(t);
+	const profile = JSON.parse(readFileSync(join(dir, "claude-cage.json"), "utf8"));
+	saveCatalog(dir, profile, [model]);
+	const initial = normalizeContext({ messages: [user([
+		{ type: "text", text: "before reload" },
+		{ type: "image", mimeType: "image/png", data: "fixture-image" },
+	])] });
+
+	const beforeReload = mount(dir);
+	const picked = beforeReload.provider.getModels()[0];
+	const toolTurn = await beforeReload.provider.streamSimple(picked, initial).result();
+	assert.equal(toolTurn.stopReason, "toolUse");
+	await beforeReload.shutdown();
+
+	const continuedContext = normalizeContext({ messages: [
+		...initial.messages,
+		toolTurn,
+		{
+			role: "toolResult", toolName: "echo", toolCallId: toolTurn.content[0].id,
+			isError: false, timestamp: 8, content: [{ type: "text", text: "after reload" }],
+		},
+	] });
+	const afterReload = mount(dir);
+	const continued = await afterReload.provider.streamSimple(afterReload.provider.getModels()[0], continuedContext).result();
+	assert.equal(continued.stopReason, "stop");
+	assert.equal(continued.content[0].text, "收到：after reload");
+
+	const log = operations();
+	assert.equal(log.filter(({ phase }) => phase === "proxy").length, 2);
+	assert.deepEqual(log.filter(({ phase, op }) => phase === "wire" && op === "turn").map(({ mode }) => mode),
+		["full", "full"]);
+	assert.deepEqual(log.filter(({ phase }) => phase === "turn").at(-1).context.messages, continuedContext.messages);
+	assert.equal(new Set(log.filter(({ phase }) => phase === "turn").map(({ sessionId }) => sessionId)).size, 2);
+	await afterReload.shutdown();
+});
+
+test("clean cancellation remains usable and upstream-looking error text cannot trigger Pi retry", async (t) => {
+	const { dir, operations } = await fakeProfile(t);
+	saveCatalog(dir, JSON.parse(readFileSync(join(dir, "claude-cage.json"), "utf8")), [model]);
 	const app = mount(dir);
-	const picked = parseModels([model])[0];
+	const picked = app.provider.getModels()[0];
 	const controller = new AbortController();
 	const stream = app.provider.streamSimple(picked, normalizeContext({ messages: [user("hold")] }), { signal: controller.signal });
-	const events = [];
+	const eventTypes = [];
+	let concurrent;
 	for await (const event of stream) {
-		events.push(event.type);
-		if (event.type === "start") controller.abort();
+		eventTypes.push(event.type);
+		if (event.type === "start") {
+			concurrent = app.command("status");
+			await concurrent;
+			assert.match(app.notifications.at(-1).message, /operation is in progress/);
+			controller.abort(new Error("user cancelled"));
+		}
 	}
-	assert.deepEqual(events, ["start", "error"]);
+	assert.deepEqual(eventTypes, ["start", "error"]);
 	assert.equal((await stream.result()).stopReason, "aborted");
-	assert.equal(guest.calls.length, 1);
-	await app.shutdown();
-	const another = mount(dir);
-	const error = await retryAssistantCall(() => another.provider.streamSimple(picked,
-		normalizeContext({ messages: [user("raw guest failure")] })).result(), retry);
+
+	const error = await retryAssistantCall(() => app.provider.streamSimple(picked,
+		normalizeContext({ messages: [user("raw guest failure")] })).result(), { enabled: true, maxRetries: 2, baseDelayMs: 1 });
 	assert.equal(error.stopReason, "error");
 	assert.equal(isRetryableAssistantError(error), false);
-	assert.equal(isContextOverflow(error, picked.contextWindow), false);
-	assert.equal(guest.calls.length, 2);
-	await another.shutdown();
-});
-
-test("setup probes first, never installs on decline, and sends only root guest files on confirmation", async (t) => {
-	const { dir, profile, fixture, operations } = await fakeProfile(t, { setup: true });
-	const headless = mount(dir, { hasUI: false });
-	await headless.command("setup");
-	assert.deepEqual(operations(), []);
-	writeFileSync(profile.config, JSON.stringify({ ...fixture, mode: "claude" }));
-	let confirmed = 0;
-	let consent = false;
-	const app = mount(dir, { confirm: async () => { confirmed++; return consent; } });
-	await app.command("setup");
-	assert.equal(confirmed, 0);
-	assert.match(app.notifications.at(-1).message, /claude --version/);
-	writeFileSync(profile.config, JSON.stringify(fixture));
-	await app.command("setup");
-	assert.equal(confirmed, 1);
-	assert.deepEqual(operations().map((entry) => entry.phase), ["preflight", "preflight"]);
-	consent = true;
-	await app.command("setup");
-	assert.equal(confirmed, 2);
-	assert.deepEqual(operations().map((entry) => entry.phase), ["preflight", "preflight", "preflight", "install"]);
-	assert.deepEqual(operations().at(-1).files.sort(), [
-		"client.mjs", "package-lock.json", "package.json", "pi-claude-cage.service", "pi-claude-cage.socket", "protocol.mjs", "service.mjs",
-	]);
-	assert.match(app.notifications.at(-1).message, /bridge installed/);
+	assert.equal(operations().filter(({ phase }) => phase === "turn").length, 2);
 	await app.shutdown();
 });
 
-test("transport bounds startup, response, stdout preamble, frames and request size", { timeout: 10_000 }, async (t) => {
-	const { profile, fixture, operations } = await fakeProfile(t);
-	for (const [mode, message] of [
-		["hang-ready", /ready before its deadline/], ["hang-response", /complete before its deadline/],
-		["preamble-limit", /preamble is too large/], ["response-limit", /response line is too large/],
-		["wrong-id", /did not match this request/],
-	]) {
-		writeFileSync(profile.config, JSON.stringify({ ...fixture, mode }));
-		await assert.rejects(requestCage(profile, { op: "status" }, { startupMs: 350, responseMs: 150 }), message);
-	}
-	const count = operations().length;
-	await assert.rejects(requestCage(profile, {
-		op: "turn", sessionId: "test", model, options: {}, context: { messages: [user("x".repeat(MAX_LINE_BYTES))] },
-	}), /Protocol line is too large/);
-	assert.equal(operations().length, count, "oversized requests are rejected before launch");
-	const controller = new AbortController();
-	controller.abort(new Error("already cancelled"));
-	await assert.rejects(requestCage(profile, { op: "status" }, { signal: controller.signal }), /already cancelled/);
-	assert.equal(operations().length, count);
+test("fatal disconnect is red-error text, does not relaunch, and requires reload", async (t) => {
+	const { dir, operations } = await fakeProfile(t, { mode: "disconnect" });
+	saveCatalog(dir, JSON.parse(readFileSync(join(dir, "claude-cage.json"), "utf8")), [model]);
+	const app = mount(dir);
+	const picked = app.provider.getModels()[0];
+	const first = await app.provider.streamSimple(picked, normalizeContext({ messages: [user("once")] })).result();
+	assert.equal(first.stopReason, "error");
+	assert.match(first.errorMessage, /^Claude Cage connection failed and is closed\./);
+	assert.match(first.errorMessage, /Run \/reload/);
+	const second = await app.provider.streamSimple(picked, normalizeContext({ messages: [user("twice")] })).result();
+	assert.equal(second.errorMessage, first.errorMessage);
+	assert.equal(operations().filter(({ phase }) => phase === "proxy").length, 1);
+	await app.command("status");
+	assert.equal(app.notifications.at(-1).type, "error");
+	assert.match(app.notifications.at(-1).message, /\/reload/);
+	await app.shutdown();
 });
 
-test("disconnect and retryable guest transport error submit only once with Pi retry enabled", { timeout: 15_000 }, async (t) => {
-	for (const mode of ["disconnect", "turn-error"]) {
+test("malformed startup or response data latches the connection fatal without relaunch", async (t) => {
+	for (const mode of ["wrong-id", "preamble-limit"]) {
 		const { dir, operations } = await fakeProfile(t, { mode });
 		const app = mount(dir);
-		const picked = parseModels([model])[0];
-		const error = await retryAssistantCall(() => app.provider.streamSimple({
-			...picked, baseUrl: "https://secret-marker", headers: { Authorization: "secret-marker" },
-		}, normalizeContext({ messages: [user("one submission")] }), {
-			apiKey: "secret-marker", env: { TOKEN: "secret-marker" }, headers: { Authorization: "secret-marker" },
-			sessionId: "secret-marker", timeoutMs: 1_000, maxRetries: 2,
-		}).result(), retry);
-		assert.equal(error.stopReason, "error");
-		assert.equal(isRetryableAssistantError(error), false, error.errorMessage);
-		assert.doesNotMatch(error.errorMessage, /503|socket hang up|connection closed/i);
-		const sent = operations().filter((entry) => entry.request).map((entry) => entry.request);
-		assert.deepEqual(sent.map((request) => request.op), ["turn"]);
-		assert.doesNotMatch(JSON.stringify(sent[0]), /secret-marker/);
-		assert.deepEqual(sent[0].options, { timeoutMs: 1_000 });
+		await app.command("status");
+		assert.equal(app.notifications.at(-1).type, "error");
+		assert.match(app.notifications.at(-1).message, /^Claude Cage connection failed and is closed\./);
+		await app.command("status");
+		assert.match(app.notifications.at(-1).message, /Run \/reload/);
+		assert.equal(operations().filter(({ phase }) => phase === "proxy").length, 1);
 		await app.shutdown();
-		assert.deepEqual(operations().filter((entry) => entry.request).map((entry) => entry.request.op), ["turn", "close"]);
-		assert(operations().some((entry) => entry.phase === "input closed"), "close terminal response ends stdin cleanly");
 	}
 });
 
-test("real isolated Pi with auto-retry enabled does not repeat a submitted turn", { timeout: 20_000 }, async (t) => {
-	const { dir, profile, fixture, operations } = await fakeProfile(t, { mode: "disconnect" });
-	saveCatalog(dir, loadProfile(dir), parseModels([model]));
-	writeFileSync(join(dir, "settings.json"), JSON.stringify({ quietStartup: true, retry }));
-	const opts = {
-		cwd: dir, encoding: "utf8", timeout: 12_000,
-		env: {
-			PATH: `${dirname(process.execPath)}:${process.env.PATH}`, HOME: dir, TEST_HOST_SECRET: "test-only",
-			PI_CODING_AGENT_DIR: dir, PI_OFFLINE: "1",
-		},
-	};
-	const args = ["--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files",
-		"--no-session", "--offline", "-e", extension];
-	function runPi(extra) {
-		const command = promisify(execFile)(piBinary, [...args, ...extra], opts);
-		command.child.stdin.end();
-		return command;
-	}
-	const listed = await runPi(["--list-models", "claude-cage"]);
-	assert.match(listed.stdout, /claude-cage\s+claude-mock/);
-	assert.deepEqual(operations(), [], "real Pi startup does not probe the guest even with a cached model");
-	for (const [mode, diagnostic] of [
-		["disconnect", /Claude Cage.*disconnected.*stderr/i],
-		["turn-error", /Claude Cage.*Automatic replay is disabled/i],
-	]) {
-		writeFileSync(profile.config, JSON.stringify({ ...fixture, mode }));
-		const before = operations().length;
-		let result;
-		try {
-			result = await runPi(["--model", "claude-cage/claude-mock", "-p", "Do not retry"]);
-		} catch (error) {
-			assert.equal(error.code, 1, JSON.stringify({
-				stdout: error.stdout, stderr: error.stderr, signal: error.signal, operations: operations().slice(before),
-			}));
-			result = error;
-		}
-		assert.match(`${result.stdout}\n${result.stderr}`, diagnostic);
-		const requests = operations().slice(before).filter((entry) => entry.request).map((entry) => entry.request);
-		assert.deepEqual(requests.map((request) => request.op), ["turn", "close"]);
-		assert.equal(requests[0].context.messages[0].role, "system");
-	}
+test("setup probes, confirms, and sends only v2 guest files", async (t) => {
+	const { dir, operations } = await fakeProfile(t, { setup: true });
+	const declined = mount(dir, { confirm: async () => false });
+	await declined.command("setup");
+	assert.deepEqual(operations().map(({ phase }) => phase), ["preflight"]);
+	const confirmed = mount(dir, { confirm: async () => true });
+	await confirmed.command("setup");
+	const install = operations().find(({ phase }) => phase === "install");
+	assert.deepEqual(install.files.sort(), ["package-lock.json", "package.json", "protocol.mjs", "service.mjs"]);
+	assert.match(confirmed.notifications.at(-1).message, /installed/);
 });

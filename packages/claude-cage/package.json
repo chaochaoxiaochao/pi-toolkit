@@ -36,7 +36,7 @@
     "@earendil-works/pi-coding-agent": ">=1.6.0"
   },
   "scripts": {
-    "test": "node --test tests/host.test.mjs guest/guest.test.mjs",
+    "test": "node --test tests/host.test.mjs guest/guest.test.mjs guest/protocol.test.mjs guest/install.test.mjs",
     "load-test": "pi -ne -ns --no-session -e ./extensions/claude-cage.ts",
     "test:upstream": "bash tests/installed-upstream.sh",
     "test:wired": "node tests/wired-smoke.mjs --run"

@@ -1,12 +1,14 @@
-import { randomUUID } from "node:crypto";
 import {
 	createAssistantMessageEventStream, isContextOverflow, isRetryableAssistantError,
 	type Api, type AssistantMessage, type AssistantMessageEvent, type Model, type Provider,
 	type SimpleStreamOptions, type StreamOptions, type TranscriptContext,
 } from "@earendil-works/pi-ai";
-import { TURN_TIMEOUT_MS } from "../guest/protocol.mjs";
+import { TURN_TIMEOUT_MS, createAssistantEventAssembler } from "../guest/protocol.mjs";
 import type { CageProfile } from "./profile.ts";
-import { isRecord, requestCage, withAbort } from "./transport.ts";
+import {
+	createCageConnection, isFatalConnectionError, isRecord, withAbort,
+	type CageRequest, type RequestOptions,
+} from "./transport.ts";
 
 export const PROVIDER_ID = "claude-cage";
 export const API_ID = "claude-cage";
@@ -110,6 +112,10 @@ function safeFailure(message: AssistantMessage, detail: string, aborted: boolean
 		errorMessage: aborted ? "Claude Cage request cancelled." :
 			`Claude Cage: ${detail.slice(0, 800).replace(/[\x00-\x1f\x7f]/g, " ").trim() || "request failed"}`,
 	};
+	if (isFatalConnectionError(detail)) {
+		result.errorMessage = detail;
+		return result;
+	}
 	// Pi classifies error text, not a structured retry flag. A proxy cannot prove
 	// that Claude did not receive a turn, even if no assistant event arrived.
 	// Keep failure text that would trigger backoff or recovery out of that field.
@@ -123,22 +129,27 @@ function safeFailure(message: AssistantMessage, detail: string, aborted: boolean
 
 export function createCageProvider(profile: CageProfile | undefined, profileError?: string, cachedModels: Model<Api>[] = []) {
 	let catalog = cachedModels;
-	let submitted = false;
-	const sessionId = randomUUID();
 	const lifecycle = new AbortController();
 	const active = new Set<Promise<void>>();
 	let shutdown: Promise<void> | undefined;
+	const connection = profile ? createCageConnection(profile) : undefined;
 
 	function stream(model: Model<Api>, context: TranscriptContext, options: StreamOptions & { reasoning?: unknown } = {}) {
 		const output = createAssistantMessageEventStream();
 		const signal = options.signal ? AbortSignal.any([lifecycle.signal, options.signal]) : lifecycle.signal;
 		let latest = newMessage(model);
 		let started = false;
+		const assembler = createAssistantEventAssembler();
+		let terminal: Record<string, unknown> | undefined;
 
-		async function observe(event: Record<string, unknown>) {
+		async function observe(wire: Record<string, unknown>) {
+			const event = assembler.accept(wire) as Record<string, unknown>;
 			await options.onProviderStreamEvent?.(event, model);
 			signal.throwIfAborted();
-			if (event.type === "done" || event.type === "error") return;
+			if (event.type === "done" || event.type === "error") {
+				terminal = event;
+				return;
+			}
 			if (event.type === "start" ? started : !started || typeof event.type !== "string" || !PARTIAL_EVENTS.has(event.type)) {
 				throw new Error("Unexpected assistant event from the Cage proxy");
 			}
@@ -155,6 +166,7 @@ export function createCageProvider(profile: CageProfile | undefined, profileErro
 			try {
 				signal.throwIfAborted();
 				if (!profile) throw new Error(profileError ?? "Claude Cage is not configured");
+				if (!connection) throw new Error("Claude Cage connection is unavailable");
 				if (model.provider !== PROVIDER_ID || model.api !== API_ID) throw new Error("Invalid Claude Cage model identity");
 				// Only the transcript and the four supported stream settings are on the
 				// wire. Payload hooks cannot retarget the profile, model, or session.
@@ -165,14 +177,14 @@ export function createCageProvider(profile: CageProfile | undefined, profileErro
 				if (!isRecord(selected) || !isRecord(selected.context) || !Array.isArray(selected.context.messages) ||
 					!isRecord(selected.options)) throw new Error("Invalid Claude Cage payload replacement");
 				const safeOptions = wireOptions(selected.options);
-				const final = await requestCage(profile, {
-					op: "turn", sessionId, model: publicModel(model),
+				await connection.request({
+					op: "turn", model: publicModel(model),
 					context: { messages: selected.context.messages }, options: safeOptions,
 				}, {
-					signal, onSubmit: () => { submitted = true; }, onEvent: observe,
-					responseMs: safeOptions.timeoutMs === undefined ? undefined : safeOptions.timeoutMs + 5_000,
+					signal, onEvent: observe,
 				});
 				signal.throwIfAborted();
+				const final = terminal;
 				if (!isRecord(final)) throw new Error("Invalid terminal event from the Cage proxy");
 				if (final.type === "done" && started && (final.reason === "stop" || final.reason === "length" || final.reason === "toolUse")) {
 					const message = checkedMessage(final.message, model);
@@ -213,14 +225,22 @@ export function createCageProvider(profile: CageProfile | undefined, profileErro
 	return {
 		provider,
 		setModels(models: Model<Api>[]) { catalog = models; },
+		request(request: CageRequest, options?: RequestOptions) {
+			if (!connection) return Promise.reject(new Error(profileError ?? "Claude Cage is not configured"));
+			return connection.request(request, options);
+		},
+		beginSetup() {
+			if (!connection) return Promise.reject(new Error(profileError ?? "Claude Cage is not configured"));
+			return connection.beginSetup();
+		},
+		finishSetup() { connection?.finishSetup(); },
+		get connectionState() { return connection?.state ?? "unavailable"; },
 		signal: lifecycle.signal,
 		shutdown() {
 			shutdown ??= (async () => {
 				lifecycle.abort();
 				await Promise.allSettled(active);
-				if (profile && submitted && await requestCage(profile, { op: "close", sessionId }) !== null) {
-					throw new Error("Invalid close acknowledgement from the Cage proxy");
-				}
+				await connection?.shutdown();
 			})();
 			return shutdown;
 		},

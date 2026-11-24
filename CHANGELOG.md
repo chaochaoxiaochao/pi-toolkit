@@ -84,6 +84,7 @@
 
 ## Unreleased
 
+- Claude Cage: replace the socket daemon with one persistent stdio Cage process per Pi runtime, bounded compact streaming, transcript append synchronization, and fail-closed v1 migration.
 
 - Herdr Subagents: accept an optional per-task `thinking` override; `model` and `thinking` remain independently optional, and invalid thinking levels fail before child startup.
 - Herdr Subagents: restore omitted current-contract regression coverage and simplify internal cleanup eligibility checks without adding damaged-record recovery.

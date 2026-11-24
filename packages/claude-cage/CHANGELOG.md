@@ -1,3 +1,9 @@
+## Unreleased
+
+- Replace the shared socket-activated guest daemon and per-request client with one lazy, persistent stdio service per Pi runtime.
+- Add bounded 256 MiB framing, backpressured writes, compact delta streaming, 20-minute turns, transcript full/append synchronization, and fatal `/reload` diagnostics.
+- Migrate profiles from `clientPath` to `servicePath`; confirmed setup automatically replaces an exact marker-owned v1 installation and removes its old systemd files.
+
 ## 2026-11-24 - v0.1.1
 
 - Diagram the host and guest architecture, explain pinned adapter upgrades, and remove the pdlog listing from the toolkit README without changing the skill.

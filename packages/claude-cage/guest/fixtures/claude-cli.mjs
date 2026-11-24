@@ -6,7 +6,7 @@ import { createInterface } from "node:readline";
 const args = process.argv.slice(2);
 const arg = (flag) => args[args.indexOf(flag) + 1];
 const emit = (value) => console.log(JSON.stringify(value));
-const log = (entry) => appendFileSync(join(process.cwd(), "calls.jsonl"), `${JSON.stringify(entry)}\n`);
+const log = (entry) => appendFileSync(join(process.env.HOME, "calls.jsonl"), `${JSON.stringify(entry)}\n`);
 for (const name of ["ANTHROPIC_API_KEY", "GITHUB_TOKEN", "UNTRUSTED", "PI_CLAUDE_CODE_ALLOW_USAGE_CREDITS",
   "PI_CLAUDE_CAGE_FIXTURE_PORT"]) {
   assert.equal(process.env[name], undefined, name);

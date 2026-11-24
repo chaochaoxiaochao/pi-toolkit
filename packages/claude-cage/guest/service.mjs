@@ -1,38 +1,53 @@
-import { once } from "node:events";
-import { realpathSync } from "node:fs";
-import { createServer } from "node:net";
-import { homedir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { chmodSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  MAX_LINE_BYTES, REQUEST_TIMEOUT_MS, TURN_TIMEOUT_MS, encode, isId, isRecord, readLines,
+  MAX_FRAME_BYTES, PROTOCOL_VERSION, TURN_TIMEOUT_MS,
+  compactAssistantEvent, isId, isRecord, readFrames, writeFrame,
 } from "./protocol.mjs";
 
 const METADATA_TIMEOUT_MS = 25_000;
-const WRITE_TIMEOUT_MS = 5_000;
+const CLEANUP_TIMEOUT_MS = 10_000;
+const READY = JSON.stringify({ type: "ready", version: PROTOCOL_VERSION });
 
-function checkedSessionId(value) {
-  if (typeof value !== "string" || !value.trim() || value.length > 256) {
-    throw new Error("This operation requires a sessionId (1–256 characters)");
-  }
-  return value;
+function transcriptHash(messages) {
+  return createHash("sha256").update(JSON.stringify(messages)).digest("hex");
 }
 
-function turnParameters(request, signal, sessionId, timeoutMs) {
-  const { model, context, options = {} } = request;
+function transcriptBytes(messages) {
+  return Buffer.byteLength(JSON.stringify(messages));
+}
+
+function checkedTranscript(spec, committed, maxBytes) {
+  if (!isRecord(spec) || !Array.isArray(spec.messages) || !["full", "append"].includes(spec.mode)) {
+    throw new Error("Turn requires a full or append transcript");
+  }
+  let messages;
+  if (spec.mode === "full") {
+    messages = spec.messages;
+  } else {
+    if (!committed || typeof spec.baseHash !== "string" || spec.baseHash !== committed.hash) {
+      const error = new Error("Host and guest transcript hashes differ");
+      error.fatal = true;
+      throw error;
+    }
+    messages = [...committed.messages, ...spec.messages];
+  }
+  if (transcriptBytes(messages) > maxBytes) throw new Error(`Reconstructed transcript exceeds ${maxBytes} bytes`);
+  return { messages, hash: transcriptHash(messages) };
+}
+
+function turnParameters(request, signal, sessionId, timeoutMs, messages) {
+  const { model, options = {} } = request;
   if (!isRecord(model) || ![model.id, model.provider, model.api].every(
     (name) => typeof name === "string" && name.length > 0 && name.length <= 256,
   ) || !/^[a-zA-Z0-9][a-zA-Z0-9._:[\]-]*$/.test(model.id) || !isRecord(model.cost) ||
     !["input", "output", "cacheRead", "cacheWrite"].every((key) => Number.isFinite(model.cost[key]))) {
     throw new Error("Turn requires a complete Pi model");
   }
-  if (!isRecord(context) || !Array.isArray(context.messages)) {
-    throw new Error("Turn requires a Pi transcript with a messages array");
-  }
   if (!isRecord(options)) throw new Error("Turn options must be an object");
-
-  // The host identity is required for upstream replay matching. Transport and
-  // authentication belong to the guest CLI, not to the host model or options.
   const { headers: _headers, baseUrl: _baseUrl, ...modelMetadata } = model;
   const streamOptions = { signal, timeoutMs, sessionId };
   if (["minimal", "low", "medium", "high", "xhigh", "max"].includes(options.reasoning)) {
@@ -44,211 +59,184 @@ function turnParameters(request, signal, sessionId, timeoutMs) {
   if (Number.isSafeInteger(options.maxTokens) && options.maxTokens > 0) {
     streamOptions.maxTokens = options.maxTokens;
   }
-  return [{ ...modelMetadata, baseUrl: "process://claude-code" }, { messages: context.messages }, streamOptions];
+  return [{ ...modelMetadata, baseUrl: "process://claude-code" }, { messages }, streamOptions];
 }
 
 function untilAborted(promise, signal) {
   if (signal.aborted) return Promise.reject(signal.reason);
   return new Promise((resolve, reject) => {
-    const abort = () => {
-      signal.removeEventListener("abort", abort);
-      reject(signal.reason);
-    };
+    const abort = () => { signal.removeEventListener("abort", abort); reject(signal.reason); };
     signal.addEventListener("abort", abort, { once: true });
     Promise.resolve(promise).then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
   });
 }
 
-export function createGuestServer(upstream, { turnTimeoutMs = TURN_TIMEOUT_MS } = {}) {
-  const sockets = new Set();
-  const requests = new Set();
-  const turns = new Map();
-  const closures = new Map();
+async function bounded(task, timeoutMs, message) {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  try {
+    return await untilAborted(task, timeout);
+  } catch (error) {
+    if (timeout.aborted) throw new Error(message);
+    throw error;
+  }
+}
 
-  async function closeSession(sessionId) {
-    if (!closures.has(sessionId)) {
-      const active = turns.get(sessionId);
-      active?.controller.abort(new Error("Pi session closed"));
-      const cleanup = active ? active.settled : upstream.closeClaudeProcesses(sessionId);
-      closures.set(sessionId, Promise.resolve(cleanup).finally(() => closures.delete(sessionId)));
-    }
-    await closures.get(sessionId);
+function requireRelayedDone(event) {
+  if (event.type !== "done") return;
+  const diagnostics = event.message?.diagnostics;
+  if (!Array.isArray(diagnostics) || !diagnostics.some((entry) =>
+    entry?.type === "claude-code.turn-relay" && entry.details?.upstreamRequests === 1
+  )) {
+    throw new Error("Claude Code turn did not report exactly one upstream request through the guest relay");
+  }
+}
+
+export function createGuestService(upstream, options = {}) {
+  const turnTimeoutMs = options.turnTimeoutMs ?? TURN_TIMEOUT_MS;
+  const maxFrameBytes = options.maxFrameBytes ?? MAX_FRAME_BYTES;
+  const sessionId = options.sessionId ?? randomUUID();
+  let committed;
+  let active;
+  let lastRequestId = 0;
+  let stopped = false;
+  let writeTail = Promise.resolve();
+
+  function queuedWrite(output, frame, signal) {
+    const write = writeTail.then(() => writeFrame(output, frame, { maxBytes: maxFrameBytes, signal }));
+    writeTail = write.catch(() => {});
+    return write;
   }
 
-  async function turn(request, controller, timeoutMs, send) {
-    const sessionId = checkedSessionId(request.sessionId);
-    if (turns.has(sessionId) || closures.has(sessionId)) throw new Error("Pi session already has an active operation");
-    const args = turnParameters(request, controller.signal, sessionId, timeoutMs);
-    const settled = Promise.withResolvers();
-    turns.set(sessionId, { controller, settled: settled.promise });
-    let retain = false;
-    let cleanup;
-    const close = () => cleanup ??= upstream.closeClaudeProcesses(sessionId);
+  async function closeWorker() {
+    await bounded(upstream.closeClaudeProcesses(sessionId), CLEANUP_TIMEOUT_MS,
+      "Claude Code worker cleanup did not complete");
+  }
+
+  async function runTurn(request, controller, output) {
+    const requested = request.options?.timeoutMs;
+    const timeoutMs = Number.isSafeInteger(requested) && requested > 0
+      ? Math.min(turnTimeoutMs, requested) : turnTimeoutMs;
+    const candidate = checkedTranscript(request.transcript, committed, maxFrameBytes);
+    await queuedWrite(output, { id: request.id, type: "accepted", transcriptHash: candidate.hash }, controller.signal);
+    const args = turnParameters(request, controller.signal, sessionId, timeoutMs, candidate.messages);
+    const timer = setTimeout(() => controller.abort(new Error("Guest request timed out")), timeoutMs);
     let iterator;
+    let successful = false;
+    let cleaned = false;
     try {
-      controller.signal.throwIfAborted();
       iterator = upstream.streamClaudeCode(...args)[Symbol.asyncIterator]();
       for (;;) {
         controller.signal.throwIfAborted();
         const { value: event, done } = await untilAborted(iterator.next(), controller.signal);
         controller.signal.throwIfAborted();
         if (done) throw new Error("Claude Code stream ended without a terminal event");
+        requireRelayedDone(event);
         const terminal = event.type === "done" || event.type === "error";
-        if (event.type === "error") await close();
-        await send({ type: "event", event }, terminal);
+        if (event.type === "error") {
+          await closeWorker();
+          cleaned = true;
+        }
+        await queuedWrite(output, { id: request.id, type: "event", event: compactAssistantEvent(event) }, controller.signal);
         if (terminal) {
-          retain = event.type === "done" && !controller.signal.aborted;
+          successful = event.type === "done";
+          if (successful) committed = candidate;
+          else committed = undefined;
           break;
         }
       }
-    } catch (error) {
-      controller.abort(error);
-      throw error;
     } finally {
-      if (iterator?.return) void Promise.resolve(iterator.return()).catch(() => {});
-      try {
-        if (!retain) await close();
-      } finally {
-        turns.delete(sessionId);
-        settled.resolve();
+      clearTimeout(timer);
+      if (iterator?.return) await Promise.resolve(iterator.return()).catch(() => {});
+      if (!successful && !cleaned) {
+        committed = undefined;
+        await closeWorker();
       }
     }
   }
 
-  const server = createServer({ allowHalfOpen: true }, (socket) => {
-    sockets.add(socket);
-    const controller = new AbortController();
-    let id = null;
-    let started = false;
-    let terminal = false;
-    const readTimer = setTimeout(() => invalid("Timed out waiting for the guest request"), REQUEST_TIMEOUT_MS);
-
-    async function send(frame, last = true) {
-      if (terminal) throw new Error("Guest request already finished");
-      controller.signal.throwIfAborted();
-      await write(frame, last);
-    }
-
-    async function write(frame, last) {
-      if (socket.destroyed || !socket.writable) throw new Error("Guest client disconnected");
-      const line = encode({ id, ...frame });
-      if (!last) {
-        if (socket.writableLength > MAX_LINE_BYTES) throw new Error("Guest client stopped reading responses");
-        socket.write(line);
-        return;
-      }
-      terminal = true;
-      const timer = setTimeout(() => socket.destroy(), WRITE_TIMEOUT_MS);
-      try {
-        await new Promise((resolve, reject) => {
-          socket.write(line, (error) => error ? reject(error) : resolve());
-        });
-      } finally {
-        clearTimeout(timer);
-        socket.end(() => socket.destroy());
-      }
-    }
-
-    function report(message) {
-      if (terminal || socket.destroyed) return;
-      void write({ type: "error", message }, true).catch(() => socket.destroy());
-    }
-
-    function invalid(message) {
-      if (terminal) return;
-      if (started) controller.abort(new Error(message));
-      else {
-        clearTimeout(readTimer);
-        report(message);
-      }
-    }
-
-    async function handle(request) {
-      const { signal } = controller;
-      const requestedTimeout = request.options?.timeoutMs;
-      const timeoutMs = request.op === "turn"
-        ? (Number.isSafeInteger(requestedTimeout) && requestedTimeout > 0
-          ? Math.min(turnTimeoutMs, requestedTimeout) : turnTimeoutMs)
-        : METADATA_TIMEOUT_MS;
-      const timer = setTimeout(() => controller.abort(new Error("Guest request timed out")), timeoutMs);
-      try {
-        switch (request.op) {
-          case "status": {
-            const { available, loggedIn, subscription, plan } = await upstream.getClaudeStatus(undefined, signal);
-            await send({ type: "value", value: { available, loggedIn, subscription, plan: plan ?? null } });
-            break;
-          }
-          case "models": {
-            let models;
-            try {
-              models = await upstream.discoverClaudeModels(undefined, signal);
-            } catch {
-              throw new Error("Claude Code model discovery failed in the guest; check the CLI installation and login");
-            }
-            await send({ type: "value", value: models.map(upstream.modelFromDiscovery) });
-            break;
-          }
-          case "turn":
-            await turn(request, controller, timeoutMs, send);
-            break;
-          case "close":
-            await closeSession(checkedSessionId(request.sessionId));
-            await send({ type: "value", value: null });
-            break;
-          default:
-            throw new Error("Unknown guest operation");
+  async function handle(request, controller, output) {
+    try {
+      if (request.op === "status") {
+        const timer = AbortSignal.any([controller.signal, AbortSignal.timeout(METADATA_TIMEOUT_MS)]);
+        const status = await untilAborted(upstream.getClaudeStatus(undefined, timer), timer);
+        const { available, loggedIn, subscription, plan } = status;
+        await queuedWrite(output, { id: request.id, type: "value", value: {
+          available, loggedIn, subscription, plan: plan ?? null,
+        } }, controller.signal);
+      } else if (request.op === "models") {
+        const timer = AbortSignal.any([controller.signal, AbortSignal.timeout(METADATA_TIMEOUT_MS)]);
+        let models;
+        try {
+          models = await untilAborted(upstream.discoverClaudeModels(undefined, timer), timer);
+        } catch {
+          throw new Error("Claude Code model discovery failed in the guest; check the CLI installation and login");
         }
-      } catch (error) {
-        const failure = signal.aborted ? signal.reason : error;
-        report(failure instanceof Error ? failure.message : "Guest operation failed");
-      } finally {
-        clearTimeout(timer);
+        await queuedWrite(output, {
+          id: request.id, type: "value", value: models.map(upstream.modelFromDiscovery),
+        }, controller.signal);
+      } else if (request.op === "turn") {
+        await runTurn(request, controller, output);
+      } else {
+        throw new Error("Unknown guest operation");
       }
+    } catch (error) {
+      const failure = controller.signal.aborted ? controller.signal.reason : error;
+      const fatal = error?.fatal === true;
+      await queuedWrite(output, {
+        id: request.id, type: "error", fatal,
+        message: failure instanceof Error ? failure.message : "Guest operation failed",
+      }).catch(() => {});
+      if (fatal) throw error;
     }
-
-    const stopReading = readLines(socket, (frame) => {
-      if (terminal) return;
-      if (started) {
-        invalid(isRecord(frame) && frame.id === id && frame.type === "cancel"
-          ? "Guest request cancelled" : "Only a matching cancel frame can follow the request");
-        return;
-      }
-      if (!isRecord(frame) || !isId(frame.id)) {
-        invalid("Request must include a valid id");
-        return;
-      }
-      id = frame.id;
-      started = true;
-      clearTimeout(readTimer);
-      const task = handle(frame);
-      requests.add(task);
-      void task.finally(() => requests.delete(task));
-    }, invalid);
-
-    socket.on("end", () => invalid("Guest client closed input"));
-    socket.on("error", () => socket.destroy());
-    socket.on("close", () => {
-      clearTimeout(readTimer);
-      stopReading();
-      sockets.delete(socket);
-      if (!terminal) controller.abort(new Error("Guest client disconnected"));
-    });
-  });
-  server.maxConnections = 32;
-
-  async function stop() {
-    const closed = new Promise((resolve) => server.close(() => resolve()));
-    for (const socket of sockets) socket.destroy();
-    await closed;
-    await Promise.allSettled(requests);
-    await upstream.closeClaudeProcesses();
   }
-  return { server, stop };
+
+  return {
+    get active() { return !!active; },
+    get transcriptHash() { return committed?.hash; },
+    async run(input, output) {
+      if (stopped) throw new Error("Guest service cannot be restarted");
+      output.write(`${READY}\n`);
+      try {
+        for await (const frame of readFrames(input, { maxBytes: maxFrameBytes })) {
+          if (!isRecord(frame)) throw new Error("Protocol request must be an object");
+          if (frame.type === "cancel") {
+            if (!active && frame.id === lastRequestId) continue;
+            if (!active || frame.id !== active.id) throw new Error("Cancel did not match the active request");
+            active.controller.abort(new Error("Guest request cancelled"));
+            continue;
+          }
+          if (!isId(frame.id) || !Number.isSafeInteger(frame.id) || frame.id <= lastRequestId) {
+            throw new Error("Request IDs must be increasing positive integers");
+          }
+          lastRequestId = frame.id;
+          if (active) {
+            await queuedWrite(output, { id: frame.id, type: "error", fatal: false, message: "Guest service is busy" });
+            continue;
+          }
+          const controller = new AbortController();
+          const operation = { id: frame.id, controller, settled: undefined };
+          operation.settled = handle(frame, controller, output).finally(() => {
+            if (active === operation) active = undefined;
+          });
+          active = operation;
+          void operation.settled.catch(() => {
+            input.destroy();
+            output.end();
+          });
+        }
+      } finally {
+        stopped = true;
+        active?.controller.abort(new Error("Host closed the Cage service input"));
+        await active?.settled?.catch(() => {});
+        await bounded(upstream.closeClaudeProcesses(), CLEANUP_TIMEOUT_MS,
+          "Claude Code process cleanup did not complete");
+        await writeTail;
+      }
+    },
+  };
 }
 
 function configureCliEnvironment() {
-  // Do not silently switch account/backends if the guest has conflicting
-  // overrides. Never hand these credentials to the status probe either.
   const conflicts = ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_FOUNDRY_API_KEY"]
     .filter((name) => process.env[name]);
   for (const backend of ["BEDROCK", "VERTEX", "FOUNDRY"]) {
@@ -261,58 +249,35 @@ function configureCliEnvironment() {
   const home = homedir();
   const env = {
     HOME: home,
-    PATH: [dirname(realpathSync(process.execPath)), join(home, ".local/bin"), "/usr/local/bin", "/usr/bin", "/bin"].join(":"),
+    PATH: [dirname(realpathSync(process.execPath)), `${home}/.local/bin`, "/usr/local/bin", "/usr/bin", "/bin"].join(":"),
   };
   for (const name of [
     "USER", "LOGNAME", "LANG", "LC_ALL", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS",
     "DISABLE_TELEMETRY", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "DO_NOT_TRACK", "DISABLE_GROWTHBOOK",
+    "DISABLE_AUTOUPDATER", "DISABLE_UPDATES",
   ]) {
     if (process.env[name] !== undefined) env[name] = process.env[name];
-  }
-  for (const name of ["PI_CLAUDE_CODE_COMMAND", "PI_CLAUDE_CODE_CONFIG_DIR", "CLAUDE_CONFIG_DIR"]) {
-    const value = process.env[name];
-    if (!value) continue;
-    if (!isAbsolute(value)) throw new Error(`${name} must be an absolute guest path`);
-    env[name] = value;
   }
   for (const name of Object.keys(process.env)) delete process.env[name];
   Object.assign(process.env, env);
 }
 
-async function* requireRelayedTurn(events) {
-  for await (const event of events) {
-    // Upstream accepts CLI stdout without a request through the relay. That
-    // path does not enforce the guest's transcript or one-request limit.
-    if (event.type === "done") {
-      const diagnostics = event.message?.diagnostics;
-      if (!Array.isArray(diagnostics) || !diagnostics.some((entry) =>
-        entry?.type === "claude-code.turn-relay" && entry.details?.upstreamRequests === 1
-      )) {
-        throw new Error("Claude Code turn did not report exactly one upstream request through the guest relay");
-      }
-    }
-    yield event;
-  }
-}
-
 async function main() {
-  if (process.env.LISTEN_PID !== String(process.pid) || process.env.LISTEN_FDS !== "1") {
-    throw new Error("Start the guest with pi-claude-cage.socket (systemd --user)");
-  }
+  if (!process.argv.includes("--stdio")) throw new Error("Start the guest with service.mjs --stdio");
   process.umask(0o077);
-  configureCliEnvironment();
-  const [{ streamClaudeCode }, cli, { modelFromDiscovery }] = await Promise.all([
-    import("./upstream/src/stream.ts"), import("./upstream/src/claude-cli.ts"), import("./upstream/src/model-catalog.ts"),
-  ]);
-  const { server, stop } = createGuestServer({
-    ...cli, modelFromDiscovery,
-    streamClaudeCode: (...args) => requireRelayedTurn(streamClaudeCode(...args)),
-  });
-  const listening = once(server, "listening");
-  server.listen({ fd: 3 });
-  await listening;
-  for (const signal of ["SIGINT", "SIGTERM"]) {
-    process.once(signal, () => void stop());
+  const workingDirectory = mkdtempSync(join(tmpdir(), "pi-claude-cage."));
+  chmodSync(workingDirectory, 0o700);
+  process.chdir(workingDirectory);
+  try {
+    configureCliEnvironment();
+    const [{ streamClaudeCode }, cli, { modelFromDiscovery }] = await Promise.all([
+      import("./upstream/src/stream.ts"), import("./upstream/src/claude-cli.ts"), import("./upstream/src/model-catalog.ts"),
+    ]);
+    const service = createGuestService({ ...cli, modelFromDiscovery, streamClaudeCode });
+    await service.run(process.stdin, process.stdout);
+  } finally {
+    process.chdir("/");
+    rmSync(workingDirectory, { recursive: true, force: true });
   }
 }
 
@@ -320,7 +285,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     await main();
   } catch (error) {
-    console.error(`pi-claude-cage: ${error.message}`);
+    console.error(error instanceof Error ? error.message : "Guest service failed");
     process.exitCode = 1;
   }
 }

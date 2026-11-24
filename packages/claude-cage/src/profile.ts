@@ -3,7 +3,7 @@ import { closeSync, constants, fstatSync, openSync, readSync, renameSync, rmSync
 import { isAbsolute, join } from "node:path";
 import { isRecord } from "./transport.ts";
 
-export type CageProfile = Readonly<{ executable: string; config: string; clientPath: string }>;
+export type CageProfile = Readonly<{ executable: string; config: string; servicePath: string }>;
 
 const MAX_CONFIG_BYTES = 16 * 1024;
 const MAX_CATALOG_BYTES = 512 * 1024;
@@ -40,11 +40,14 @@ export function loadProfile(agentDir: string): CageProfile {
 		const code = (error as NodeJS.ErrnoException).code;
 		throw new Error(code === "ENOENT" ? `Create ${path} first` : `Cannot read a valid JSON profile from ${path}`);
 	}
-	if (!isRecord(data) || Object.keys(data).length !== 3 ||
-		!absolutePath(data.executable) || !absolutePath(data.config) || !absolutePath(data.clientPath)) {
-		throw new Error(`${path} must contain executable, config, and clientPath as absolute paths`);
+	if (isRecord(data) && Object.hasOwn(data, "clientPath")) {
+		throw new Error(`${path} uses the old clientPath schema; replace clientPath with the guest servicePath and run /reload`);
 	}
-	return Object.freeze({ executable: data.executable, config: data.config, clientPath: data.clientPath });
+	if (!isRecord(data) || Object.keys(data).length !== 3 ||
+		!absolutePath(data.executable) || !absolutePath(data.config) || !absolutePath(data.servicePath)) {
+		throw new Error(`${path} must contain executable, config, and servicePath as absolute paths`);
+	}
+	return Object.freeze({ executable: data.executable, config: data.config, servicePath: data.servicePath });
 }
 
 function profileKey(profile: CageProfile) {

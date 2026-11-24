@@ -17,7 +17,7 @@ const pages = (name, values) => writeFileSync(join(captureDir, `${name}.json`), 
 
 // Capture schema, tool calls and replies from an isolated bridge session (mock model).
 if (wanted("claude-cage")) {
-  execFileSync(process.execPath, ["--test", "--test-name-pattern=one profile carries",
+  execFileSync(process.execPath, ["--test", "--test-name-pattern=one Pi runtime keeps",
     "packages/claude-cage/tests/host.test.mjs"], {
     cwd: root, stdio: "inherit", env: { ...process.env, CAGE_CAPTURE_MEDIA: join(captureDir, "claude-cage.json") },
   });
