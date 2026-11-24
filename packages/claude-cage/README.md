@@ -11,11 +11,13 @@ The **service** persists across calls. The stdio client is disposable; one call 
 
 ## Install and select the target
 
-Requires host Pi 1.6.0+, Node ≥22.19, a POSIX host with `tar`, and an initialized guest with Node, npm, Git, a working systemd user manager, and official Claude Code. From this checkout:
+Requires host Pi 1.6.0+, Node ≥22.19, a POSIX host with `tar`, and an initialized guest with Node, npm, Git, a working systemd user manager, and official Claude Code. Install the standalone package:
 
 ```sh
-pi install "$(pwd)/packages/claude-cage"
+pi install npm:@maxiaochao/pi-claude-cage
 ```
+
+For local development, use `pi install "$PWD/packages/claude-cage"` from the repository root instead. If switching to npm, remove the local package source shown by `pi list` first to avoid loading the provider twice.
 
 Create `~/.pi/agent/claude-cage.json` (or use your custom Pi agent directory). Use actual **absolute paths**, not `~`. Example for a Wired installation:
 
@@ -47,9 +49,26 @@ Setup probes the target, then asks before downloading pinned dependencies and en
 
 **Account scope:** the service uses the guest user’s environment-level Claude login and egress. It does not select workbench numbered accounts or configure account-specific network routes. Do not use this mode if you require one of those routes. A response without evidence of a request through the guest relay fails. This is not an account-policy or IP guarantee. A disconnected request might already be billed; the bridge does not retry it or switch to a local provider.
 
+## Use with Herdr Subagents
+
+Child Pi sessions do not load the parent's optional extensions. In `~/.pi/agent/herdr-subagents.json`, or in a project's `.pi/herdr-subagents.json`, add the Cage package to the intended Persona's `extensions` list and set its `model`:
+
+```json
+{
+  "personas": {
+    "reviewer": {
+      "model": "claude-cage/default",
+      "extensions": ["npm:@maxiaochao/pi-claude-cage"]
+    }
+  }
+}
+```
+
+Merge this into existing settings. Keep any other sources that the Persona needs. A Persona's `extensions` list overrides `defaultExtensions`. A task-level `model` can also select a Cage model, but the Persona must still load the provider. Use `/herdr-subagents agents` to inspect the effective configuration before launching a new child. The child uses the existing Cage profile and cached model catalog from its Pi agent directory.
+
 ## Update and stop
 
-For a local checkout update the code, `/reload`, and rerun `/claude-cage-setup` to deploy the matching guest revision. Do not update the installed guest source separately. Protocol mismatches fail. Active guest turns can be interrupted by an upgrade. To stop the guest endpoint, run `systemctl --user disable --now pi-claude-cage.socket` then `systemctl --user stop pi-claude-cage.service` **inside the VM**. Removing the host extension alone does not uninstall guest files. See [guest setup](guest/SETUP.md) and [verification](TESTING.md).
+Run `pi update npm:@maxiaochao/pi-claude-cage` (or update the local checkout), then `/reload`. Rerun `/claude-cage-setup` to deploy the matching guest revision. Do not update the installed guest source separately. Protocol mismatches fail. Active guest turns can be interrupted by an upgrade. To stop the guest endpoint, run `systemctl --user disable --now pi-claude-cage.socket` then `systemctl --user stop pi-claude-cage.service` **inside the VM**. Removing the host extension alone does not uninstall guest files. See [guest setup](guest/SETUP.md) and [verification](TESTING.md).
 
 ![Tool result delivered to host Pi](docs/screenshot.png)
 
