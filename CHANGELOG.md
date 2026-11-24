@@ -1,3 +1,7 @@
+## 2026-11-24 - v0.15.8
+
+- claude-cage v0.2.0: Replace the socket daemon with one persistent bounded stdio connection per Pi runtime, transcript append synchronization, and fail-closed v1 migration
+
 ## 2026-11-24 - v0.15.7
 
 - claude-cage v0.1.1: Diagram the host and guest architecture, explain pinned adapter upgrades, and remove the pdlog listing from the toolkit README without changing the skill.

@@ -1,6 +1,6 @@
 {
   "name": "@maxiaochao/pi-claude-cage",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Use a guest-local Claude Code provider through Claude Cage while Pi executes tools on the host.",
   "type": "module",
   "license": "MIT",
