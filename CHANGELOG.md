@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-11-24 - v0.15.5
 
+- claude-cage v0.1.0: Add an optional Claude Cage provider with host Pi tools, a socket-activated guest worker, and Herdr Persona setup.
 - Add optional `pi-claude-cage` (separate install; does not change the bundled loadout).
 
 ## 2026-11-23 - v0.15.4
