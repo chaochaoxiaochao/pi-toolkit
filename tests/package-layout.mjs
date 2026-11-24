@@ -64,35 +64,7 @@ assert.equal(root.bin["pi-worktree"], "packages/worktree/bin/pi-worktree");
 
 assert.match(readFileSync("skills/mermaid/SKILL.md", "utf8"), /^disable-model-invocation: true$/m);
 
-const agentTeamSkill = readFileSync("skills/agent-team/SKILL.md", "utf8");
-const agentTeamModels = JSON.parse(readFileSync("skills/agent-team/models.json", "utf8"));
-assert.match(agentTeamSkill, /^disable-model-invocation: true$/m);
-assert.match(agentTeamSkill, /`\/skill:agent-team` 显式加载后开启/);
-assert.doesNotMatch(agentTeamSkill, /主 Agent 也可.*主动开启|高代价决策需要独立复核时/);
-assert.match(agentTeamSkill, /主 Agent.*负责核心调度/);
-assert.match(agentTeamSkill, /\[models\.json\]\(models\.json\)/);
-assert.match(agentTeamSkill, /按配置成员数并发启动子代理/);
-assert.match(agentTeamSkill, /对应角色的 `charter` 放入任务/);
-assert.match(agentTeamSkill, /评审与反证使用 `agent: "reviewer"`，代码调查使用 `agent: "explorer"`/);
-assert.doesNotMatch(agentTeamSkill, /\banalyst\b|中立执行载体/);
-assert.match(agentTeamSkill, /配置为空或数量不匹配时，报告配置问题后再启动/);
-assert.match(agentTeamSkill, /不是每次分析的必经步骤/);
-assert.match(agentTeamSkill, /未决项写明缺失证据/);
-assert.doesNotMatch(agentTeamSkill, /每轮并发启动三个|收尾前必须进行一轮|模型与角色不得永久绑定/);
-assert.doesNotMatch(agentTeamSkill, /herdr_subagents|herdr\s+(?:pane|agent)/i);
-assert.deepEqual(Object.keys(agentTeamModels).sort(), ["members", "roles"]);
-assert.equal(agentTeamModels.members.length, 3);
-assert.equal(new Set(agentTeamModels.members.map(({ name }) => name)).size, 3);
-assert.equal(new Set(agentTeamModels.members.map(({ vendor }) => vendor)).size, 3);
-assert.equal(new Set(agentTeamModels.members.map(({ model }) => model)).size, 3);
-assert.equal(agentTeamModels.members.every((member) => !("role" in member) && !("charter" in member)), true);
-assert.deepEqual(agentTeamModels.roles.map(({ name }) => name).sort(), ["adversary", "auditor", "replicator"]);
-assert.equal(agentTeamModels.roles.every((role) => typeof role.charter === "string" && !("model" in role)), true);
-assert.equal(agentTeamModels.members.length, agentTeamModels.roles.length);
-for (const { name, charter } of agentTeamModels.roles) {
-  assert.equal(agentTeamSkill.includes(`\`${name}\``), false, `role ${name} must be defined only in models.json`);
-  assert.equal(agentTeamSkill.includes(charter), false, `role ${name} charter must not be duplicated in SKILL.md`);
-}
+assert.equal(existsSync("skills/agent-team"), false, "the retired Agent Team skill must not be bundled");
 
 const tapdSkill = readFileSync("skills/tapd/SKILL.md", "utf8");
 const tapdAttachmentReference = readFileSync("skills/tapd/references/attachment-download.md", "utf8");

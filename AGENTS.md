@@ -65,8 +65,6 @@ pi-toolkit/
 
 ## Skill 与文档约束
 
-- `agent-team` 仅由用户通过 `/skill:agent-team` 显式加载，保持 `disable-model-invocation: true`；高代价决策不授权 Agent 自行加载或启动。
-
 - 用户可见行为变化必须同步检查根 `README.md`、本文件、根 `CHANGELOG.md`、相关子包 README/TESTING/CHANGELOG 和 manifest。
 - `skills/herdr/SKILL.md` 只在同步上游稳定 tag 时整体替换；唯一允许的本地差异是 description 与 H1 中的名称小写化，来源见 NOTICE。
 - `skills/tapd/` 由本仓库独立维护，不使用 `tapd skill init` 的生成结果覆盖；主文件保留工作流与跨版本契约，附件等分支细节放在 `references/`，具体命令语法由运行时 `tapd --help` 及逐层子命令帮助提供。

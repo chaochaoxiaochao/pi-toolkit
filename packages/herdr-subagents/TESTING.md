@@ -17,7 +17,7 @@ It verifies:
 - sibling continuation after failure and all-failed aggregation;
 - required explicit Personas in the tool schema and execution, including legacy single-task argument normalization;
 - independently optional task `model` and `thinking`, override precedence above Persona/Markdown/default/parent values, all seven Pi thinking levels and trimmed values, explicit `off`, unchanged omitted-field inheritance, CLI/record/history propagation, and invalid types/blank/unknown thinking rejected before side effects;
-- model-facing role selection guidance for broad independent review, codebase investigation, file-changing work, and task-based read-only agent-team selection;
+- model-facing role selection guidance for broad independent review, codebase investigation, and file-changing work;
 - exactly three built-in Personas (`explorer`, `reviewer`, `worker`), rejection of removed `analyst` calls before side effects, continued support for user-defined Personas with that name, and no removed Persona in the standalone tarball;
 - effective Persona descriptions in parent listings, corresponding bodies in child system prompts, and unchanged read/write tool boundaries;
 - child system prompts require a terminal `subagent_report` when work finishes or cannot be completed, not a normal text reply or a process-exit condition;

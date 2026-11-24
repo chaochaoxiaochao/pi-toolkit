@@ -1,5 +1,10 @@
 # Package split verification
 
+## Bundled Agent Team skill removal (2026-11-24)
+
+- The package-layout assertion failed while `skills/agent-team` existed and passed after removing the skill and its model roster. `npm pack --dry-run --json` confirmed both files are absent from the toolkit's 217-file pack list.
+- Passed full `npm test` (including 21 browser checks with no skips), toolkit and standalone Herdr load checks, and both dry-run packs. The Herdr tools and their exposure settings did not change.
+
 ## Claude Cage: standalone host extension and packaged Linux guest (2026-11-23)
 
 - Pi 1.6.0, Node 22 host: deterministic host/client/service tests, extension loading, root test suite, root loadout and both dry-run packs passed. The child tarball contains the guest lockfile and both systemd units; the root tarball does not contain this provider.

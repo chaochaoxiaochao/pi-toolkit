@@ -298,7 +298,7 @@ None of the bundled Personas pins a model, thinking level, skill, or optional ex
 | `explorer` | `read` | `read`, `bash`, `grep`, `find`, `ls`, `codemode` | Codebase structure, behavior, and dependency investigation without file changes. |
 | `reviewer` | `read` | `read`, `bash`, `grep`, `find`, `ls`, `codemode` | Independent review of proposals, designs, documents, implementations, and analysis against goals and constraints. |
 
-Choose `reviewer` for an independent assessment of existing work, `explorer` to investigate how the codebase works, and `worker` for file-changing work. Agent-team tasks use `reviewer` for reviews and counterevidence or `explorer` for codebase investigation; each task charter supplies the method and evaluation criteria.
+Choose `reviewer` for an independent assessment of existing work, `explorer` to investigate how the codebase works, and `worker` for file-changing work.
 
 The built-in `analyst` Persona has been removed. Update tasks and any `personas.analyst` settings to the selected remaining Persona; settings are not migrated automatically. Without a custom definition, `agent: "analyst"` fails as an unknown Persona before creating a run. User-defined Personas may still use that name.
 
