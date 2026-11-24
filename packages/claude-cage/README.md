@@ -78,23 +78,6 @@ Setup probes the target, then asks before downloading pinned dependencies and en
 
 **Account scope:** the service uses the guest user’s environment-level Claude login and egress. It does not select workbench numbered accounts or configure account-specific network routes. Do not use this mode if you require one of those routes. A response without evidence of a request through the guest relay fails. This is not an account-policy or IP guarantee. A disconnected request might already be billed; the bridge does not retry it or switch to a local provider.
 
-## Use with Herdr Subagents
-
-Child Pi sessions do not load the parent's optional extensions. In `~/.pi/agent/herdr-subagents.json`, or in a project's `.pi/herdr-subagents.json`, add the Cage package to the intended Persona's `extensions` list and set its `model`:
-
-```json
-{
-  "personas": {
-    "reviewer": {
-      "model": "claude-cage/default",
-      "extensions": ["npm:@maxiaochao/pi-claude-cage"]
-    }
-  }
-}
-```
-
-Merge this into existing settings. Keep any other sources that the Persona needs. A Persona's `extensions` list overrides `defaultExtensions`. A task-level `model` can also select a Cage model, but the Persona must still load the provider. Use `/herdr-subagents agents` to inspect the effective configuration before launching a new child. The child uses the existing Cage profile and cached model catalog from its Pi agent directory.
-
 ## Update and stop
 
 ### Update the host and guest bridge together
