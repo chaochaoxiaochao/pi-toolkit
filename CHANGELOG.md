@@ -1,3 +1,7 @@
+## 2026-11-24 - v0.15.6
+
+- Remove the bundled Agent Team skill and model roster, and streamline the default global agent instructions. Herdr Subagents tools are unchanged.
+
 ## 2026-11-24 - v0.15.5
 
 - claude-cage v0.1.0: Add an optional Claude Cage provider with host Pi tools, a socket-activated guest worker, and Herdr Persona setup.
