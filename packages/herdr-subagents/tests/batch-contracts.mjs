@@ -27,7 +27,8 @@ for (const action of Object.keys(HERDR_ACTIONS)) {
 assert.match(validateControlParams({ action: "history", runId: "unexpected" }), /not valid/);
 for (const action of ["respond", "resume", "unknown"]) assert.match(validateControlParams({ action }), /valid control action/);
 assert.throws(() => aggregateTaskStatus(["unknown"]), /unknown/i);
-assert.equal(aggregateTaskStatus(["failed", "cancelled"]), "partial");
+assert.equal(aggregateTaskStatus(["failed", "cancelled"]), "failed");
+assert.equal(aggregateTaskStatus(["completed", "failed", "cancelled"]), "partial");
 assert.equal(isAbortError(Object.assign(new Error("stop"), { name: "AbortError" })), true);
 assert.equal(isAbortError(new Error("provider unavailable")), false);
 {
@@ -70,13 +71,70 @@ console.log("PASS current control allow/deny matrix, Herdr rejection without sid
 		await Promise.all([waiting.promise, failed.promise]);
 		controller.abort(new Error("cancel remaining task"));
 		const response = await outcome;
-		assert.equal(response.details.status, "partial");
+		assert.equal(response.details.status, "failed");
 		assert.deepEqual(response.details.tasks.map((task) => task.status), ["failed", "cancelled"]);
-		assert.equal(readJson(join(response.details.recordDirectory, "run.json")).status, "partial");
+		assert.equal(readJson(join(response.details.recordDirectory, "run.json")).status, "failed");
 		for (const task of response.details.tasks) assert.equal(readTask(task.recordDirectory).status, task.status);
 	} finally { controller.abort(); await outcome; f.close(); }
 }
-console.log("PASS public failed-plus-cancelled batch returns partial with matching durable results");
+console.log("PASS public hard failure remains failed when an already-running sibling is cancelled");
+
+{
+	const launched = [];
+	const f = batchFixture(({ directory, publish }) => {
+		const name = readTask(directory).name;
+		launched.push(name);
+		publish(directory, name === "first" ? { status: "failed", summary: "hard failure", error: "confirmed failure" } : { status: "completed", summary: "unexpected start" });
+	});
+	try {
+		const result = await runHerdrSubagentsBatch(["first", "second", "third", "fourth"].map((name) => batchTask(name)), options(f, { concurrency: 1 }));
+		assert.equal(result.status, "failed");
+		assert.deepEqual(launched, ["first"]);
+		assert.deepEqual(result.tasks.map((task) => task.status), ["failed", "cancelled", "cancelled", "cancelled"]);
+		assert.match(result.summary, /first failed/);
+		assert.ok(result.tasks.slice(1).every((task) => task.error === "Not started because first failed."));
+		for (const task of result.tasks) assert.equal(readTask(task.recordDirectory).status, task.status);
+	} finally { f.close(); }
+}
+{
+	const launched = [];
+	const siblingStarted = Promise.withResolvers();
+	const failureSeen = Promise.withResolvers();
+	const releaseSibling = Promise.withResolvers();
+	const f = batchFixture(async ({ directory, publish }) => {
+		const name = readTask(directory).name;
+		launched.push(name);
+		if (name === "first") {
+			await siblingStarted.promise;
+			publish(directory, { status: "failed", summary: "hard failure", error: "confirmed failure" });
+			return;
+		}
+		if (name === "second") {
+			siblingStarted.resolve();
+			await releaseSibling.promise;
+			publish(directory, { status: "completed", summary: "already-running sibling completed" });
+			return;
+		}
+		publish(directory, { status: "completed", summary: "unexpected start" });
+	});
+	try {
+		const outcome = runHerdrSubagentsBatch(["first", "second", "third", "fourth"].map((name) => batchTask(name)), options(f, {
+			concurrency: 2,
+			onUpdate: (update) => {
+				if (update.tasks.some((task) => task.name === "first" && task.status === "failed")) failureSeen.resolve();
+			},
+		}));
+		await siblingStarted.promise;
+		await failureSeen.promise;
+		releaseSibling.resolve();
+		const result = await outcome;
+		assert.equal(result.status, "partial");
+		assert.deepEqual(launched.sort(), ["first", "second"]);
+		assert.deepEqual(result.tasks.map((task) => task.status), ["failed", "completed", "cancelled", "cancelled"]);
+		assert.match(result.summary, /first failed/);
+	} finally { releaseSibling.resolve(); f.close(); }
+}
+console.log("PASS hard failure stops queued work while already-running siblings finish");
 
 for (const method of ["createTab", "splitPane", "startAgent"]) {
 	const f = batchFixture();
@@ -97,16 +155,16 @@ for (const method of ["createTab", "splitPane", "startAgent"]) {
 		const result = await runHerdrSubagentsBatch(["one", "two", "three"].map((name) => batchTask(name)), options(f));
 		assert.ok(["partial", "failed"].includes(result.status));
 		assert.equal(result.tasks.length, 3);
-		assert.ok(result.activity.every((task) => ["completed", "failed"].includes(task.status)));
-		assert.equal(failures.length, method === "startAgent" ? 3 : 1, "an uncertain allocation is not retried, nor a child started twice");
-		if (method === "startAgent") assert.equal(new Set(failures.map(([request]) => request.name)).size, 3);
+		assert.ok(result.activity.every((task) => ["completed", "failed", "cancelled"].includes(task.status)));
+		assert.equal(failures.length, method === "startAgent" ? 2 : 1, "an uncertain allocation is not retried, nor queued work started after failure");
+		if (method === "startAgent") assert.equal(new Set(failures.map(([request]) => request.name)).size, 2);
 		const delivered = f.calls.filter(([name]) => name === "promptAgent");
 		assert.equal(delivered.length, method === "splitPane" ? 1 : 0);
 		assert.equal(readJson(join(result.recordDirectory, "run.json")).status, result.status);
 		for (const task of result.tasks) {
 			const record = readTask(task.recordDirectory);
 			assert.equal(record.status, task.status);
-			if (method === "startAgent") {
+			if (method === "startAgent" && task.status === "failed") {
 				assert.ok(attemptsAtStart.has(task.recordDirectory));
 				assert.equal(record.currentAttemptId, attemptsAtStart.get(task.recordDirectory), "startup failure must preserve the persisted attempt identity");
 			}
@@ -115,15 +173,21 @@ for (const method of ["createTab", "splitPane", "startAgent"]) {
 		assert.equal(existsSync(join(result.recordDirectory, ".state.lock")), false);
 	} finally { f.close(); }
 }
-console.log("PASS create/split/start uncertain failures never duplicate execution and all workers settle durably");
+console.log("PASS create/split/start uncertain failures never duplicate execution, stop queued work and settle durably");
 
 {
 	const f = batchFixture();
 	try {
 		const queued = durableRun(f.root, "resume-queue", "running", { cwd: f.root, paneIds: [], tabId: undefined, effectiveConcurrency: 1 });
 		writeJson(queued.taskFile, { ...queued.task, status: "queued", prompt: "Run resumed queue fixture." });
+		const secondDirectory = join(queued.directory, "tasks", "02-second");
+		const secondFile = join(secondDirectory, "task.json");
+		writeJson(secondFile, { ...queued.task, id: "resume-queue-second", order: 2, name: "second", status: "queued", prompt: "Must not start.", sessionFile: join(secondDirectory, "session.jsonl") });
+		writeJson(queued.runFile, { ...queued.run, taskIds: [queued.task.id, "resume-queue-second"] });
 		let attempt;
+		let starts = 0;
 		f.herdr.startAgent = async () => {
+			starts += 1;
 			attempt = readTask(queued.taskDirectory).currentAttemptId;
 			assert.match(attempt, /^[0-9a-f-]{36}$/i);
 			throw new Error("resumed queue launch failed");
@@ -133,9 +197,11 @@ console.log("PASS create/split/start uncertain failures never duplicate executio
 		assert.equal(settled.status, "failed");
 		assert.equal(settled.error, "resumed queue launch failed");
 		assert.equal(settled.currentAttemptId, attempt);
+		assert.equal(readTask(secondDirectory).status, "cancelled");
+		assert.equal(starts, 1);
 	} finally { f.close(); }
 }
-console.log("PASS failed continued queue launch retains the attempt identity");
+console.log("PASS failed continued queue launch retains the attempt identity and stops later queued work");
 
 
 for (const [label, report] of [

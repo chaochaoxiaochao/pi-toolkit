@@ -10,7 +10,7 @@ import { ownerRecord } from "./ownership.ts";
 import { continuationSystemPrompt } from "./protocol.ts";
 import { applyRunStatus } from "./run-status.ts";
 import { acquireDirectoryLock, withRunStateLock } from "./run-state.ts";
-import { applyReport, applyTaskStatus, isActiveStatus, readReport, readRunRecord, readTaskRecord, settleAttemptFailure, projectTaskActivity, type PersistedReport, type ResumeMember, type TaskRecord } from "./records.ts";
+import { applyReport, applyTaskRuntime, applyTaskStatus, isActiveStatus, readReport, readRunRecord, readTaskRecord, settleAttemptFailure, projectTaskActivity, type PersistedReport, type ResumeMember, type TaskRecord } from "./records.ts";
 import { writeJsonAtomic, writeTextAtomic } from "./state.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
 import { findRunDirectory } from "./run-locator.ts";
@@ -115,9 +115,10 @@ async function resumeLocked(cwd: string, runDirectory: string, runFile: string, 
 		let status: "blocked" | "completed" | "failed";
 		try {
 			const prompted = await promptLiveAgent({ herdr, task: { ...task, sessionFile: task.sessionFile as string }, paneId: allocation.paneId, prompt, systemPromptFile: followupPrompt, agentName, attemptId, signal: options.signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => options.onStalled?.(`${task.name ?? task.agent} appears stalled; it is still running.`), onRuntimeUpdate: async (updated) => {
-				Object.assign(task, updated);
+				applyTaskRuntime(task, updated.state, updated.diagnostic, updated.at);
+				await writeJsonAtomic(taskFile, task);
 				const liveEntries = await readTaskEntries(runDirectory);
-				options.onUpdate?.({ runId: initialRun.id, label: initialRun.label, status: "running", summary: `${task.name ?? task.agent} runtime: ${updated.runtimeState}.`, documents: [], tabId: allocation?.tabId ?? "", paneId: allocation?.paneId ?? "", sessionFile: task.sessionFile as string, activity: liveEntries.map(({ task }, index) => projectTaskActivity(task, index)) });
+				options.onUpdate?.({ runId: initialRun.id, label: initialRun.label, status: "running", summary: `${task.name ?? task.agent} runtime: ${updated.state}.`, documents: [], tabId: allocation?.tabId ?? "", paneId: allocation?.paneId ?? "", sessionFile: task.sessionFile as string, activity: liveEntries.map(({ task }, index) => projectTaskActivity(task, index)) });
 			} });
 			report = prompted.report;
 			status = applyReport(task, report);

@@ -31,9 +31,10 @@ The tools and command are registered only when Pi is running inside Herdr with a
 - `concurrency: 1` runs tasks strictly in input order.
 - `concurrency: N` runs at most N read-only tasks at once.
 - A run containing a write-capable persona must use `concurrency: 1`; unsafe parallel writes are rejected.
-- One task failing does not cancel its siblings.
+- One task failing does not cancel siblings that are already running.
 - The tool returns only after every task is `completed`, `failed`, or `cancelled`.
 - There is no background queue, blocked/respond flow, automatic resume, or early failure detach.
+- A hard task failure stops queued tasks from starting. Already-running siblings finish before the tool returns.
 
 ```json
 {
@@ -69,6 +70,8 @@ The child UI renders only the report status and saved size instead of echoing th
 
 An atomically renamed attempt report is the authoritative completion signal. Herdr states such as `idle`, `blocked`, and `done` are wake-up hints only. A prompt transport error or Pi retry cannot fail a task while its child process remains alive. If the process exits without a valid report, the task fails explicitly.
 
+A final Provider error does not publish a terminal report. The task remains `running` with runtime state `waiting_interaction`, the parent tool stays attached, and the child pane keeps its full session. Correct the Provider in the child and submit another prompt; the same attempt returns to `working`. Cancel the run explicitly if it should not continue.
+
 Duplicate identical reports are idempotent. A conflicting report for the same task attempt is rejected. Terminal task records are immutable.
 
 ## State model
@@ -99,10 +102,11 @@ Records are stored under:
     report.json
     reports/<attempt-id>.json
     attempt-results/<attempt-id>.md
+    attempts/<attempt-id>.json
     attempts/<attempt-id>.reminded
 ```
 
-The orchestrator is the only writer of `run.json`, `task.json`, and promoted `report.json`. The child only writes its attempt-scoped result and report.
+The orchestrator is the only writer of `run.json`, `task.json`, and promoted `report.json`. The child writes attempt-scoped runtime state, reminder marker, result, and report files.
 
 ## Tools and UI
 
@@ -386,6 +390,6 @@ See [TESTING.md](TESTING.md) for deterministic tests, extension loading, packagi
 
 The child checks `reports/<attempt-id>.json` at `agent_before_settle`. A valid completed or failed report adds zero requests. A normally completed round without a report receives one reminder to submit existing results, not redo the task. `attempts/<attempt-id>.reminded` is persisted before continuing; rounds and reloads cannot reset it.
 
-A second omission produces a `failed` protocol report with `error: missing_report`, an explicitly **unconfirmed** result, and the child session path. This does not assert the delegated work itself failed. Final provider errors produce `child_error` without a reminder. A user abort (Esc) skips before-settle. The child waits `abortGraceSeconds` (default 30) for a correction; a new round cancels the timer and the child continues. If nothing starts in time, it publishes an unconfirmed `child_aborted` failure. Parent-requested cancellation retains its existing cancelled lifecycle.
+A second omission produces a `failed` protocol report with `error: missing_report`, an explicitly **unconfirmed** result, and the child session path. This does not assert the delegated work itself failed. Final Provider errors instead persist `waiting_interaction` with the Provider diagnostic and keep the attempt alive without another request. A user abort (Esc) skips before-settle. The child waits `abortGraceSeconds` (default 30) for a correction; a new round cancels the timer and the child continues. If nothing starts in time, it publishes an unconfirmed `child_aborted` failure. Parent-requested cancellation retains its existing cancelled lifecycle.
 
 The parent still waits for an atomic attempt report or process exit. It does not infer success from idle/settled or run a second reminder monitor. Report idempotency and focus-aware tab cleanup are unchanged.

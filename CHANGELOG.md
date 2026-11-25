@@ -1,3 +1,7 @@
+## Unreleased
+
+- Herdr Subagents: preserve Provider-error child sessions for in-pane correction, and stop queued work after a hard failure while already-running siblings finish.
+
 ## 2026-11-24 - v0.15.8
 
 - claude-cage v0.2.0: Replace the socket daemon with one persistent bounded stdio connection per Pi runtime, transcript append synchronization, and fail-closed v1 migration

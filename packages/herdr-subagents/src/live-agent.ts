@@ -3,8 +3,8 @@ import { mkdir, readFile, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HerdrAutomation } from "./herdr.ts";
-import { parseReport, type PersistedReport, type TaskRecord } from "./records.ts";
-import { attemptReportPath, attemptStatePath, createAttemptId } from "./attempts.ts";
+import { parseReport, type PersistedReport, type TaskRuntimeState } from "./records.ts";
+import { attemptReportPath, attemptStatePath, createAttemptId, parseAttemptState } from "./attempts.ts";
 import { writeJsonAtomic } from "./state.ts";
 
 export interface LiveTaskRecord {
@@ -76,7 +76,7 @@ export async function promptLiveAgent(options: {
 	start?: boolean;
 	stalledWarningMs?: number;
 	onStalled?: () => void;
-	onRuntimeUpdate?: (task: TaskRecord) => void | Promise<void>;
+	onRuntimeUpdate?: (update: { state: TaskRuntimeState; diagnostic?: string; at: string }) => void | Promise<void>;
 	onAttemptPersisted?: (attemptId: string) => void;
 	attemptId?: string;
 }): Promise<{ report: PersistedReport; agentName: string; attemptId: string }> {
@@ -112,7 +112,27 @@ export async function promptLiveAgent(options: {
 			deliveryError = error;
 			deliveryFailed.resolve();
 		});
-	const stalledTimer = options.stalledWarningMs ? setTimeout(() => options.onStalled?.(), options.stalledWarningMs) : undefined;
+	let stalledTimer: ReturnType<typeof setTimeout> | undefined;
+	const clearStalledTimer = () => { if (stalledTimer) clearTimeout(stalledTimer); stalledTimer = undefined; };
+	const armStalledTimer = () => {
+		clearStalledTimer();
+		if (options.stalledWarningMs) stalledTimer = setTimeout(() => options.onStalled?.(), options.stalledWarningMs);
+	};
+	let lastRuntimeKey: string | undefined;
+	const updateRuntime = async () => {
+		if (!existsSync(attemptStateFile)) return;
+		const state = parseAttemptState(JSON.parse(await readFile(attemptStateFile, "utf8")), "child attempt state");
+		if (state.attemptId !== attemptId) throw new Error(`Child attempt state belongs to '${state.attemptId}', expected '${attemptId}'.`);
+		if (state.state === "settled") return;
+		const runtimeState: TaskRuntimeState = state.state;
+		const key = `${runtimeState}\0${state.diagnostic ?? ""}\0${state.at}`;
+		if (key === lastRuntimeKey) return;
+		lastRuntimeKey = key;
+		if (runtimeState === "waiting_interaction") clearStalledTimer();
+		else armStalledTimer();
+		await options.onRuntimeUpdate?.({ state: runtimeState, diagnostic: state.diagnostic, at: state.at });
+	};
+	armStalledTimer();
 	try {
 		while (true) {
 			if (existsSync(attemptReportFile)) break;
@@ -120,6 +140,7 @@ export async function promptLiveAgent(options: {
 				if (existsSync(attemptReportFile)) break;
 				throw options.signal.reason ?? new Error("Subagent attempt aborted.");
 			}
+			await updateRuntime();
 			if (deliveryError !== undefined && !existsSync(attemptStateFile)) {
 				const detail = deliveryError instanceof Error ? deliveryError.message : String(deliveryError);
 				throw new Error(`Child Pi did not accept the prompt: ${detail}`);
@@ -141,7 +162,7 @@ export async function promptLiveAgent(options: {
 			await (existsSync(attemptStateFile) ? observed : Promise.race([observed, deliveryFailed.promise]));
 		}
 	} finally {
-		if (stalledTimer) clearTimeout(stalledTimer);
+		clearStalledTimer();
 		promptController.abort(new Error("Task lifecycle settled; stop waiting for prompt acknowledgement."));
 	}
 	await prompt;

@@ -93,8 +93,25 @@ function saveUnconfirmed(taskDirectory: string, attemptId: string, reason: strin
 	});
 }
 
-function writeAttemptState(taskDirectory: string, attemptId: string, state: AttemptState): void {
-	writeAtomic(attemptStatePath(taskDirectory, attemptId), `${JSON.stringify({ attemptId, state, at: new Date().toISOString() }, null, 2)}\n`);
+function writeAttemptState(taskDirectory: string, attemptId: string, state: AttemptState, diagnostic?: string): void {
+	writeAtomic(attemptStatePath(taskDirectory, attemptId), `${JSON.stringify({
+		attemptId,
+		state,
+		at: new Date().toISOString(),
+		...(diagnostic ? { diagnostic } : {}),
+	}, null, 2)}\n`);
+}
+
+function latestProviderError(messages: unknown[]): string | undefined {
+	for (let index = messages.length - 1; index >= 0; index -= 1) {
+		const message = messages[index];
+		if (!message || typeof message !== "object" || Array.isArray(message)) continue;
+		const record = message as Record<string, unknown>;
+		if (record.role !== "assistant" || record.stopReason !== "error" || typeof record.errorMessage !== "string") continue;
+		const diagnostic = record.errorMessage.replace(/[\x00-\x1f\x7f]/g, " ").trim();
+		if (diagnostic) return diagnostic.slice(0, 800);
+	}
+	return undefined;
 }
 
 let herdrReportSeq = Date.now() * 1000;
@@ -113,15 +130,22 @@ export default function (pi: ExtensionAPI) {
 	let activeAttemptId: string | undefined;
 	let blockedCount = 0;
 	let abortTimer: ReturnType<typeof setTimeout> | undefined;
+	let providerDiagnostic: string | undefined;
+	let waitingForInteraction = false;
 	const clearAbortTimer = () => { if (abortTimer) clearTimeout(abortTimer); abortTimer = undefined; };
 	pi.on("before_agent_start", async () => {
 		clearAbortTimer(); // The user steered the child after Esc.
 		const taskDirectory = process.env.PI_HERDR_SUBAGENTS_TASK_DIR?.trim();
 		if (!taskDirectory) return;
 		activeAttemptId = currentAttemptId(taskDirectory);
+		providerDiagnostic = undefined;
+		waitingForInteraction = false;
 		writeAttemptState(taskDirectory, activeAttemptId, "working");
 	});
 	pi.on("agent_start", () => reportHerdrState("working"));
+	pi.on("agent_end", (event) => {
+		providerDiagnostic = latestProviderError(event.messages);
+	});
 	pi.on("agent_before_settle", (event, ctx) => {
 		const taskDirectory = process.env.PI_HERDR_SUBAGENTS_TASK_DIR?.trim();
 		if (!taskDirectory) return;
@@ -153,9 +177,16 @@ export default function (pi: ExtensionAPI) {
 		}
 		// Esc normally skips this boundary; if it lands mid-boundary, still let the user steer.
 		if (event.outcome === "aborted") return;
-		const reason = event.outcome === "completed" ? "missing_report" : "child_error";
-		saveUnconfirmed(taskDirectory, attemptId, reason, ctx.sessionManager.getSessionFile());
-		// Final provider errors receive a diagnostic, never a wake-up.
+		if (event.outcome === "error") {
+			const diagnostic = providerDiagnostic ??
+				"Provider request failed. Inspect the child session, correct the provider, and retry this task.";
+			waitingForInteraction = true;
+			providerDiagnostic = diagnostic;
+			writeAttemptState(taskDirectory, attemptId, "waiting_interaction", diagnostic);
+			reportHerdrState("blocked", diagnostic);
+			return;
+		}
+		saveUnconfirmed(taskDirectory, attemptId, "missing_report", ctx.sessionManager.getSessionFile());
 	});
 	pi.on("agent_settled", (event, ctx) => {
 		const taskDirectory = process.env.PI_HERDR_SUBAGENTS_TASK_DIR?.trim();
@@ -175,11 +206,15 @@ export default function (pi: ExtensionAPI) {
 		// The orchestrator settles each task from its atomic report. Once every task in
 		// the run settles, it closes the owned tab immediately when unfocused or waits
 		// for the user to leave it. Force-exiting here can interrupt TUI restoration.
-		if (ctx?.isIdle?.() === true) reportHerdrState("idle");
+		if (ctx?.isIdle?.() === true) {
+			if (waitingForInteraction) reportHerdrState("blocked", providerDiagnostic);
+			else reportHerdrState("idle");
+		}
 	});
 	pi.events.on("herdr:blocked", (data: { active?: boolean; label?: string }) => {
 		blockedCount = Math.max(0, blockedCount + (data?.active ? 1 : -1));
-		reportHerdrState(blockedCount > 0 ? "blocked" : "working", blockedCount > 0 ? data?.label : undefined);
+		if (waitingForInteraction) reportHerdrState("blocked", providerDiagnostic);
+		else reportHerdrState(blockedCount > 0 ? "blocked" : "working", blockedCount > 0 ? data?.label : undefined);
 	});
 	pi.registerCommand("parent", {
 		description: "Return focus to the parent Agent pane",
@@ -217,6 +252,9 @@ export default function (pi: ExtensionAPI) {
 			if (!taskDirectory) throw new Error("PI_HERDR_SUBAGENTS_TASK_DIR is not set");
 			const attemptId = activeAttemptId ?? currentAttemptId(taskDirectory);
 			const report = saveReport(taskDirectory, attemptId, params);
+			waitingForInteraction = false;
+			providerDiagnostic = undefined;
+			writeAttemptState(taskDirectory, attemptId, "settled");
 			return {
 				content: [{ type: "text" as const, text: `${params.status}: ${params.summary}` }],
 				details: report,

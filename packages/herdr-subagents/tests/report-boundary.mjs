@@ -95,11 +95,19 @@ try {
     const current = attempt();
     const run = fixture();
     await run.handlers.get("before_agent_start")();
-    assert.equal(await run.handlers.get("agent_before_settle")(boundary("error"), ctx), undefined, "error: do not wake or retry the child");
-    const report = JSON.parse(readFileSync(current.report, "utf8"));
-    assert.equal(report.status, "failed");
-    assert.equal(report.error, "child_error");
-    assert.match(report.summary, /unconfirmed/);
+    await run.handlers.get("agent_end")({
+      messages: [{ role: "assistant", stopReason: "error", errorMessage: "Claude Cage could not complete the request." }],
+    });
+    assert.equal(await run.handlers.get("agent_before_settle")(boundary("error"), ctx), undefined, "provider error: do not wake or terminate the child");
+    assert.equal(existsSync(current.report), false, "a recoverable provider error must not publish a terminal report");
+    const waiting = JSON.parse(readFileSync(join(root, "attempts", `${current.id}.json`), "utf8"));
+    assert.equal(waiting.state, "waiting_interaction");
+    assert.equal(waiting.diagnostic, "Claude Cage could not complete the request.");
+    await run.handlers.get("before_agent_start")();
+    assert.equal(JSON.parse(readFileSync(join(root, "attempts", `${current.id}.json`), "utf8")).state, "working");
+    await run.tool.execute("recovered", { status: "completed", summary: "Recovered after provider correction", result: "Recovered" });
+    assert.equal(JSON.parse(readFileSync(current.report, "utf8")).status, "completed");
+    assert.equal(JSON.parse(readFileSync(join(root, "attempts", `${current.id}.json`), "utf8")).state, "settled");
   }
   const repaired = attempt();
   const run = fixture();
@@ -108,7 +116,7 @@ try {
   await run.tool.execute("repair", { status: "completed", summary: "Recovered existing work", result: "Existing result" });
   assert.equal(await run.handlers.get("agent_before_settle")(boundary(), ctx), undefined);
   assert.equal(JSON.parse(readFileSync(repaired.report, "utf8")).status, "completed");
-  console.log("PASS report boundary: zero-request completion, one durable reminder, unconfirmed failure, cancellation/error, idempotency");
+  console.log("PASS report boundary: zero-request completion, one durable reminder, recoverable provider errors, cancellation, idempotency");
 } finally {
   if (previous === undefined) delete process.env.PI_HERDR_SUBAGENTS_TASK_DIR;
   else process.env.PI_HERDR_SUBAGENTS_TASK_DIR = previous;

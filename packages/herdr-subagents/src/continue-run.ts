@@ -6,7 +6,7 @@ import { writeJsonAtomic } from "./state.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
 import { RunPaneAllocator } from "./run-pane-allocator.ts";
 import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
-import { applyReport, applyTaskStatus, readRunRecord, readTaskRecord, settleAttemptFailure } from "./records.ts";
+import { applyReport, applyTaskRuntime, applyTaskStatus, readRunRecord, readTaskRecord, settleAttemptFailure } from "./records.ts";
 import { acquireDirectoryLock, adoptRecord, queueLockPath, withRunStateLock, type DirectoryLock } from "./run-state.ts";
 import { isAbortError } from "./errors.ts";
 
@@ -49,11 +49,29 @@ async function continueQueuedTasks(runDirectory: string, runFile: string, herdr:
 	const concurrency = Math.min(availableSlots, queuedDirectories.length);
 	const paneAllocator = new RunPaneAllocator({ herdr, run, runFile, signal: options.signal, validateExistingPane: true, onCleanupError: options.onCleanupError });
 	let nextIndex = 0;
-	const runOne = async (directory: string): Promise<string> => {
+	let firstFailure: { name: string } | undefined;
+	const stopAfterFailure = (name: string): { name: string } | undefined => {
+		if (firstFailure) return undefined;
+		firstFailure = { name };
+		return firstFailure;
+	};
+	const cancelQueued = async (failedTask: { name: string }) => {
+		for (let index = nextIndex; index < queuedDirectories.length; index += 1) {
+			const directory = queuedDirectories[index];
+			const taskFile = join(directory, "task.json");
+			const task = await readTaskRecord(taskFile);
+			if (task.status !== "queued") continue;
+			applyTaskStatus(task, "cancelled", { error: `Not started because ${failedTask.name} failed.` });
+			await writeJsonAtomic(taskFile, task);
+		}
+	};
+	const runOne = async (directory: string): Promise<{ status: string; failFast?: { name: string } }> => {
 		const taskFile = join(directory, "task.json");
 		const task = await readTaskRecord(taskFile);
 		let paneId = "";
 		const reportFile = join(directory, "report.json");
+		let failFast: { name: string } | undefined;
+		const taskName = String(task.name || task.agent || "Task");
 		try {
 			paneId = await paneAllocator.allocate(directory);
 			const agentName = liveAgentName(task.id, Number(task.attempt ?? 0) + 1);
@@ -63,24 +81,36 @@ async function continueQueuedTasks(runDirectory: string, runFile: string, herdr:
 			Object.assign(task, { tabId: run.tabId, paneId, paneLabel, agentName, attempt: Number(task.attempt ?? 0) + 1, startedAt: new Date().toISOString() });
 			await writeJsonAtomic(taskFile, task);
 			await options.onUpdate?.();
-			const prompted = await promptLiveAgent({ herdr, task: { ...task, id: task.id, sessionFile: task.sessionFile }, paneId, prompt: task.prompt, systemPromptFile: join(directory, "system-prompt.md"), agentName, signal: options.signal, stalledWarningMs: run.stalledWarningSeconds ? Number(run.stalledWarningSeconds) * 1000 : undefined, onStalled: () => options.onStalled?.(`${task.name ?? task.agent} appears stalled; it is still running.`), onAttemptPersisted: (id) => { task.currentAttemptId = id; } });
-			applyReport(task, prompted.report);
+			const prompted = await promptLiveAgent({ herdr, task: { ...task, id: task.id, sessionFile: task.sessionFile }, paneId, prompt: task.prompt, systemPromptFile: join(directory, "system-prompt.md"), agentName, signal: options.signal, stalledWarningMs: run.stalledWarningSeconds ? Number(run.stalledWarningSeconds) * 1000 : undefined, onStalled: () => options.onStalled?.(`${task.name ?? task.agent} appears stalled; it is still running.`), onAttemptPersisted: (id) => { task.currentAttemptId = id; }, onRuntimeUpdate: async (updated) => {
+				applyTaskRuntime(task, updated.state, updated.diagnostic, updated.at);
+				await writeJsonAtomic(taskFile, task);
+				await options.onUpdate?.();
+			} });
+			if (applyReport(task, prompted.report) === "failed") failFast = stopAfterFailure(taskName);
 		} catch (error) {
+			const cancelled = isAbortError(error, options.signal);
+			if (!cancelled) failFast = stopAfterFailure(taskName);
 			await settleAttemptFailure(task, reportFile, {
-				cancelled: isAbortError(error, options.signal),
+				cancelled,
 				error: error instanceof Error ? error.message : String(error),
-				name: String(task.name ?? task.agent ?? "Task"),
+				name: taskName,
 			});
 		}
 		await writeJsonAtomic(taskFile, task);
 		await options.onUpdate?.();
-		return task.status;
+		return { status: task.status, ...(failFast ? { failFast } : {}) };
 	};
 	const worker = async () => {
-		while (true) {
+		while (!firstFailure) {
 			const index = nextIndex++;
 			if (index >= queuedDirectories.length) return;
-			if (await runOne(queuedDirectories[index]) === "blocked") return;
+			const directory = queuedDirectories[index];
+			const result = await runOne(directory);
+			if (result.failFast) {
+				await cancelQueued(result.failFast);
+				await options.onUpdate?.();
+			}
+			if (result.status === "blocked") return;
 		}
 	};
 	await Promise.all(Array.from({ length: concurrency }, worker));

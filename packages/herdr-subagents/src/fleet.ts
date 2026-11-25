@@ -154,7 +154,8 @@ export function fleetLines(
 		const marker = chosen ? theme.fg("accent", "›") : " ";
 		const persona = theme.fg("muted", task.agent || "worker");
 		const visibleStatus = task.runtimeState && task.status === "running" ? task.runtimeState : task.status;
-		const left = `${marker} ${theme.fg(color, circle)} ${persona}  ${task.name}  ${theme.fg("dim", visibleStatus)}`;
+		const diagnostic = task.status === "running" && task.runtimeDiagnostic ? ` · ${task.runtimeDiagnostic}` : "";
+		const left = `${marker} ${theme.fg(color, circle)} ${persona}  ${task.name}  ${theme.fg("dim", visibleStatus + diagnostic)}`;
 		const duration = formatFleetDuration(task, options.now);
 		const tokens = task.status === "queued" || task.status === "starting" ? undefined : options.metrics?.get(task.index)?.tokens;
 		const right = [duration, tokens === undefined ? undefined : formatFleetTokens(tokens)].filter(Boolean).join("  ");

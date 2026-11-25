@@ -59,13 +59,19 @@ try{
    assert.equal(requests,expectedRequests,scenario);
    assert.equal(settled,scenario==='settled_hook_new_prompt'?2:1,scenario);
    assert.ok(states.every(s=>s.aborted===(scenario==='abort')));
-   const report=JSON.parse(readFileSync(join(dir,'reports',attemptId+'.json'),'utf8'));
-   assert.equal(report.status,['reported','remind_success'].includes(scenario)?'completed':'failed');
+   const reportPath=join(dir,'reports',attemptId+'.json');
+   const report=scenario==='retry_exhausted'?undefined:JSON.parse(readFileSync(reportPath,'utf8'));
+   if(scenario==='retry_exhausted'){
+    assert.equal(existsSync(reportPath),false,'final provider errors must remain recoverable');
+    const waiting=JSON.parse(readFileSync(statePath,'utf8'));
+    assert.equal(waiting.state,'waiting_interaction');
+    assert.equal(waiting.diagnostic,'500 Internal Server Error');
+   }else assert.equal(report.status,['reported','remind_success'].includes(scenario)?'completed':'failed');
    if(['abort','retry_exhausted'].includes(scenario))assert.equal(inputs.some(input=>JSON.stringify(input).includes('Do not redo the task')),false);
-   if(!['reported','failed_report','remind_success'].includes(scenario))assert.ok(report.documents.some(document=>document.path===session.sessionManager.getSessionFile()));
+   if(!['reported','failed_report','remind_success','retry_exhausted'].includes(scenario))assert.ok(report.documents.some(document=>document.path===session.sessionManager.getSessionFile()));
    if(scenario==='remind_success')assert.ok(JSON.stringify(inputs[1]).includes('Do not redo the task'));
    assert.ok(trace.indexOf('agent_end')<trace.indexOf('before_settle:completed')||['abort','retry_exhausted'].includes(scenario));
-   console.log(JSON.stringify({scenario,requests,agentEnds:ended,settledEvents:settled,trace,states:states.map(({file,...s})=>({...s,fileState:file.state})),reportExists:existsSync(join(dir,'reports',attemptId+'.json'))}));
+   console.log(JSON.stringify({scenario,requests,agentEnds:ended,settledEvents:settled,trace,states:states.map(({file,...s})=>({...s,fileState:file.state})),reportExists:existsSync(reportPath)}));
   }finally{await session.abort();await session.extensionRunner.emit({type:'session_shutdown',reason:'quit'});session.dispose();}
  }
 }finally{rmSync(root,{recursive:true,force:true});}

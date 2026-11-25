@@ -20,7 +20,7 @@ async function scenario(finish, { acknowledgement = "error", observationFailure 
 		async promptAgent() {
 			// The child accepted the prompt: its before_agent_start wrote the attempt state.
 			const task = JSON.parse(readFileSync(join(directory, "task.json"), "utf8"));
-			writeFileSync(join(directory, "attempts", `${task.currentAttemptId}.json`), JSON.stringify({ attemptId: task.currentAttemptId, state: "working" }));
+			writeFileSync(join(directory, "attempts", `${task.currentAttemptId}.json`), JSON.stringify({ attemptId: task.currentAttemptId, state: "working", at: new Date().toISOString() }));
 			if (acknowledgement === "error") throw new Error("transport acknowledgement lost");
 			return { status: acknowledgement };
 		},
@@ -100,6 +100,65 @@ try {
 	rmSync(directory, { recursive: true, force: true });
 }
 console.log("PASS idle/done acknowledgements, observation errors and report-first prompt cancellation");
+
+{
+	const directory = mkdtempSync(join(tmpdir(), "herdr-live-runtime-"));
+	writeFileSync(join(directory, "task.json"), "{}");
+	let pendingWakes = 0;
+	const waiters = [];
+	const wake = () => {
+		const waiter = waiters.shift();
+		if (waiter) waiter();
+		else pendingWakes += 1;
+	};
+	const started = Promise.withResolvers();
+	const waiting = Promise.withResolvers();
+	const workingAgain = Promise.withResolvers();
+	const runtime = [];
+	try {
+		const result = promptLiveAgent({
+			task: { id: "runtime", sessionFile: join(directory, "session.jsonl") }, paneId: "pane", prompt: "work", systemPromptFile: join(directory, "system.md"),
+			onRuntimeUpdate(update) {
+				runtime.push(update);
+				if (update.state === "waiting_interaction") waiting.resolve();
+				if (runtime.some((entry) => entry.state === "waiting_interaction") && update.state === "working") workingAgain.resolve();
+			},
+			herdr: {
+				async startAgent() {},
+				async promptAgent() {
+					const task = JSON.parse(readFileSync(join(directory, "task.json"), "utf8"));
+					mkdirSync(join(directory, "attempts"), { recursive: true });
+					writeFileSync(join(directory, "attempts", `${task.currentAttemptId}.json`), JSON.stringify({ attemptId: task.currentAttemptId, state: "working", at: new Date().toISOString() }));
+					started.resolve(task.currentAttemptId);
+				},
+				async isTaskRunning() { return true; },
+				async waitForAgentChange() {
+					if (pendingWakes > 0) { pendingWakes -= 1; return; }
+					return new Promise((resolve) => waiters.push(resolve));
+				},
+			},
+		});
+		const attemptId = await started.promise;
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		writeFileSync(join(directory, "attempts", `${attemptId}.json`), JSON.stringify({
+			attemptId, state: "waiting_interaction", at: new Date().toISOString(), diagnostic: "Provider quota requires attention.",
+		}));
+		wake();
+		await waiting.promise;
+		writeFileSync(join(directory, "attempts", `${attemptId}.json`), JSON.stringify({ attemptId, state: "working", at: new Date().toISOString() }));
+		wake();
+		await workingAgain.promise;
+		mkdirSync(join(directory, "reports"), { recursive: true });
+		writeFileSync(join(directory, "reports", `${attemptId}.json`), JSON.stringify({ attemptId, status: "completed", summary: "recovered", documents: [] }));
+		wake();
+		assert.equal((await result).report.summary, "recovered");
+		assert.equal(runtime.find((entry) => entry.state === "waiting_interaction")?.diagnostic, "Provider quota requires attention.");
+	} finally {
+		wake();
+		rmSync(directory, { recursive: true, force: true });
+	}
+}
+console.log("PASS provider-error runtime waits for interaction and returns to working before reporting");
 
 // The former stuck-forever case: delivery failed and the child never started the
 // attempt (prompt left unsubmitted in the input box). It must fail with the cause.

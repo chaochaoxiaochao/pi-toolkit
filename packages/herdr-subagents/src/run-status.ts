@@ -8,7 +8,7 @@ export function aggregateTaskStatus(statuses: readonly TaskStatus[]): AggregateR
 	if (statuses.some((status) => status === "running" || status === "starting")) return "running";
 	if (statuses.some((status) => status === "blocked" || status === "queued")) return "blocked";
 	if (statuses.every((status) => status === "cancelled")) return "cancelled";
-	if (statuses.every((status) => status === "failed")) return "failed";
+	if (statuses.some((status) => status === "failed") && !statuses.some((status) => status === "completed")) return "failed";
 	if (statuses.some((status) => status === "cancelled" || status === "failed")) return "partial";
 	if (statuses.every((status) => status === "completed")) return "completed";
 	throw new Error(`Cannot aggregate unknown task status: ${statuses.join(", ")}`);

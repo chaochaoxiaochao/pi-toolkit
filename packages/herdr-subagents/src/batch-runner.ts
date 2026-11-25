@@ -9,7 +9,7 @@ import { writeJsonAtomic } from "./state.ts";
 import type { OwnerIdentity } from "./ownership.ts";
 import { ownerRecord } from "./ownership.ts";
 import { RunPaneAllocator } from "./run-pane-allocator.ts";
-import { applyReport, applyTaskStatus, isActiveStatus, projectTaskActivity, readReport, readTaskRecord, settleAttemptFailure, type PersistedDocument, type PersistedReport, type RunRecord, type RunStatus, type TaskActivity, type TaskRecord, type TaskStatus } from "./records.ts";
+import { applyReport, applyTaskRuntime, applyTaskStatus, isActiveStatus, projectTaskActivity, readReport, readTaskRecord, settleAttemptFailure, type PersistedDocument, type PersistedReport, type RunRecord, type RunStatus, type TaskActivity, type TaskRecord, type TaskStatus } from "./records.ts";
 import { reportProtocolPrompt } from "./protocol.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
 import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
@@ -158,11 +158,35 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 	emit("starting", `Starting up to ${effectiveConcurrency} interactive Pi Agent${effectiveConcurrency === 1 ? "" : "s"}...`);
 	let nextIndex = 0;
 	let settled = 0;
+	let firstFailure: { name: string } | undefined;
 	let queueLock: DirectoryLock | undefined;
 	try {
-		// One batch lane blocking does not stop the others, so this batch keeps starting queued tasks.
-		// Holding the queue lock for its whole life keeps a concurrent response from starting them too.
+		const stopAfterFailure = (name: string): { name: string } | undefined => {
+			if (firstFailure) return undefined;
+			firstFailure = { name };
+			return firstFailure;
+		};
+		// Holding the queue lock for the whole batch keeps another continuation from
+		// starting queued tasks while this batch owns scheduling.
 		queueLock = await acquireDirectoryLock(queueLockPath(runDirectory), { wait: false });
+		const cancelQueuedAfterFailure = async (failedTask: { name: string }): Promise<number> => {
+			let cancelled = 0;
+			for (let index = nextIndex; index < contexts.length; index += 1) {
+				if (activity[index].status !== "queued") continue;
+				const context = contexts[index];
+				const task = tasks[index];
+				const error = `Not started because ${failedTask.name} failed.`;
+				applyTaskStatus(context.taskRecord, "cancelled", { error });
+				await writeJsonAtomic(context.taskFile, context.taskRecord);
+				results[index] = {
+					index, name: task.name, status: "cancelled", summary: error, documents: [], error,
+					paneId: "", recordDirectory: context.taskDirectory, sessionFile: context.sessionFile,
+				};
+				activity[index] = projectTaskActivity(context.taskRecord, index);
+				cancelled += 1;
+			}
+			return cancelled;
+		};
 		const runOne = async (index: number): Promise<void> => {
 			const task = tasks[index];
 			const context = contexts[index];
@@ -170,6 +194,7 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 			let agentName = liveAgentName(context.taskId);
 			let report: PersistedReport;
 			let status: BatchTaskResult["status"];
+			let failFast: { name: string } | undefined;
 			try {
 				paneId = await allocatePane(index);
 				const paneLabel = `${String(index + 1).padStart(2, "0")} · ${task.name}`;
@@ -179,17 +204,21 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 				await writeJsonAtomic(context.taskFile, context.taskRecord);
 				activity[index] = projectTaskActivity(context.taskRecord, index);
 				emit("running", `${settled}/${tasks.length} tasks settled.`);
-				const prompted = await promptLiveAgent({ herdr, task: { ...task, id: context.taskId, sessionFile: context.sessionFile }, paneId, prompt: task.prompt, systemPromptFile: context.systemPromptFile, agentName, signal: options.signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => emit("running", `${task.name} appears stalled; it is still running.`), onAttemptPersisted: (id) => { context.taskRecord.currentAttemptId = id; }, onRuntimeUpdate: (updated) => {
-					Object.assign(context.taskRecord, updated);
+				const prompted = await promptLiveAgent({ herdr, task: { ...task, id: context.taskId, sessionFile: context.sessionFile }, paneId, prompt: task.prompt, systemPromptFile: context.systemPromptFile, agentName, signal: options.signal, stalledWarningMs: options.stalledWarningSeconds ? options.stalledWarningSeconds * 1000 : undefined, onStalled: () => emit("running", `${task.name} appears stalled; it is still running.`), onAttemptPersisted: (id) => { context.taskRecord.currentAttemptId = id; }, onRuntimeUpdate: async (updated) => {
+					applyTaskRuntime(context.taskRecord, updated.state, updated.diagnostic, updated.at);
+					await writeJsonAtomic(context.taskFile, context.taskRecord);
 					activity[index] = projectTaskActivity(context.taskRecord, index);
 					emit("running", `${settled}/${tasks.length} tasks settled.`);
 				} });
 				agentName = prompted.agentName;
 				report = prompted.report;
 				status = applyReport(context.taskRecord, report);
+				if (status === "failed") failFast = stopAfterFailure(task.name);
 			} catch (error) {
+				const cancelled = isAbortError(error, options.signal);
+				if (!cancelled) failFast = stopAfterFailure(task.name);
 				const settled = await settleAttemptFailure(context.taskRecord, context.reportFile, {
-					cancelled: isAbortError(error, options.signal),
+					cancelled,
 					error: error instanceof Error ? error.message : String(error),
 					name: task.name,
 				});
@@ -201,10 +230,14 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 			results[index] = { index, name: task.name, status, summary: report.summary, documents: report.documents, ...(report.error ? { error: report.error } : {}), ...(report.question ? { question: report.question } : {}), paneId, recordDirectory: context.taskDirectory, sessionFile: context.sessionFile };
 			activity[index] = projectTaskActivity(context.taskRecord, index);
 			settled += 1;
+			if (failFast) {
+				const cancelledCount = await cancelQueuedAfterFailure(failFast);
+				settled += cancelledCount;
+			}
 			emit("running", `${settled}/${tasks.length} tasks settled.`);
 		};
 		const worker = async () => {
-			while (!options.signal?.aborted) {
+			while (!options.signal?.aborted && !firstFailure) {
 				const index = nextIndex++;
 				if (index >= tasks.length) return;
 				await runOne(index);
@@ -245,7 +278,12 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 		const completed = settledResults.filter((result) => result.status === "completed").length;
 		const cancelled = settledResults.filter((result) => result.status === "cancelled").length;
 		const status = aggregateTaskStatus(activity.map((entry) => entry.status)) as BatchResult["status"];
-		const summary = status === "cancelled" ? "Subagent batch cancelled." : blocked ? `${blocked.name} needs input: ${blocked.question}` : status === "partial" ? `${completed}/${tasks.length} tasks completed; ${failed} failed; ${cancelled} cancelled.` : failed ? `${completed}/${tasks.length} tasks completed; ${failed} failed.` : `${tasks.length}/${tasks.length} tasks completed.`;
+		const summary = status === "cancelled" ? "Subagent batch cancelled." :
+			blocked ? `${blocked.name} needs input: ${blocked.question}` :
+			firstFailure ? `${firstFailure.name} failed; ${completed} completed; ${failed} failed; ${cancelled} cancelled.` :
+			status === "partial" ? `${completed}/${tasks.length} tasks completed; ${failed} failed; ${cancelled} cancelled.` :
+			failed ? `${completed}/${tasks.length} tasks completed; ${failed} failed.` :
+			`${tasks.length}/${tasks.length} tasks completed.`;
 		await persistRunStatus(status, { question: blocked?.question });
 		return { ok: status === "completed", status, runId, label: options.label, requestedConcurrency, effectiveConcurrency, tasks: settledResults, activity, summary, documents: settledResults.flatMap((result) => result.documents), recordDirectory: runDirectory, tabId, ...(blocked?.question ? { question: blocked.question, allowedActions: ["respond", "cancel"] } : {}) };
 	} catch (error) {

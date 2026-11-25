@@ -65,7 +65,7 @@ function fakeHerdr() {
 				const record = JSON.parse(readFileSync(join(directory, "task.json"), "utf8"));
 				const state = join(directory, "attempts", `${record.currentAttemptId}.json`);
 				mkdirSync(dirname(state), { recursive: true });
-				writeFileSync(state, JSON.stringify({ attemptId: record.currentAttemptId, state: "working" }));
+			writeFileSync(state, JSON.stringify({ attemptId: record.currentAttemptId, state: "working", at: new Date().toISOString() }));
 				setTimeout(() => {
 					publish(directory, { status: "completed", summary: `${request.prompt} result` });
 					alive.set(paneId, false);

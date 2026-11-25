@@ -17,7 +17,7 @@ try {
 	});
 	const results = output.trim().split("\n").map((line) => JSON.parse(line));
 	assert.equal(results.length, 10, "all native lifecycle cases must execute outside the workspace");
-	assert.ok(results.every((result) => result.reportExists));
+	assert.ok(results.every((result) => result.reportExists === (result.scenario !== "retry_exhausted")));
 	console.log("PASS standalone Herdr tarball: ten native offline lifecycle cases without sibling packages");
 } finally {
 	rmSync(root, { recursive: true, force: true });

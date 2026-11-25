@@ -15,6 +15,7 @@ stateDiagram-v2
     [*] --> queued
     queued --> running: worker slot available
     queued --> cancelled: parent cancellation
+    queued --> cancelled: earlier task hard-failed
     running --> completed: valid completed report
     running --> failed: valid failed report or process exits without report
     running --> cancelled: parent cancellation
@@ -31,16 +32,16 @@ Run:
 stateDiagram-v2
     [*] --> running
     running --> completed: every task completed
-    running --> failed: every task failed
+    running --> failed: at least one failed and none completed
     running --> cancelled: every task cancelled
-    running --> partial: terminal outcomes are mixed
+    running --> partial: completed plus failed or cancelled
     completed --> [*]
     failed --> [*]
     cancelled --> [*]
     partial --> [*]
 ```
 
-Run state is derived from task state. `partial` means terminal tasks have mixed outcomes.
+Run state is derived from task state. `partial` means at least one task completed while another failed or was cancelled.
 
 Scheduler and arbitration:
 
@@ -50,18 +51,23 @@ flowchart TD
     S --> P[Deliver prompt exactly once]
     P --> R{Attempt report exists?}
     R -->|yes| V[Validate attempt and report]
-    V --> T[Commit immutable terminal task]
+    V --> O{Report status}
+    O -->|completed| T[Commit completed task]
+    O -->|failed| F[Commit failed task]
     R -->|no| L{Child Pi process alive?}
     L -->|yes| W[Herdr wait wake-up]
     W --> R
     L -->|no| C{Final disk reconciliation}
     C -->|report found| V
-    C -->|no report| F[Commit failed task]
+    C -->|no report| F
     T --> Q
-    F --> Q
+    F --> X[Cancel unclaimed queued tasks]
+    X --> A[Wait for already-running siblings]
 ```
 
 Herdr `idle`, `blocked`, and `done` never transition a business task; they only wake the reconciliation loop.
+
+`waiting_interaction` is runtime state on a still-`running` task. A final Provider error writes that runtime state and its diagnostic, but no terminal report. A new child prompt returns the runtime state to `working`.
 
 Legacy readers still accept old `starting` and `blocked` values so existing archives can be inspected and cleaned up. New execution does not produce them.
 
@@ -72,9 +78,10 @@ A run uses a bounded worker pool:
 1. Tasks begin FIFO.
 2. With concurrency one, the next task cannot start until the previous task is terminal.
 3. With concurrency N, at most N tasks own live child processes.
-4. Failure consumes only that task's lane; queued siblings continue.
-5. Parallel execution is rejected if any task is write-capable.
-6. The caller remains attached until all tasks are terminal or the caller cancels.
+4. A hard failure stops new tasks from starting and cancels unclaimed queued tasks.
+5. Tasks already claimed by another worker continue to a terminal result.
+6. Parallel execution is rejected if any task is write-capable.
+7. The caller remains attached until all tasks are terminal or the caller cancels.
 
 There is no global dispatcher, persisted background queue, blocked response lane, historical resume, or early detach.
 
@@ -82,15 +89,16 @@ There is no global dispatcher, persisted background queue, blocked response lane
 
 Each task owns one Herdr pane and one single-task Pi process. Herdr first starts and detects the interactive Pi, then submits the prompt exactly once. At Pi’s final `agent_settled` boundary, the child extension records settled state but leaves the interactive process alive. The atomic report remains the authoritative task result. Early-finishing children remain visible while sibling tasks continue. Once the whole run settles, the orchestrator closes an unfocused owned tab immediately and defers a focused tab until the user leaves it, so Pi can restore the terminal normally.
 
-A completed round without a terminal report gets one child-side reminder at `agent_before_settle`. The marker is written before continuation. Another omission publishes an unconfirmed `missing_report` diagnostic; final errors use `child_error`. A user abort (Esc) skips that boundary. `agent_settled(aborted)` starts a grace timer (`abortGraceSeconds`, default 30); a new round (`before_agent_start`) or session shutdown clears it, otherwise it publishes `child_aborted`. Existing terminal reports are not replaced. None of this adds a parent monitoring loop.
+A completed round without a terminal report gets one child-side reminder at `agent_before_settle`. The marker is written before continuation. Another omission publishes an unconfirmed `missing_report` diagnostic. A final Provider error writes `waiting_interaction` and keeps the attempt alive; a new round returns it to `working`. A user abort (Esc) skips that boundary. `agent_settled(aborted)` starts a grace timer (`abortGraceSeconds`, default 30); a new round (`before_agent_start`) or session shutdown clears it, otherwise it publishes `child_aborted`. Existing terminal reports are not replaced. None of this adds a parent monitoring loop.
 
 The child writes:
 
 - `attempt-results/<attempt-id>.md`
+- `attempts/<attempt-id>.json` (`working`, `waiting_interaction`, or `settled`)
 - `attempts/<attempt-id>.reminded` (one durable reminder budget)
 - `reports/<attempt-id>.json`
 
-Both are attempt-scoped. The report is published with atomic rename. The orchestrator validates it, verifies the attempt identity, and promotes it to `report.json`.
+These files are attempt-scoped. The report is published with atomic rename. The orchestrator validates it, verifies the attempt identity, and promotes it to `report.json`.
 
 The orchestrator writes:
 

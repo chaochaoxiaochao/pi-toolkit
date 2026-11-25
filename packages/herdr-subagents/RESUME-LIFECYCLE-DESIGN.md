@@ -63,7 +63,8 @@ poll that state and persist/emit a separate runtime state:
   is `working` and the child process is alive, wait for its report and never resend
 - `idle`/`done` with a valid report -> use the report's business terminal state
 - `idle`/`done` without a report after a short file-publication grace -> Task `failed`
-- prompt/process/API terminal error without a valid report -> Task `failed`
+- prompt delivery failure or process exit without a valid report -> Task `failed`
+- final Provider error while the child process is alive -> `waiting_interaction`; keep Task `running`
 - `agent get` query failure -> diagnostic only; continue waiting for report or
   independent pane/process evidence
 

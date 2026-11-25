@@ -9,7 +9,7 @@ import { cleanupRunTab } from "./tab-cleanup.ts";
 import type { OwnerIdentity } from "./ownership.ts";
 import { ownerRecord } from "./ownership.ts";
 import { applyRunStatus } from "./run-status.ts";
-import { applyReport, applyTaskStatus, isActiveStatus, persistFailureReport, projectTaskActivity, readReport, readRunRecord, readTaskRecord, readTurnRecord, settleAttemptFailure, type PersistedDocument, type PersistedReport, type RunRecord, type TaskActivity, type TaskRecord, type TaskStatus, type TurnRecord } from "./records.ts";
+import { applyReport, applyTaskRuntime, applyTaskStatus, isActiveStatus, persistFailureReport, projectTaskActivity, readReport, readRunRecord, readTaskRecord, readTurnRecord, settleAttemptFailure, type PersistedDocument, type PersistedReport, type RunRecord, type TaskActivity, type TaskRecord, type TaskStatus, type TurnRecord } from "./records.ts";
 import { isAbortError } from "./errors.ts";
 import { continuationSystemPrompt } from "./protocol.ts";
 import { RunPaneAllocator } from "./run-pane-allocator.ts";
@@ -219,9 +219,10 @@ async function respondToBlockedTaskLocked(cwd: string, runId: string, answer: st
 	let status: "blocked" | "completed" | "failed" | "cancelled";
 	let attemptError: unknown;
 	try {
-		const prompted = await promptLiveAgent({ herdr, task: { ...task, id: task.id, sessionFile: task.sessionFile }, paneId, prompt: answer, systemPromptFile: resumePrompt, agentName, attemptId: responseAttemptId, start: !live, signal, stalledWarningMs: run.stalledWarningSeconds ? Number(run.stalledWarningSeconds) * 1000 : undefined, onStalled: () => options.onStalled?.(`${task.name ?? task.agent} appears stalled; it is still running.`), onRuntimeUpdate: async (updated) => {
-			Object.assign(task, updated);
-			await emitProgress(options, runDirectory, run, taskDirectories, `${task.name ?? task.agent} runtime: ${updated.runtimeState}.`);
+		const prompted = await promptLiveAgent({ herdr, task: { ...task, id: task.id, sessionFile: task.sessionFile }, paneId, prompt: answer, systemPromptFile: resumePrompt, agentName, attemptId: responseAttemptId, start: !live, signal, stalledWarningMs: run.stalledWarningSeconds ? Number(run.stalledWarningSeconds) * 1000 : undefined, onStalled: () => options.onStalled?.(`${task.name ?? task.agent} appears stalled; it is still running.`), onAttemptPersisted: (id) => { task.currentAttemptId = id; }, onRuntimeUpdate: async (updated) => {
+			applyTaskRuntime(task, updated.state, updated.diagnostic, updated.at);
+			await writeJsonAtomic(join(taskDirectory, "task.json"), task);
+			await emitProgress(options, runDirectory, run, taskDirectories, `${task.name ?? task.agent} runtime: ${updated.state}.`);
 		} });
 		task.currentAttemptId = prompted.attemptId;
 		report = prompted.report;

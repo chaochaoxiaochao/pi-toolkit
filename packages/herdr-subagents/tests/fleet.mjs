@@ -58,6 +58,10 @@ const metricBatch = { label: "audit", activity: [
 ] };
 const metricLines = fleetLines(metricBatch, metricFleet, { width: 80, now: Date.parse(elapsedStart) + 65_000, metrics: new Map([[0, { tokens: 1_250 }], [1, { tokens: 999 }]]) });
 check("Fleet rows show persona task status elapsed and right-aligned true usage", metricLines[1].includes("explorer") && metricLines[1].includes("inspect auth") && metricLines[1].includes("running") && metricLines[1].endsWith("1m 5s  1.3k tok"));
+const waitingLine = fleetLines({ label: "waiting", activity: [
+	{ index: 0, name: "quota", agent: "reviewer", status: "running", runtimeState: "waiting_interaction", runtimeDiagnostic: "Claude Cage needs attention." },
+] }, new FleetSelection(), { width: 120 })[1];
+check("Fleet shows Provider diagnostics while waiting for interaction", waitingLine.includes("waiting_interaction") && waitingLine.includes("Claude Cage needs attention."));
 const compactLines = fleetLines({ label: "compact", activity: [
 	{ index: 0, name: "API", agent: "explorer", status: "running", startedAt: elapsedStart },
 	{ index: 1, name: "Recovery", agent: "explorer", status: "completed", startedAt: elapsedStart, completedAt: "2026-10-08T07:00:09.000Z" },

@@ -1,3 +1,8 @@
+## Unreleased
+
+- Keep final Provider errors nonterminal as `waiting_interaction`. Preserve the child pane and session, keep the parent attached, and return to `working` when the user retries in the child.
+- Stop scheduling queued tasks after the first hard failure. Cancel tasks that no worker has claimed, let already-running siblings finish, and report a failed run when none completed.
+
 ## 2026-11-23 - v0.11.0
 
 - Fix false child exit detection on macOS when Herdr reports Pi only in argv0, and preserve the attempt ID on startup failure. (#32)

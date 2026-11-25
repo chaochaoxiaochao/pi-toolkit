@@ -14,7 +14,7 @@ It verifies:
 - strict serial start order at concurrency one;
 - bounded read-only parallelism;
 - ordered results despite concurrent completion;
-- sibling continuation after failure and all-failed aggregation;
+- hard-failure fail-fast scheduling: queued tasks are cancelled, already-running siblings finish, and serial runs return failed immediately;
 - required explicit Personas in the tool schema and execution, including legacy single-task argument normalization;
 - independently optional task `model` and `thinking`, override precedence above Persona/Markdown/default/parent values, all seven Pi thinking levels and trimmed values, explicit `off`, unchanged omitted-field inheritance, CLI/record/history propagation, and invalid types/blank/unknown thinking rejected before side effects;
 - model-facing role selection guidance for broad independent review, codebase investigation, and file-changing work;
@@ -24,6 +24,7 @@ It verifies:
 - rejection of missing, blank, invalid, and unknown Personas before creating runs, while custom Personas remain supported;
 - explicit rejection of parallel write-capable tasks with the conflicting task, Persona, and corrective action;
 - waiting through a delayed authoritative report after a prompt transport error while the Pi process is alive;
+- final Provider errors remaining nonterminal as `waiting_interaction`, followed by an in-place child retry and report;
 - explicit failure when the process exits without a report;
 - parent cancellation of running and queued tasks;
 - startup isolation: a new Pi session neither mutates historical records nor closes their recorded Herdr tabs;
@@ -70,7 +71,7 @@ The former monolithic legacy suite encoded removed contracts: background queues,
 Current coverage is in focused suites:
 
 - `core-state-machine.mjs`: required Personas, serial/read-only parallel work, transport recovery, report/exit completion, cancellation, immutable terminal tasks, tool exposure and startup isolation.
-- `live-agent.mjs`: a live silent child that accepted the prompt keeps waiting after prompt acknowledgement failure; a delivery failure without an accepted attempt fails with the Herdr cause instead of waiting forever; an explicit report completes it, explicit process exit without a report fails it, and explicit cancellation ends the wait. Event gates advance these cases without fixed sleeps.
+- `live-agent.mjs`: a live silent child that accepted the prompt keeps waiting after prompt acknowledgement failure; a delivery failure without an accepted attempt fails with the Herdr cause instead of waiting forever; a final Provider error surfaces `waiting_interaction` and returns to `working` after child steering; an explicit report completes it, explicit process exit without a report fails it, and explicit cancellation ends the wait. Event gates advance these cases without fixed sleeps.
 - `fleet.mjs`: retained Fleet keyboard selection, usage accounting, elapsed-time compatibility, widths/colours, watcher cleanup and stale-update regressions from the old monolith.
 - `fleet-click.mjs`: select task rows, not the header or blank rows; ignore non-primary clicks; focus exact panes; handle queued/missing panes; preserve the last painted row's identity across an unpainted update; ignore disposed widgets.
 - `cleanup-timing.mjs`: focused deferred cleanup under a held state lock, then successful/failed durable cleanup commits. It does not test retired restart/recovery workflows.
@@ -87,7 +88,7 @@ The default runner also executes these retained current-contract checks:
 - `config-resolution.mjs`: package/global/project whole-Persona replacement; model/thinking/skills/extensions merge, diagnostics and sources; Markdown precedence; effective values, per-task model overrides, CLI tool boundaries, isolated child environment, no focus theft, system prompts, durable records and history through public batch execution.
 - `task-overrides.mjs`: neither/either/both optional task overrides; Persona/Markdown/default precedence; parent-model thinking inheritance and unchanged behavior when switching model; CLI, task records and history; invalid thinking fails without creating a run.
 - `live-agent.mjs`: normal idle/done acknowledgements and transient process observation errors remain nonterminal; a final report stops an outstanding prompt acknowledgement. These checks use real temporary files and explicit events, without patching Node file APIs or imposing additional cancellation/join guarantees.
-- `batch-contracts.mjs`: current control allow/deny table, Herdr-required zero-side-effect rejection, exact cancel dispatch, uncertain create/split/start failures without duplicate execution, invalid JSON/status/documents/attempt reports and archived failure records, stale canonical report rejection, cross-attempt result isolation, cleanup warnings preserving business results, and a fake-clock stalled warning that does not terminate live work.
+- `batch-contracts.mjs`: current control allow/deny table, Herdr-required zero-side-effect rejection, exact cancel dispatch, hard failures stopping queued work while claimed siblings finish, uncertain create/split/start failures without duplicate execution, invalid JSON/status/documents/attempt reports and archived failure records, stale canonical report rejection, cross-attempt result isolation, cleanup warnings preserving business results, and a fake-clock stalled warning that does not terminate live work.
 - `history-storage.mjs`: selected status/history without full results or stale running-task reports; damaged record isolation; positive-integer task order; active/blocked/pending-cleanup deletion refusal including an internal active-run invariant with a corrupt task; public selected-only removal and safe failure on damaged records; atomic snapshots; explicit lock publication/release gates, cancelled lock waits and concurrent field preservation; idempotent runtime ignore rules that retain Persona sources.
 - `ownership-cleanup.mjs`: durable owner/run isolation; registered control cancel and session shutdown abort/join only their owned in-flight work; immediate/deferred cancellation, missing tabs, focus/close errors, preserved business outcomes and concurrent run fields. It exercises current shutdown, not automatic startup restoration of historical work.
 - `herdr-cli.mjs`: actual local executable/JSON adapter for shell versus native/Node-hosted Pi, temporary query failures versus confirmed missing panes, malformed replies, command argv, and abort-listener disposal. Focus-poll timers are advanced by a fake clock; no real Herdr or paid model is needed.
@@ -102,9 +103,9 @@ Use a fullscreen parent Pi loaded from `extensions/herdr-subagents.ts`. Run thre
 
 ## Missing-report regressions
 
-`tests/report-boundary.mjs` checks completed/failed report idempotency, one durable reminder across rounds and extension reload, conflicting report rejection, unconfirmed diagnostics with a session path, Esc grace period (timer cancelled by steering or shutdown, `child_aborted` after expiry), and error without continuation.
+`tests/report-boundary.mjs` checks completed/failed report idempotency, one durable reminder across rounds and extension reload, conflicting report rejection, unconfirmed diagnostics with a session path, Esc grace period (timer cancelled by steering or shutdown, `child_aborted` after expiry), and Provider error recovery without a terminal report.
 
-`tests/report-lifecycle.mjs` uses the real installed Pi SDK and a fully offline provider. It covers ten cases: normal report, failed report, successful reminder, repeated omission, transient retry, exhausted retry, queued follow-up, another before-settle continuation, Esc abort, and a fresh prompt from a settled listener. A normal report makes one request; a reminder adds at most one. Native abort does not emit before-settle; its terminal diagnostic appears only after `abortGraceSeconds` (set to 1 in the test). These are native lifecycle checks, not a claim of real-Herdr pane/concurrency coverage.
+`tests/report-lifecycle.mjs` uses the real installed Pi SDK and a fully offline provider. It covers ten cases: normal report, failed report, successful reminder, repeated omission, transient retry, exhausted retry waiting for interaction, queued follow-up, another before-settle continuation, Esc abort, and a fresh prompt from a settled listener. A normal report makes one request; a reminder adds at most one. Native abort does not emit before-settle; its terminal diagnostic appears only after `abortGraceSeconds` (set to 1 in the test). These are native lifecycle checks, not a claim of real-Herdr pane/concurrency coverage.
 
 Use `PI_TEST_BINARY` to select Pi 1.4.0 for these checks rather than an older workspace-local Pi. No paid model or real credential is used by the new regression fixtures.
 
