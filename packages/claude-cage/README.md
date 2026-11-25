@@ -1,6 +1,6 @@
 # Pi Claude Cage (experimental)
 
-Use the host's Pi tools and build environment while Claude Code runs in a **running Linux Cage VM**. This optional provider does not replace the `claude-code` provider. The guest uses pinned [pi-claude-code](https://github.com/earendil-works/pi-claude-code/tree/d5b5e04c314d3452d357174d16d10dda34daa2d2) logic for transcript conversion, Claude CLI lifecycle, billing checks, relay validation, and response streaming.
+Use the host's Pi tools and build environment while Claude Code runs in a **running Linux Cage VM**. This optional provider does not replace the `claude-code` provider. The guest uses pinned [pi-claude-code](https://github.com/earendil-works/pi-claude-code/tree/0665b571fe36e4faa894a57c20c2c0be047f3e11) logic for transcript conversion, Claude CLI lifecycle, billing checks, relay validation, response streaming, and the request-wide four-breakpoint cache limit from upstream PR #41.
 
 ## Architecture
 
@@ -31,6 +31,18 @@ flowchart TB
 Each Pi runtime lazily owns one long-lived `cage run` process. A Herdr child is a separate Pi runtime and owns a separate process. Operations are sequential within one runtime. The bridge sends the full transcript first, then sends only an append when history remains a known prefix. The upstream adapter still decides whether Claude Code can continue warmly or needs native transcript replay.
 
 Pi executes tool calls on the host and returns tool results on the next turn. Tool output becomes model input; this package does not sandbox host tools. The bridge opens no LAN listener and needs no shared socket, systemd user service, or bridge-specific environment file.
+
+## Prompt cache retention and warming
+
+Cage republishes prompt-cache metadata only for discovered models that explicitly support adaptive thinking. The pinned adapter writes one-hour cache breakpoints during transcript replay, so Cage advertises only the verified `long: 3600` tier. It does not advertise a five-minute tier: a real Claude Code 2.1.331 acceptance showed that the documented `5m` environment setting did not shorten those explicit one-hour markers.
+
+Set `PI_CACHE_RETENTION=long` before starting Pi to select the verified one-hour tier. With Pi's `cacheWarming: "streaming"` policy, an agent run that remains active long enough, such as during a long host tool call, can receive a hidden refresh near the 54-minute mark. Pi's 30-minute idle safety limit is shorter than that delay, so one-hour Cage metadata does not create an idle warmer. Cage does not implement another scheduler. Any refresh remains a normal Pi `cache_warm` usage entry.
+
+```sh
+PI_CACHE_RETENTION=long pi
+```
+
+A user turn or Cage control command has priority over warming on Cage's single connection. If one arrives while a low-priority warming request is active, Cage cancels the warmer, waits for its cleanup, and then sends the real operation. It does not replay either request. `cacheRetention: none` asks Claude Code to disable prompt caching and also disables local worker reuse; the pinned adapter remains the owner of replay cache markers.
 
 ## Install and configure
 
@@ -89,6 +101,7 @@ Pi startup does not install files, inspect login, or discover models. `/claude-c
 - One logical frame or reconstructed transcript can be at most 256 MiB.
 - Writes are sliced and honor stdio backpressure. Thinking output is transferred as deltas rather than repeated cumulative snapshots.
 - Clean provider errors, billing rejection, clean cancellation, and confirmed timeout cleanup leave the runtime usable.
+- A real model turn, status request, model discovery, or setup operation preempts an active Pi cache-warming turn before it enters the sequential guest request path.
 - A malformed protocol, transcript hash mismatch, unexpected process loss, or uncertain outcome closes the connection. Pi shows a red error beginning `Claude Cage connection failed and is closed.` Run `/reload` before using the provider again. The bridge does not reconnect or replay an uncertain request.
 
 The service uses the guest user's Claude login and egress. It does not copy credentials from the host, switch accounts, or select account-specific routes. A disconnected request might already be billed. The bridge does not retry it through another account or provider.

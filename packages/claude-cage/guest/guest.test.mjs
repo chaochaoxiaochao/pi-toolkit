@@ -12,6 +12,7 @@ const model = {
   id: "fixture", provider: "claude-cage", api: "claude-cage", baseUrl: "process://claude-cage",
   name: "Fixture", reasoning: true, input: ["text", "image"], contextWindow: 1_000_000, maxTokens: 10_000,
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  promptCache: { short: 300, long: 3600 },
 };
 const user = (content) => ({ role: "user", content, timestamp: 1 });
 
@@ -29,8 +30,13 @@ function fixtureUpstream() {
   return {
     calls, closes,
     async getClaudeStatus() { return { available: true, loggedIn: true, subscription: true, plan: "max" }; },
-    async discoverClaudeModels() { return [{ ...model, provider: "upstream", api: "upstream" }]; },
-    modelFromDiscovery(entry) { return entry; },
+    async discoverClaudeModels() {
+      return [{ ...model, provider: "upstream", api: "upstream", supportsAdaptiveThinking: true }];
+    },
+    modelFromDiscovery(entry) {
+      const { supportsAdaptiveThinking: _supportsAdaptiveThinking, ...mapped } = entry;
+      return mapped;
+    },
     async *streamClaudeCode(requestModel, context, options) {
       calls.push({ model: requestModel, context, options });
       const output = doneMessage(requestModel, [], "pending");
@@ -87,7 +93,10 @@ test("one stdio service handles metadata, full transcript, and append transcript
   const io = await start(upstream, { sessionId: "session" });
   assert.deepEqual((await request(io, { id: 1, op: "status" })).at(-1).value,
     { available: true, loggedIn: true, subscription: true, plan: "max" });
-  assert.equal((await request(io, { id: 2, op: "models" })).at(-1).value[0].id, "fixture");
+  const discovered = (await request(io, { id: 2, op: "models" })).at(-1).value[0];
+  assert.equal(discovered.id, "fixture");
+  assert.deepEqual(discovered.promptCache, { short: 300, long: 3600 });
+  assert.equal(discovered.compat.forceAdaptiveThinking, true);
 
   const image = { type: "image", mimeType: "image/png", data: "A".repeat(1024) };
   const firstMessages = [user([{ type: "text", text: "first" }, image])];
@@ -113,6 +122,26 @@ test("one stdio service handles metadata, full transcript, and append transcript
   io.input.end();
   await io.running;
   assert(upstream.closes.includes("all"));
+});
+
+test("cache retention maps to Claude Code cache environment and none disables worker reuse", async () => {
+  const upstream = fixtureUpstream();
+  const io = await start(upstream, { sessionId: "session" });
+  for (const [id, cacheRetention] of [[1, "short"], [2, "long"], [3, "none"]]) {
+    const result = await request(io, {
+      id, op: "turn", model, transcript: { mode: "full", messages: [user(`turn-${id}`)] },
+      options: { cacheRetention },
+    });
+    assert.equal(assembled(result).at(-1).reason, "stop");
+  }
+  assert.equal(upstream.calls[0].options.env, undefined);
+  assert.equal(upstream.calls[1].options.env.CLAUDE_CODE_PROMPT_CACHE_TTL, "1h");
+  assert.equal(upstream.calls[1].options.env.DISABLE_PROMPT_CACHING, undefined);
+  assert.equal(upstream.calls[2].options.env.CLAUDE_CODE_PROMPT_CACHE_TTL, undefined);
+  assert.equal(upstream.calls[2].options.env.DISABLE_PROMPT_CACHING, "1");
+  assert.equal(upstream.calls[2].options.cacheRetention, "none");
+  io.input.end();
+  await io.running;
 });
 
 test("clean cancellation invalidates transcript and keeps the stdio service usable", async () => {

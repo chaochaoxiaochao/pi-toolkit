@@ -2,7 +2,7 @@
 set -euo pipefail
 umask 077
 
-revision=d5b5e04c314d3452d357174d16d10dda34daa2d2
+revision=0665b571fe36e4faa894a57c20c2c0be047f3e11
 parent="$HOME/.local/share"
 destination="$parent/pi-claude-cage"
 units="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -17,6 +17,19 @@ const hostModel = {
 const user = (content) => ({ role: "user", content, timestamp: 0 });
 const usage = (message) => [message.usage.input, message.usage.output, message.usage.cacheRead,
   message.usage.cacheWrite, message.usage.totalTokens];
+
+test("pinned upstream caps warm replay requests at four cache breakpoints", {
+  skip: !installed || !home,
+}, () => {
+  const output = execFileSync(join(installed, "node"), [
+    "--experimental-transform-types",
+    new URL("./fixtures/cache-breakpoints.mjs", import.meta.url).pathname,
+  ], {
+    encoding: "utf8",
+    env: { ...process.env, PI_CLAUDE_CAGE_TEST_INSTALL_DIR: installed },
+  });
+  assert.equal(output.trim(), "PASS 8 cache-breakpoint request shapes");
+});
 
 async function waitFor(check, what) {
   for (let attempts = 0; attempts < 500; attempts++) {

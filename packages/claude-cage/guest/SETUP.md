@@ -1,6 +1,6 @@
 # Claude Cage guest
 
-The guest service loads pinned [pi-claude-code](https://github.com/earendil-works/pi-claude-code/tree/d5b5e04c314d3452d357174d16d10dda34daa2d2) code in one session-owned Node process. That adapter owns Claude Code launch, warm continuation, cold transcript replay, tool mapping, billing checks, and relay validation. Pi remains the transcript owner and executes tools on the host.
+The guest service loads pinned [pi-claude-code](https://github.com/earendil-works/pi-claude-code/tree/0665b571fe36e4faa894a57c20c2c0be047f3e11) code in one session-owned Node process. That adapter owns Claude Code launch, warm continuation, cold transcript replay, tool mapping, billing checks, relay validation, and the request-wide cache-breakpoint limit. Pi remains the transcript owner and executes tools on the host.
 
 ## Requirements and installation
 
@@ -30,7 +30,7 @@ When the destination has the exact v1 installation marker, the installer:
 
 A failed old-service stop leaves the v1 installation in place. Unknown or foreign paths fail before deletion. V2 installs no user units and does not use `~/.config/pi-claude-cage/environment`.
 
-Setup fetches revision `d5b5e04c314d3452d357174d16d10dda34daa2d2` and installs the locked `@earendil-works/pi-ai@1.6.0` dependency tree with scripts disabled. Upstream `src/` and `LICENSE` are copied unmodified into `upstream/`. The service loads TypeScript with the installed Node symlink and `--experimental-transform-types`.
+Setup fetches revision `0665b571fe36e4faa894a57c20c2c0be047f3e11` and installs the locked `@earendil-works/pi-ai@1.6.0` dependency tree with scripts disabled. The revision is the exact head of upstream PR #41 and is based directly on the previous pin `d5b5e04c314d3452d357174d16d10dda34daa2d2`. It caps outgoing requests at four `cache_control` blocks. Upstream `src/` and `LICENSE` are copied unmodified into `upstream/`. The service loads TypeScript with the installed Node symlink and `--experimental-transform-types`.
 
 ## Claude account policy
 

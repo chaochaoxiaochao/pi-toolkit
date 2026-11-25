@@ -55,6 +55,11 @@ function turnParameters(request, signal, sessionId, timeoutMs, messages) {
   }
   if (["none", "short", "long"].includes(options.cacheRetention)) {
     streamOptions.cacheRetention = options.cacheRetention;
+    if (options.cacheRetention === "long") {
+      streamOptions.env = { CLAUDE_CODE_PROMPT_CACHE_TTL: "1h" };
+    } else if (options.cacheRetention === "none") {
+      streamOptions.env = { DISABLE_PROMPT_CACHING: "1" };
+    }
   }
   if (Number.isSafeInteger(options.maxTokens) && options.maxTokens > 0) {
     streamOptions.maxTokens = options.maxTokens;
@@ -172,7 +177,14 @@ export function createGuestService(upstream, options = {}) {
           throw new Error("Claude Code model discovery failed in the guest; check the CLI installation and login");
         }
         await queuedWrite(output, {
-          id: request.id, type: "value", value: models.map(upstream.modelFromDiscovery),
+          id: request.id, type: "value", value: models.map((discovered) => {
+            const mapped = upstream.modelFromDiscovery(discovered);
+            if (discovered.supportsAdaptiveThinking !== true) return mapped;
+            return {
+              ...mapped,
+              compat: { ...mapped.compat, forceAdaptiveThinking: true },
+            };
+          }),
         }, controller.signal);
       } else if (request.op === "turn") {
         await runTurn(request, controller, output);

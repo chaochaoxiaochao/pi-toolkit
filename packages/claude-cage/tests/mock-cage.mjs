@@ -72,30 +72,44 @@ if (args[4] === "bash") {
       input: 15, output: 2, cacheRead: 3, cacheWrite: 4, totalTokens: 24,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     };
-    const done = (model, content, reason) => ({
+    const done = (model, content, reason, messageUsage = usage) => ({
       role: "assistant", model: model.id, provider: model.provider, api: model.api,
-      content, stopReason: reason, timestamp: Date.now(), usage,
+      content, stopReason: reason, timestamp: Date.now(), usage: messageUsage,
       diagnostics: [{ type: "claude-code.turn-relay", details: { upstreamRequests: 1 } }],
     });
     const service = createGuestService({
-      async getClaudeStatus() { log({ phase: "status" }); return { available: true, loggedIn: true, subscription: true, plan: "max" }; },
+      async getClaudeStatus() {
+        log({ phase: "status" });
+        if (profile.mode === "slow-status") await new Promise((resolve) => setTimeout(resolve, 100));
+        return { available: true, loggedIn: true, subscription: true, plan: "max" };
+      },
       async discoverClaudeModels() {
         log({ phase: "models" });
         return [{
           id: "claude-mock", provider: "upstream", api: "upstream-api", baseUrl: "process://upstream",
           name: "Mock Claude", input: ["text", "image"], reasoning: true,
           contextWindow: 200_000, maxTokens: 16_000,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, headers: { Authorization: "hidden" },
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          promptCache: { short: 300, long: 3600 },
+          supportsAdaptiveThinking: true,
+          headers: { Authorization: "hidden" },
         }];
       },
-      modelFromDiscovery(entry) { return entry; },
+      modelFromDiscovery(entry) {
+        const { supportsAdaptiveThinking: _supportsAdaptiveThinking, ...mapped } = entry;
+        return mapped;
+      },
       async *streamClaudeCode(model, context, options) {
         attempt++;
         log({ phase: "turn", attempt, context, sessionId: options.sessionId, options: {
           reasoning: options.reasoning, cacheRetention: options.cacheRetention,
           maxTokens: options.maxTokens, timeoutMs: options.timeoutMs,
         } });
-        const output = { ...done(model, [], "pending"), stopReason: "pending", diagnostics: undefined };
+        const messageUsage = options.maxTokens === 1 ? {
+          input: 1, output: 1, cacheRead: 128, cacheWrite: 0, totalTokens: 130,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        } : usage;
+        const output = { ...done(model, [], "pending", messageUsage), stopReason: "pending", diagnostics: undefined };
         yield { type: "start", partial: output };
         if (context.messages.at(-1).content === "hold") {
           await new Promise((resolve) => options.signal.addEventListener("abort", resolve, { once: true }));
@@ -112,7 +126,7 @@ if (args[4] === "bash") {
           output.content.push(tool);
           yield { type: "toolcall_start", contentIndex: 0, partial: output };
           yield { type: "toolcall_end", contentIndex: 0, partial: output, toolCall: tool };
-          yield { type: "done", reason: "toolUse", message: done(model, [tool], "toolUse") };
+          yield { type: "done", reason: "toolUse", message: done(model, [tool], "toolUse", messageUsage) };
         } else {
           const text = `收到：${context.messages.at(-1).content[0].text}`;
           const block = { type: "text", text: "" };
@@ -121,7 +135,7 @@ if (args[4] === "bash") {
           block.text = text;
           yield { type: "text_delta", contentIndex: 0, delta: text, partial: output };
           yield { type: "text_end", contentIndex: 0, content: text, partial: output };
-          yield { type: "done", reason: "stop", message: done(model, [{ type: "text", text }], "stop") };
+          yield { type: "done", reason: "stop", message: done(model, [{ type: "text", text }], "stop", messageUsage) };
         }
       },
       async closeClaudeProcesses(sessionId) { log({ phase: "closed", sessionId: sessionId ?? "all" }); },

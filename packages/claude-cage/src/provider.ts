@@ -34,6 +34,14 @@ function validCosts(value: unknown): value is Record<string, unknown> {
 	return isRecord(value) && COST_FIELDS.every((key) => nonNegative(value[key]));
 }
 
+function validPromptCache(value: unknown): boolean {
+	if (!isRecord(value)) return false;
+	const { short, long } = value;
+	return (short === undefined || positiveInteger(short)) &&
+		(long === undefined || positiveInteger(long)) &&
+		(short !== undefined || long !== undefined);
+}
+
 function wireOptions(options: Partial<Record<keyof WireOptions, unknown>>): WireOptions {
 	const safe: WireOptions = {};
 	const reasoning = REASONING.find((level) => level === options.reasoning);
@@ -46,9 +54,25 @@ function wireOptions(options: Partial<Record<keyof WireOptions, unknown>>): Wire
 	return safe;
 }
 
+function initialWireOptions(options: StreamOptions & { reasoning?: unknown }): WireOptions {
+	const safe = wireOptions(options);
+	if (safe.cacheRetention === undefined) {
+		const configured = options.env?.PI_CACHE_RETENTION ?? process.env.PI_CACHE_RETENTION;
+		safe.cacheRetention = configured === "long" ? "long" : "short";
+	}
+	return safe;
+}
+
 function publicModel(model: Model<Api>): Model<Api> {
 	const { id, name, reasoning, input, contextWindow, maxTokens, thinkingLevelMap } = model;
 	const { input: inCost, output, cacheRead, cacheWrite, tiers } = model.cost;
+	const forceAdaptiveThinking = model.compat?.forceAdaptiveThinking === true;
+	// The pinned adapter writes explicit one-hour breakpoints. Claude Code's
+	// 5m setting does not shorten those markers, so advertising `short` would
+	// make Pi refresh a one-hour cache every 4.5 minutes.
+	const promptCache = forceAdaptiveThinking && positiveInteger(model.promptCache?.long)
+		? { long: model.promptCache.long }
+		: undefined;
 	return {
 		id, name, reasoning, input, contextWindow, maxTokens, type: "chat", provider: PROVIDER_ID, api: API_ID,
 		baseUrl: BASE_URL,
@@ -63,6 +87,8 @@ function publicModel(model: Model<Api>): Model<Api> {
 				return setting === null || typeof setting === "string" ? [[level, setting]] : [];
 			}),
 		) } : {}),
+		...(promptCache ? { promptCache } : {}),
+		...(forceAdaptiveThinking ? { compat: { forceAdaptiveThinking: true } } : {}),
 	};
 }
 
@@ -77,7 +103,11 @@ export function parseModels(value: unknown): Model<Api>[] {
 			!model.input.every((input: unknown) => input === "text" || input === "image") ||
 			!positiveInteger(model.contextWindow) || !positiveInteger(model.maxTokens) || !validCosts(model.cost) ||
 			(model.cost.tiers !== undefined && (!Array.isArray(model.cost.tiers) ||
-				!model.cost.tiers.every((tier: unknown) => validCosts(tier) && nonNegative(tier.inputTokensAbove))))) {
+				!model.cost.tiers.every((tier: unknown) => validCosts(tier) && nonNegative(tier.inputTokensAbove)))) ||
+			(model.promptCache !== undefined && !validPromptCache(model.promptCache)) ||
+			(model.compat !== undefined && (!isRecord(model.compat) ||
+				(model.compat.forceAdaptiveThinking !== undefined &&
+					typeof model.compat.forceAdaptiveThinking !== "boolean")))) {
 			throw new Error("Invalid or duplicate model in the Cage catalog");
 		}
 		ids.add(model.id);
@@ -131,12 +161,36 @@ export function createCageProvider(profile: CageProfile | undefined, profileErro
 	let catalog = cachedModels;
 	const lifecycle = new AbortController();
 	const active = new Set<Promise<void>>();
+	let priorityOperations = 0;
+	let activeWarm: { controller: AbortController; settled: Promise<void> } | undefined;
+	let setupPriority = false;
 	let shutdown: Promise<void> | undefined;
 	const connection = profile ? createCageConnection(profile) : undefined;
+	const preemptWarm = async (reason: string) => {
+		while (activeWarm) {
+			const operation = activeWarm;
+			operation.controller.abort(new Error(reason));
+			await operation.settled;
+			if (activeWarm === operation) activeWarm = undefined;
+		}
+	};
 
 	function stream(model: Model<Api>, context: TranscriptContext, options: StreamOptions & { reasoning?: unknown } = {}) {
 		const output = createAssistantMessageEventStream();
-		const signal = options.signal ? AbortSignal.any([lifecycle.signal, options.signal]) : lifecycle.signal;
+		const warming = options.disableContinuation === true;
+		const warmController = warming ? new AbortController() : undefined;
+		const previousWarm = activeWarm;
+		if (warming) {
+			previousWarm?.controller.abort(new Error("Replaced by a newer Claude Cage cache refresh"));
+			if (priorityOperations > 0) warmController!.abort(new Error("Skipped while a higher-priority Claude Cage operation is active"));
+		} else {
+			priorityOperations++;
+			previousWarm?.controller.abort(new Error("Preempted by a real Claude Cage turn"));
+		}
+		const signals = [lifecycle.signal];
+		if (options.signal) signals.push(options.signal);
+		if (warmController) signals.push(warmController.signal);
+		const signal = signals.length === 1 ? lifecycle.signal : AbortSignal.any(signals);
 		let latest = newMessage(model);
 		let started = false;
 		const assembler = createAssistantEventAssembler();
@@ -164,13 +218,14 @@ export function createCageProvider(profile: CageProfile | undefined, profileErro
 
 		const task = (async () => {
 			try {
+				if (previousWarm) await previousWarm.settled;
 				signal.throwIfAborted();
 				if (!profile) throw new Error(profileError ?? "Claude Cage is not configured");
 				if (!connection) throw new Error("Claude Cage connection is unavailable");
 				if (model.provider !== PROVIDER_ID || model.api !== API_ID) throw new Error("Invalid Claude Cage model identity");
 				// Only the transcript and the four supported stream settings are on the
 				// wire. Payload hooks cannot retarget the profile, model, or session.
-				const payload = { context: { messages: context.messages }, options: wireOptions(options) };
+				const payload = { context: { messages: context.messages }, options: initialWireOptions(options) };
 				const update = options.onPayload ? await withAbort(options.onPayload(payload, model),
 					AbortSignal.any([signal, AbortSignal.timeout(10_000)])) : undefined;
 				const selected = update === undefined ? payload : update;
@@ -203,9 +258,17 @@ export function createCageProvider(profile: CageProfile | undefined, profileErro
 				const detail = failure instanceof Error ? failure.message : "request failed";
 				output.push({ type: "error", reason, error: safeFailure(latest, detail, signal.aborted) });
 			} finally {
+				if (!warming) priorityOperations--;
 				output.end();
 			}
 		})();
+		if (warmController) {
+			const operation = { controller: warmController, settled: task };
+			activeWarm = operation;
+			void task.finally(() => {
+				if (activeWarm === operation) activeWarm = undefined;
+			});
+		}
 		active.add(task);
 		void task.then(() => active.delete(task));
 		return output;
@@ -225,15 +288,37 @@ export function createCageProvider(profile: CageProfile | undefined, profileErro
 	return {
 		provider,
 		setModels(models: Model<Api>[]) { catalog = models; },
-		request(request: CageRequest, options?: RequestOptions) {
+		async request(request: CageRequest, options?: RequestOptions) {
 			if (!connection) return Promise.reject(new Error(profileError ?? "Claude Cage is not configured"));
-			return connection.request(request, options);
+			priorityOperations++;
+			try {
+				await preemptWarm("Preempted by a Claude Cage control request");
+				options?.signal?.throwIfAborted();
+				return await connection.request(request, options);
+			} finally {
+				priorityOperations--;
+			}
 		},
-		beginSetup() {
+		async beginSetup() {
 			if (!connection) return Promise.reject(new Error(profileError ?? "Claude Cage is not configured"));
-			return connection.beginSetup();
+			if (setupPriority) throw new Error("Claude Cage setup is already in progress");
+			priorityOperations++;
+			try {
+				await preemptWarm("Preempted by Claude Cage setup");
+				await connection.beginSetup();
+				setupPriority = true;
+			} catch (error) {
+				priorityOperations--;
+				throw error;
+			}
 		},
-		finishSetup() { connection?.finishSetup(); },
+		finishSetup() {
+			connection?.finishSetup();
+			if (setupPriority) {
+				setupPriority = false;
+				priorityOperations--;
+			}
+		},
 		get connectionState() { return connection?.state ?? "unavailable"; },
 		signal: lifecycle.signal,
 		shutdown() {

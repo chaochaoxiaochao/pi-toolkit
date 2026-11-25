@@ -1,3 +1,10 @@
+## Unreleased
+
+- Integrate with Pi's CacheWarmer using verified adaptive-thinking model metadata and one-hour retention.
+- Let real Cage turns and status, model-discovery, or setup commands cancel and preempt low-priority warming requests on the single guest connection.
+- Keep unsafe models out of warming, preserve cache usage entries, and document the authorized real A/W/B/C acceptance with no observed #34 signature.
+- Pin the exact head of upstream PR #41 so replay requests never exceed Anthropic's four `cache_control` blocks. Add the eight-shape installed-upstream regression and verify the previously failing warm system-prompt update through the real Cage route.
+
 ## 2026-11-24 - v0.2.0
 
 - Replace the socket daemon with one persistent bounded stdio connection per Pi runtime, transcript append synchronization, and fail-closed v1 migration

@@ -351,13 +351,19 @@ export class CageConnection {
 	async beginSetup() {
 		if (this.#state === "fatal") throw this.#fatal;
 		if (["busy", "starting", "installing"].includes(this.#state)) throw new Error("Wait for the current Claude Cage operation to finish");
-		if (this.#state === "idle" && this.#child && this.#closed) await stopChild(this.#child, this.#closed);
+		const stopExisting = this.#state === "idle" && this.#child && this.#closed;
+		this.#state = "installing";
+		try {
+			if (stopExisting) await stopChild(this.#child!, this.#closed!);
+		} catch (error) {
+			this.#state = "idle";
+			throw error;
+		}
 		this.#child = undefined;
 		this.#closed = undefined;
 		this.#frames = undefined;
 		this.#failure = undefined;
 		this.#base = undefined;
-		this.#state = "installing";
 	}
 
 	finishSetup() {

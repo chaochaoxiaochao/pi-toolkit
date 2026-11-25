@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const installer = join(here, "install.sh");
-const revision = "d5b5e04c314d3452d357174d16d10dda34daa2d2";
+const revision = "0665b571fe36e4faa894a57c20c2c0be047f3e11";
 
 function script(path, content) {
   writeFileSync(path, `#!/bin/sh\nset -eu\n${content}\n`, { mode: 0o700 });

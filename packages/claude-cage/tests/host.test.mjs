@@ -36,6 +36,16 @@ const model = {
 };
 const user = (content) => ({ role: "user", content, timestamp: 5 });
 
+async function waitFor(check, message, timeoutMs = 2_000) {
+	const deadline = Date.now() + timeoutMs;
+	for (;;) {
+		const value = check();
+		if (value) return value;
+		if (Date.now() >= deadline) throw new Error(message);
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+}
+
 function mount(dir, { confirm = async () => false, hasUI = true } = {}) {
 	const commands = new Map();
 	const events = new Map();
@@ -88,6 +98,32 @@ async function fakeProfile(t, { mode, setup = false } = {}) {
 		operations: () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse) : [],
 	};
 }
+
+test("model parsing preserves cache metadata only for adaptive-thinking models", () => {
+	const safe = parseModels([{
+		...model,
+		id: "claude-safe",
+		promptCache: { short: 300, long: 3600 },
+		compat: { forceAdaptiveThinking: true },
+	}])[0];
+	assert.deepEqual(safe.promptCache, { long: 3600 });
+	assert.equal(safe.compat.forceAdaptiveThinking, true);
+
+	const unsafe = parseModels([{
+		...model,
+		id: "claude-unsafe",
+		promptCache: { short: 300, long: 3600 },
+	}])[0];
+	assert.equal(unsafe.promptCache, undefined);
+	assert.equal(unsafe.compat, undefined);
+
+	assert.throws(() => parseModels([{
+		...model,
+		id: "claude-invalid-cache",
+		promptCache: { short: 0, long: 3600 },
+		compat: { forceAdaptiveThinking: true },
+	}]), /Invalid or duplicate model/);
+});
 
 test("invalid profile launches nothing and an old clientPath profile gives an exact migration error", async (t) => {
 	const { dir, profile, operations } = await fakeProfile(t);
@@ -153,6 +189,157 @@ test("one Pi runtime keeps one Cage process for status, models, and multiple tra
 	assert(log.every(({ config }) => config === profile.config));
 	await app.shutdown();
 	assert(log.filter(({ phase }) => phase === "closed").length <= 1);
+});
+
+test("a real turn preempts an in-flight cache warm and the warm usage remains auxiliary-shaped", async (t) => {
+	const { dir, operations } = await fakeProfile(t);
+	const app = mount(dir);
+	t.after(() => app.shutdown());
+	await app.command("status", "models");
+	const picked = app.provider.getModels()[0];
+	assert.deepEqual(picked.promptCache, { long: 3600 });
+	assert.equal(picked.compat.forceAdaptiveThinking, true);
+
+	const warmContext = normalizeContext({ messages: [user("hold")] });
+	const warming = app.provider.streamSimple(picked, warmContext, {
+		disableContinuation: true,
+		cacheRetention: "long",
+		maxTokens: 1,
+	}).result();
+	await waitFor(() => operations().find(({ phase, context }) =>
+		phase === "turn" && context.messages.at(-1).content === "hold"), "warm turn did not start");
+
+	const realContext = normalizeContext({ messages: [user([{ type: "text", text: "real" }])] });
+	const real = app.provider.streamSimple(picked, realContext, { cacheRetention: "long" }).result();
+	const [warmMessage, realMessage] = await Promise.all([warming, real]);
+	assert.equal(warmMessage.stopReason, "aborted");
+	assert.equal(realMessage.stopReason, "stop");
+	assert.equal(realMessage.content[0].text, "收到：real");
+
+	const turns = operations().filter(({ phase }) => phase === "turn");
+	assert.equal(turns[0].context.messages.at(-1).content, "hold");
+	assert.equal(turns[1].context.messages.at(-1).content[0].text, "real");
+	assert.equal(turns[0].options.maxTokens, 1);
+	assert.equal(turns[1].options.maxTokens, undefined);
+	assert.ok(turns.every(({ options }) => options.cacheRetention === "long"));
+
+	const refreshed = await app.provider.streamSimple(picked, normalizeContext({
+		messages: [user([{ type: "text", text: "refresh" }])],
+	}), {
+		disableContinuation: true,
+		cacheRetention: "long",
+		maxTokens: 1,
+	}).result();
+	assert.equal(refreshed.stopReason, "stop");
+	assert.equal(refreshed.usage.cacheRead, 128);
+	assert.equal(refreshed.usage.cacheWrite, 0);
+});
+
+test("PI_CACHE_RETENTION=long reaches the guest when Pi omits cacheRetention", async (t) => {
+	const original = process.env.PI_CACHE_RETENTION;
+	process.env.PI_CACHE_RETENTION = "long";
+	t.after(() => {
+		if (original === undefined) delete process.env.PI_CACHE_RETENTION;
+		else process.env.PI_CACHE_RETENTION = original;
+	});
+	const { dir, operations } = await fakeProfile(t);
+	const app = mount(dir);
+	t.after(() => app.shutdown());
+	await app.command("status", "models");
+	const picked = app.provider.getModels()[0];
+	await app.provider.streamSimple(picked, normalizeContext({ messages: [user([{ type: "text", text: "short override" }])] }), {
+		env: { PI_CACHE_RETENTION: "short" },
+	}).result();
+	assert.equal(operations().findLast(({ phase }) => phase === "turn").options.cacheRetention, "short");
+	await app.provider.streamSimple(picked, normalizeContext({ messages: [user([{ type: "text", text: "long environment" }])] })).result();
+	assert.equal(operations().findLast(({ phase }) => phase === "turn").options.cacheRetention, "long");
+});
+
+test("control requests preempt an in-flight cache warm", async (t) => {
+	const { dir, operations } = await fakeProfile(t);
+	const app = mount(dir);
+	t.after(() => app.shutdown());
+	await app.command("status", "models");
+	const picked = app.provider.getModels()[0];
+	const warming = app.provider.streamSimple(picked, normalizeContext({ messages: [user("hold")] }), {
+		disableContinuation: true, cacheRetention: "long", maxTokens: 1,
+	}).result();
+	await waitFor(() => operations().some(({ phase, context }) =>
+		phase === "turn" && context.messages.at(-1).content === "hold"), "warm turn did not start");
+	await app.command("status");
+	assert.equal((await warming).stopReason, "aborted");
+	assert.ok(operations().findLast(({ phase }) => phase === "status"));
+	assert.equal(app.notifications.at(-1).type, "info");
+});
+
+test("warming skips active control and setup operations", async (t) => {
+	const slow = await fakeProfile(t, { mode: "slow-status" });
+	saveCatalog(slow.dir, slow.profile, [model]);
+	const statusApp = mount(slow.dir);
+	t.after(() => statusApp.shutdown());
+	const status = statusApp.command("status");
+	await waitFor(() => slow.operations().some(({ phase }) => phase === "status"), "slow status did not start");
+	const skippedDuringStatus = await statusApp.provider.streamSimple(statusApp.provider.getModels()[0],
+		normalizeContext({ messages: [user([{ type: "text", text: "status warm" }])] }), {
+			disableContinuation: true, cacheRetention: "long", maxTokens: 1,
+		}).result();
+	assert.equal(skippedDuringStatus.stopReason, "aborted");
+	await status;
+	assert.equal(slow.operations().filter(({ phase }) => phase === "turn").length, 0);
+
+	const setupFixture = await fakeProfile(t, { setup: true });
+	saveCatalog(setupFixture.dir, setupFixture.profile, [model]);
+	const confirmationEntered = Promise.withResolvers();
+	const confirmationRelease = Promise.withResolvers();
+	const setupApp = mount(setupFixture.dir, { confirm: async () => {
+		confirmationEntered.resolve();
+		await confirmationRelease.promise;
+		return false;
+	} });
+	t.after(() => setupApp.shutdown());
+	const setup = setupApp.command("setup");
+	await confirmationEntered.promise;
+	const skippedDuringSetup = await setupApp.provider.streamSimple(setupApp.provider.getModels()[0],
+		normalizeContext({ messages: [user([{ type: "text", text: "setup warm" }])] }), {
+			disableContinuation: true, cacheRetention: "long", maxTokens: 1,
+	}).result();
+	assert.equal(skippedDuringSetup.stopReason, "aborted");
+	confirmationRelease.resolve();
+	await setup;
+	assert.equal(setupFixture.operations().filter(({ phase }) => phase === "turn").length, 0);
+});
+
+test("warming skips active real turns and a newer warm replaces an older warm", async (t) => {
+	const { dir, operations } = await fakeProfile(t);
+	const app = mount(dir);
+	t.after(() => app.shutdown());
+	await app.command("status", "models");
+	const picked = app.provider.getModels()[0];
+	const controller = new AbortController();
+	const real = app.provider.streamSimple(picked, normalizeContext({ messages: [user("hold")] }), {
+		signal: controller.signal, cacheRetention: "long",
+	}).result();
+	await waitFor(() => operations().some(({ phase, context }) =>
+		phase === "turn" && context.messages.at(-1).content === "hold"), "real turn did not start");
+	const skipped = await app.provider.streamSimple(picked, normalizeContext({ messages: [user([{ type: "text", text: "skip warm" }])] }), {
+		disableContinuation: true, cacheRetention: "long", maxTokens: 1,
+	}).result();
+	assert.equal(skipped.stopReason, "aborted");
+	assert.equal(operations().filter(({ phase }) => phase === "turn").length, 1);
+	controller.abort(new Error("release real turn"));
+	assert.equal((await real).stopReason, "aborted");
+
+	const firstWarm = app.provider.streamSimple(picked, normalizeContext({ messages: [user("hold")] }), {
+		disableContinuation: true, cacheRetention: "long", maxTokens: 1,
+	}).result();
+	await waitFor(() => operations().filter(({ phase, context }) =>
+		phase === "turn" && context.messages.at(-1).content === "hold").length === 2, "replacement fixture warm did not start");
+	const replacement = app.provider.streamSimple(picked, normalizeContext({ messages: [user([{ type: "text", text: "replacement warm" }])] }), {
+		disableContinuation: true, cacheRetention: "long", maxTokens: 1,
+	}).result();
+	assert.equal((await firstWarm).stopReason, "aborted");
+	assert.equal((await replacement).stopReason, "stop");
+	assert.equal(operations().findLast(({ phase }) => phase === "turn").context.messages.at(-1).content[0].text, "replacement warm");
 });
 
 test("a separate Pi runtime owns a separate Cage process and upstream session", async (t) => {
