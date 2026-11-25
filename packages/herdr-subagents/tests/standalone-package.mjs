@@ -16,9 +16,9 @@ try {
 		cwd: join(root, "package"), encoding: "utf8", timeout: 30000,
 	});
 	const results = output.trim().split("\n").map((line) => JSON.parse(line));
-	assert.equal(results.length, 10, "all native lifecycle cases must execute outside the workspace");
-	assert.ok(results.every((result) => result.reportExists === (result.scenario !== "retry_exhausted")));
-	console.log("PASS standalone Herdr tarball: ten native offline lifecycle cases without sibling packages");
+	assert.equal(results.length, 11, "all native lifecycle cases must execute outside the workspace");
+	assert.ok(results.every((result) => result.reportExists === !["retry_exhausted", "retry_blank_error"].includes(result.scenario)));
+	console.log("PASS standalone Herdr tarball: eleven native offline lifecycle cases without sibling packages");
 } finally {
 	rmSync(root, { recursive: true, force: true });
 }

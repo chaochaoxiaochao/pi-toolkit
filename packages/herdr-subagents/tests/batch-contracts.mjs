@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mock } from "node:test";
-import { runHerdrSubagentsBatch } from "../src/batch-runner.ts";
+import { notifyActiveBatchFailure, runHerdrSubagentsBatch } from "../src/batch-runner.ts";
 import { continueQueuedRun } from "../src/continue-run.ts";
 import { executeHerdrSubagents, executeHerdrSubagentsControl } from "../src/tool.ts";
 import { HERDR_ACTIONS, validateControlParams } from "../src/validation.ts";
@@ -136,6 +136,49 @@ console.log("PASS public hard failure remains failed when an already-running sib
 }
 console.log("PASS hard failure stops queued work while already-running siblings finish");
 
+{
+	const blocked = Promise.withResolvers();
+	const siblingsStarted = Promise.withResolvers();
+	const releaseSibling = Promise.withResolvers();
+	let blockedDirectory;
+	const launched = [];
+	const runningSiblings = new Set();
+	const f = batchFixture(async ({ directory, publish }) => {
+		const name = readTask(directory).name;
+		launched.push(name);
+		if (name === "first") {
+			blockedDirectory = directory;
+			publish(directory, { status: "blocked", summary: "needs input", question: "Continue?" });
+			blocked.resolve();
+			return;
+		}
+		if (name === "second" || name === "third") {
+			runningSiblings.add(name);
+			if (runningSiblings.size === 2) siblingsStarted.resolve();
+			await releaseSibling.promise;
+			publish(directory, { status: "completed", summary: "already-running sibling completed" });
+			return;
+		}
+		publish(directory, { status: "completed", summary: "unexpected start" });
+	});
+	try {
+		const outcome = runHerdrSubagentsBatch(["first", "second", "third", "fourth"].map((name) => batchTask(name)), options(f, { concurrency: 2 }));
+		await Promise.all([blocked.promise, siblingsStarted.promise]);
+		const task = readTask(blockedDirectory);
+		writeJson(join(blockedDirectory, "task.json"), { ...task, status: "failed", error: "response failed", completedAt: new Date().toISOString() });
+		const report = readJson(join(blockedDirectory, "report.json"));
+		writeJson(join(blockedDirectory, "report.json"), { ...report, status: "failed", error: "response failed", question: undefined });
+		const runDirectory = dirname(dirname(blockedDirectory));
+		assert.equal(notifyActiveBatchFailure(runDirectory, "first"), true);
+		releaseSibling.resolve();
+		const result = await outcome;
+		assert.deepEqual(launched.sort(), ["first", "second", "third"]);
+		assert.deepEqual(result.tasks.map((entry) => entry.status), ["failed", "completed", "completed", "cancelled"]);
+		assert.equal(result.tasks[3].error, "Not started because first failed.");
+	} finally { releaseSibling.resolve(); f.close(); }
+}
+console.log("PASS a failed response on a blocked lane stops the live batch queue while siblings finish");
+
 for (const method of ["createTab", "splitPane", "startAgent"]) {
 	const f = batchFixture();
 	const failures = [];
@@ -202,6 +245,26 @@ console.log("PASS create/split/start uncertain failures never duplicate executio
 	} finally { f.close(); }
 }
 console.log("PASS failed continued queue launch retains the attempt identity and stops later queued work");
+
+{
+	const f = batchFixture();
+	try {
+		const queued = durableRun(f.root, "responded-failure-queue", "running", { cwd: f.root, paneIds: [], tabId: undefined, effectiveConcurrency: 1 });
+		writeJson(queued.taskFile, { ...queued.task, status: "failed", name: "responded failure", error: "confirmed failure" });
+		const secondDirectory = join(queued.directory, "tasks", "02-second");
+		const secondFile = join(secondDirectory, "task.json");
+		writeJson(secondFile, { ...queued.task, id: "responded-failure-second", order: 2, name: "second", status: "queued", prompt: "Must not start.", sessionFile: join(secondDirectory, "session.jsonl") });
+		writeJson(queued.runFile, { ...queued.run, taskIds: [queued.task.id, "responded-failure-second"] });
+		let starts = 0;
+		f.herdr.startAgent = async () => { starts += 1; };
+		await continueQueuedRun(queued.directory, f.herdr, { cleanup: false });
+		assert.equal(starts, 0);
+		assert.equal(readTask(secondDirectory).status, "cancelled");
+		assert.equal(readTask(secondDirectory).error, "Not started because responded failure failed.");
+		assert.equal(readJson(queued.runFile).status, "failed");
+	} finally { f.close(); }
+}
+console.log("PASS an existing responded failure cancels queued work before continuation");
 
 
 for (const [label, report] of [

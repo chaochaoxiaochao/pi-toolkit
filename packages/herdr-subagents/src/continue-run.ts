@@ -6,7 +6,7 @@ import { writeJsonAtomic } from "./state.ts";
 import { cleanupRunTab } from "./tab-cleanup.ts";
 import { RunPaneAllocator } from "./run-pane-allocator.ts";
 import { aggregateTaskStatus, applyRunStatus } from "./run-status.ts";
-import { applyReport, applyTaskRuntime, applyTaskStatus, readRunRecord, readTaskRecord, settleAttemptFailure } from "./records.ts";
+import { applyReport, applyTaskRuntime, applyTaskStatus, isSettledRunStatus, readRunRecord, readTaskRecord, settleAttemptFailure } from "./records.ts";
 import { acquireDirectoryLock, adoptRecord, queueLockPath, withRunStateLock, type DirectoryLock } from "./run-state.ts";
 import { isAbortError } from "./errors.ts";
 
@@ -38,12 +38,38 @@ async function continueQueuedTasks(runDirectory: string, runFile: string, herdr:
 	const taskDirectories = readdirSync(join(runDirectory, "tasks")).sort().map((entry) => join(runDirectory, "tasks", entry));
 	const queuedDirectories: string[] = [];
 	let blockedCount = 0;
+	let existingFailure: { name: string } | undefined;
 	for (const directory of taskDirectories) {
-		const status = (await readTaskRecord(join(directory, "task.json"))).status;
+		const task = await readTaskRecord(join(directory, "task.json"));
+		const status = task.status;
 		if (status === "queued") queuedDirectories.push(directory);
 		if (status === "blocked") blockedCount += 1;
+		if (status === "failed" && !existingFailure) existingFailure = { name: String(task.name || task.agent || "Task") };
 	}
 	if (!queuedDirectories.length) return;
+	const settleRun = async () => {
+		const statuses = await Promise.all(taskDirectories.map(async (directory) => (await readTaskRecord(join(directory, "task.json"))).status));
+		// Settling the run must not be cancellable, so the terminal status is never written under the signal.
+		await withRunStateLock(runFile, undefined, (latest) => {
+			applyRunStatus(latest, aggregateTaskStatus(statuses));
+			adoptRecord(run, latest);
+		});
+		if (options.cleanup !== false && isSettledRunStatus(run.status) && run.tabId) {
+			await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, signal: options.signal, onError: options.onCleanupError });
+		}
+	};
+	if (existingFailure) {
+		for (const directory of queuedDirectories) {
+			const taskFile = join(directory, "task.json");
+			const task = await readTaskRecord(taskFile);
+			if (task.status !== "queued") continue;
+			applyTaskStatus(task, "cancelled", { error: `Not started because ${existingFailure.name} failed.` });
+			await writeJsonAtomic(taskFile, task);
+		}
+		await options.onUpdate?.();
+		await settleRun();
+		return;
+	}
 	const availableSlots = Math.max(0, (Number(run.effectiveConcurrency) || 1) - blockedCount);
 	if (availableSlots === 0) return;
 	const concurrency = Math.min(availableSlots, queuedDirectories.length);
@@ -101,7 +127,7 @@ async function continueQueuedTasks(runDirectory: string, runFile: string, herdr:
 		return { status: task.status, ...(failFast ? { failFast } : {}) };
 	};
 	const worker = async () => {
-		while (!firstFailure) {
+		while (!options.signal?.aborted && !firstFailure) {
 			const index = nextIndex++;
 			if (index >= queuedDirectories.length) return;
 			const directory = queuedDirectories[index];
@@ -123,13 +149,5 @@ async function continueQueuedTasks(runDirectory: string, runFile: string, herdr:
 			await writeJsonAtomic(taskFile, task);
 		}
 	}
-	const statuses = await Promise.all(taskDirectories.map(async (directory) => (await readTaskRecord(join(directory, "task.json"))).status));
-	// Settling the run must not be cancellable, so the terminal status is never written under the signal.
-	await withRunStateLock(runFile, undefined, (latest) => {
-		applyRunStatus(latest, aggregateTaskStatus(statuses));
-		adoptRecord(run, latest);
-	});
-	if (options.cleanup !== false && run.status !== "blocked" && run.tabId) {
-		await cleanupRunTab({ herdr, tabId: run.tabId, runFile, runRecord: run, signal: options.signal, onError: options.onCleanupError });
-	}
+	await settleRun();
 }

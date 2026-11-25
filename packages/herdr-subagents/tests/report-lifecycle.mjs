@@ -12,7 +12,7 @@ const {default:childReport}=await import('../extensions/subagent-report.ts');
 delete process.env.HERDR_ENV;delete process.env.HERDR_SOCKET_PATH;
 const root=mkdtempSync(join(tmpdir(),'pi-native-settled-review-'));
 process.env.PI_CODING_AGENT_DIR=root;
-const cases=['reported','failed_report','remind_success','normal_no_report','transient_retry','retry_exhausted','queued_followup','boundary_continue','abort','settled_hook_new_prompt'];
+const cases=['reported','failed_report','remind_success','normal_no_report','transient_retry','retry_exhausted','retry_blank_error','queued_followup','boundary_continue','abort','settled_hook_new_prompt'];
 try{
  for(const scenario of cases){
   const dir=join(root,scenario);mkdirSync(dir);
@@ -29,7 +29,7 @@ try{
     void(async()=>{
      let reason='stop',error;
      if(scenario==='abort'){if(!options.signal.aborted)await new Promise(r=>options.signal.addEventListener('abort',r,{once:true}));reason='aborted';error='Request was aborted';}
-     else if((scenario==='transient_retry'&&index===1)||scenario==='retry_exhausted'){reason='error';error='500 Internal Server Error';}
+     else if((scenario==='transient_retry'&&index===1)||scenario==='retry_exhausted'||scenario==='retry_blank_error'){reason='error';error=scenario==='retry_blank_error'&&index===2?' \t':'500 Internal Server Error';}
      const reportNow=scenario==='reported'||scenario==='failed_report'||(scenario==='remind_success'&&index===2);
      const message={role:'assistant',api:model.api,provider:model.provider,model:model.id,timestamp:Date.now(),content:reportNow?[{type:'toolCall',id:'fixture-report',name:'subagent_report',arguments:{status:scenario==='failed_report'?'failed':'completed',summary:'Offline test report',result:'Offline complete result'}}]:reason==='stop'?[{type:'text',text:'A normal final answer without subagent_report'}]:[],stopReason:reportNow?'toolUse':reason,...(error?{errorMessage:error}:{}),usage:{input:1,output:1,cacheRead:0,cacheWrite:0,totalTokens:2,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}}};
      stream.push({type:'start',partial:message});
@@ -55,22 +55,23 @@ try{
    await running;
    if(scenario==='abort'){assert.equal(existsSync(join(dir,'reports',attemptId+'.json')),false,'no report inside the grace period');await new Promise(r=>setTimeout(r,1500));}
    assert.equal(errors.length,0,JSON.stringify(errors));
-   const expectedRequests={reported:1,failed_report:1,remind_success:2,normal_no_report:2,transient_retry:3,retry_exhausted:2,queued_followup:3,boundary_continue:2,abort:1,settled_hook_new_prompt:3}[scenario];
+   const expectedRequests={reported:1,failed_report:1,remind_success:2,normal_no_report:2,transient_retry:3,retry_exhausted:2,retry_blank_error:2,queued_followup:3,boundary_continue:2,abort:1,settled_hook_new_prompt:3}[scenario];
    assert.equal(requests,expectedRequests,scenario);
    assert.equal(settled,scenario==='settled_hook_new_prompt'?2:1,scenario);
    assert.ok(states.every(s=>s.aborted===(scenario==='abort')));
    const reportPath=join(dir,'reports',attemptId+'.json');
-   const report=scenario==='retry_exhausted'?undefined:JSON.parse(readFileSync(reportPath,'utf8'));
-   if(scenario==='retry_exhausted'){
+   const providerFailure=['retry_exhausted','retry_blank_error'].includes(scenario);
+   const report=providerFailure?undefined:JSON.parse(readFileSync(reportPath,'utf8'));
+   if(providerFailure){
     assert.equal(existsSync(reportPath),false,'final provider errors must remain recoverable');
     const waiting=JSON.parse(readFileSync(statePath,'utf8'));
     assert.equal(waiting.state,'waiting_interaction');
-    assert.equal(waiting.diagnostic,'500 Internal Server Error');
+    assert.equal(waiting.diagnostic,scenario==='retry_exhausted'?'500 Internal Server Error':'Provider request failed. Inspect the child session, correct the provider, and retry this task.');
    }else assert.equal(report.status,['reported','remind_success'].includes(scenario)?'completed':'failed');
-   if(['abort','retry_exhausted'].includes(scenario))assert.equal(inputs.some(input=>JSON.stringify(input).includes('Do not redo the task')),false);
-   if(!['reported','failed_report','remind_success','retry_exhausted'].includes(scenario))assert.ok(report.documents.some(document=>document.path===session.sessionManager.getSessionFile()));
+   if(['abort','retry_exhausted','retry_blank_error'].includes(scenario))assert.equal(inputs.some(input=>JSON.stringify(input).includes('Do not redo the task')),false);
+   if(!['reported','failed_report','remind_success','retry_exhausted','retry_blank_error'].includes(scenario))assert.ok(report.documents.some(document=>document.path===session.sessionManager.getSessionFile()));
    if(scenario==='remind_success')assert.ok(JSON.stringify(inputs[1]).includes('Do not redo the task'));
-   assert.ok(trace.indexOf('agent_end')<trace.indexOf('before_settle:completed')||['abort','retry_exhausted'].includes(scenario));
+   assert.ok(trace.indexOf('agent_end')<trace.indexOf('before_settle:completed')||['abort','retry_exhausted','retry_blank_error'].includes(scenario));
    console.log(JSON.stringify({scenario,requests,agentEnds:ended,settledEvents:settled,trace,states:states.map(({file,...s})=>({...s,fileState:file.state})),reportExists:existsSync(reportPath)}));
   }finally{await session.abort();await session.extensionRunner.emit({type:'session_shutdown',reason:'quit'});session.dispose();}
  }

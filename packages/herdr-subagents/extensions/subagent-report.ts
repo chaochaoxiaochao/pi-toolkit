@@ -107,9 +107,10 @@ function latestProviderError(messages: unknown[]): string | undefined {
 		const message = messages[index];
 		if (!message || typeof message !== "object" || Array.isArray(message)) continue;
 		const record = message as Record<string, unknown>;
-		if (record.role !== "assistant" || record.stopReason !== "error" || typeof record.errorMessage !== "string") continue;
+		if (record.role !== "assistant") continue;
+		if (record.stopReason !== "error" || typeof record.errorMessage !== "string") return undefined;
 		const diagnostic = record.errorMessage.replace(/[\x00-\x1f\x7f]/g, " ").trim();
-		if (diagnostic) return diagnostic.slice(0, 800);
+		return diagnostic ? diagnostic.slice(0, 800) : undefined;
 	}
 	return undefined;
 }

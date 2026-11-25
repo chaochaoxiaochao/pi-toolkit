@@ -18,6 +18,15 @@ import { aggregateTasksWithResume, readTaskEntries } from "./resume-state.ts";
 import { isAbortError } from "./errors.ts";
 import { attemptReportPath } from "./attempts.ts";
 
+const activeBatchFailureSignals = new Map<string, (name: string) => void>();
+
+export function notifyActiveBatchFailure(runDirectory: string, taskName: string): boolean {
+	const notify = activeBatchFailureSignals.get(runDirectory);
+	if (!notify) return false;
+	notify(taskName);
+	return true;
+}
+
 export interface BatchTask {
 	name: string;
 	prompt: string;
@@ -160,6 +169,7 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 	let settled = 0;
 	let firstFailure: { name: string } | undefined;
 	let queueLock: DirectoryLock | undefined;
+	let batchFailureSignal: ((name: string) => void) | undefined;
 	try {
 		const stopAfterFailure = (name: string): { name: string } | undefined => {
 			if (firstFailure) return undefined;
@@ -169,6 +179,9 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 		// Holding the queue lock for the whole batch keeps another continuation from
 		// starting queued tasks while this batch owns scheduling.
 		queueLock = await acquireDirectoryLock(queueLockPath(runDirectory), { wait: false });
+		batchFailureSignal = (name) => { stopAfterFailure(name); };
+		if (activeBatchFailureSignals.has(runDirectory)) throw new Error(`Run queue at ${runDirectory} already has an active batch.`);
+		activeBatchFailureSignals.set(runDirectory, batchFailureSignal);
 		const cancelQueuedAfterFailure = async (failedTask: { name: string }): Promise<number> => {
 			let cancelled = 0;
 			for (let index = nextIndex; index < contexts.length; index += 1) {
@@ -246,6 +259,11 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 		const workers = await Promise.allSettled(Array.from({ length: effectiveConcurrency }, worker));
 		const rejectedWorker = workers.find((worker): worker is PromiseRejectedResult => worker.status === "rejected");
 		if (rejectedWorker) throw rejectedWorker.reason;
+		if (firstFailure) {
+			const cancelledCount = await cancelQueuedAfterFailure(firstFailure);
+			settled += cancelledCount;
+			if (cancelledCount) emit("running", `${settled}/${tasks.length} tasks settled.`);
+		}
 		if (options.signal?.aborted) {
 			for (let index = 0; index < tasks.length; index += 1) {
 				if (activity[index].status !== "queued") continue;
@@ -290,6 +308,9 @@ export async function runHerdrSubagentsBatch(tasks: BatchTask[], options: BatchO
 		await persistRunStatus(options.signal?.aborted ? "cancelled" : "failed", { error: error instanceof Error ? error.message : String(error) }, true);
 		throw error;
 	} finally {
+		if (batchFailureSignal && activeBatchFailureSignals.get(runDirectory) === batchFailureSignal) {
+			activeBatchFailureSignals.delete(runDirectory);
+		}
 		await queueLock?.release();
 		const keepTab = !options.signal?.aborted && (activity.some((entry) => entry.status === "blocked" || entry.status === "queued" || entry.status === "running") || (settledAggregate !== undefined && isActiveStatus(settledAggregate)));
 		if (tabId && !keepTab) {

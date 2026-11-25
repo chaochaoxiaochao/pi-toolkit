@@ -17,6 +17,7 @@ import { findRunDirectory } from "./run-locator.ts";
 import { acquireDirectoryLock, withRunStateLock } from "./run-state.ts";
 import { createAttemptId } from "./attempts.ts";
 import { aggregateTasksWithResume, claimResumeCleanup } from "./resume-state.ts";
+import { notifyActiveBatchFailure } from "./batch-runner.ts";
 
 export interface RespondToBlockedTaskOptions { herdr?: HerdrAutomation; taskNumber: number; signal?: AbortSignal; owner?: OwnerIdentity; onCleanupError?: (message: string) => void; onWarning?: (message: string) => void; onStalled?: (message: string) => void; onUpdate?: (result: ResumeBlockedResult) => void; }
 export interface ResumeBlockedResult {
@@ -249,6 +250,7 @@ async function respondToBlockedTaskLocked(cwd: string, runId: string, answer: st
 	Object.assign(turn, { summary: report.summary, documents: report.documents ?? [] });
 	applyReport(turn, report);
 	await Promise.all([writeJsonAtomic(join(taskDirectory, "task.json"), task), writeJsonAtomic(turnFile, turn)]);
+	if (status === "failed") notifyActiveBatchFailure(runDirectory, String(task.name || task.agent || "Task"));
 	await emitProgress(options, runDirectory, run, taskDirectories, `${task.name ?? task.agent} ${status}.`);
 	// Only a blocked task halts its batch worker. Continuing a settled failure must not restart
 	// queued siblings that the still-running batch already owns.
