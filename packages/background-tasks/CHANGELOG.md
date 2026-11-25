@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Keep the start reminder action-oriented: continue independent work or end the turn while automatic completion delivery handles the wait. Remove the running-query prompt that encouraged status polling.
 - Add one combined progress turn after every 30 idle minutes while background tasks remain active.
 - Report task status, elapsed time, timeout, description, captured bytes and byte growth without injecting log contents.
 - Reset progress timing around parent runs, preserve interrupt suppression and completion precedence, and keep `promptGuidelines` undefined.

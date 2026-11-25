@@ -8,7 +8,7 @@ import { BackgroundPanel } from "../src/panel.ts";
 import { BackgroundFooter, findNativeFooter, FINISHED_VISIBLE_MS, WIDGET_KEY, duration, visibleTasks } from "../src/widget.ts";
 
 const actions = ["start", "list", "output", "cancel"] as const;
-const startNotice = "Completion is reported automatically. Continue other work, or end the turn if nothing else remains; do not sleep, tail logs or query just to wait.";
+const startNotice = "Completion is reported automatically. Continue independent work, or end the turn if none remains.";
 const PROGRESS_INTERVAL_MS = 30 * 60_000;
 // Bound model-visible status text when many completions accumulate.
 const NOTIFICATION_MAX_BYTES = 16 * 1024;
@@ -22,7 +22,7 @@ interface Params {
 	id?: string;
 }
 const Parameters = Type.Object({
-	action: StringEnum(actions, { description: "start returns a task ID immediately; list checks status; output reads a bounded tail; cancel stops one task. list and output also work while tasks are running." }),
+	action: StringEnum(actions, { description: "start returns a task ID immediately; list checks status; output reads a bounded tail; cancel stops one task." }),
 	command: Type.Optional(Type.String({ description: "Shell command for start; may be multi-line. Runs locally, with stdin closed. Stdout/stderr are saved to a unique per-task log; its path is reported on completion." })),
 	description: Type.Optional(Type.String({ description: "Short display label for start" })),
 	cwd: Type.Optional(Type.String({ description: "Working directory for start; defaults to the session directory. Relative paths resolve from it." })),

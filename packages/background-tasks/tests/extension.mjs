@@ -614,13 +614,13 @@ test("registration is compact, does not inject prompt rules or start session res
 	} finally { await h.close(); }
 });
 
-test("start keeps only task-specific guidance while the declaration describes lifecycle and running queries", async () => {
+test("start keeps concise task-specific guidance while the declaration describes lifecycle", async () => {
 	const h = harness();
 	try {
 		await h.handlers.get("session_start")({}, h.ctx);
 		const started = await h.tool.execute("start", { action: "start", command: "sleep 60" });
 		const { task } = started.structuredContent;
-		const notice = "Completion is reported automatically. Continue other work, or end the turn if nothing else remains; do not sleep, tail logs or query just to wait.";
+		const notice = "Completion is reported automatically. Continue independent work, or end the turn if none remains.";
 		assert.equal(task.status, "running");
 		assert.ok(started.content[0].text.includes(notice));
 		assert.ok(!started.content[0].text.includes(task.log_path));
@@ -628,7 +628,7 @@ test("start keeps only task-specific guidance while the declaration describes li
 		assert.ok(!h.tool.description.includes(notice), "declaration must not duplicate the whole start reminder");
 		assert.match(h.tool.description, /automatic completion notifications/);
 		assert.match(h.tool.description, /session-scoped and do not survive reload or exit/);
-		assert.match(h.tool.parameters.properties.action.description, /list and output also work while tasks are running/);
+		assert.doesNotMatch(h.tool.parameters.properties.action.description, /while tasks are running/);
 		assert.equal(started.structuredContent.guidance, undefined);
 		assert.equal(h.tool.outputSchema.properties.guidance, undefined);
 		const list = await h.tool.execute("list", { action: "list" });

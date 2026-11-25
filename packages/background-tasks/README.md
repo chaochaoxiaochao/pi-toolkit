@@ -41,9 +41,9 @@ The model-visible tool description is:
 
 > Use background_task for long-running commands or standalone waits. Run up to two concurrent background shell tasks with automatic completion notifications. Tasks and logs are session-scoped and do not survive reload or exit.
 
-The action parameter explicitly permits `list` and `output` while tasks are still running. Each accepted start returns only its task data and this short, task-specific reminder:
+Each accepted start returns only its task data and this short, task-specific reminder:
 
-> Completion is reported automatically. Continue other work, or end the turn if nothing else remains; do not sleep, tail logs or query just to wait.
+> Completion is reported automatically. Continue independent work, or end the turn if none remains.
 
 The whole reminder is not duplicated in the tool description or a `structuredContent.guidance` field. Start text does not advertise a full-log path; structured task metadata still retains `log_path`.
 
@@ -53,7 +53,7 @@ Inspect a running or finished task whenever its output is needed; no completion 
 background_task({ action: "output", id: "<returned-task-id>" })
 ```
 
-Use `list` to inspect task status at any time, including while tasks are running. These actions are agent-callable. Query on demand rather than repeatedly checking just to wait. After completion, use the reported log path to search relevant terms or read selected ranges; avoid loading the entire log by default. The tool also supports cancellation:
+Use `list` when the current task status is needed. These actions are agent-callable. After completion, use the reported log path to search relevant terms or read selected ranges; avoid loading the entire log by default. The tool also supports cancellation:
 
 ```text
 background_task({ action: "list" })
