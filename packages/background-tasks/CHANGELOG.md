@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2026-11-25 - v0.5.0
 
+- Add 30-minute aggregate progress turns and concise automatic-completion guidance
 - Keep the start reminder action-oriented: continue independent work or end the turn while automatic completion delivery handles the wait. Remove the running-query prompt that encouraged status polling.
 - Add one combined progress turn after every 30 idle minutes while background tasks remain active.
 - Report task status, elapsed time, timeout, description, captured bytes and byte growth without injecting log contents.

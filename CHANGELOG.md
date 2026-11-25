@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-11-25 - v0.15.9
 
+- background-tasks v0.5.0: Add 30-minute aggregate progress turns and concise automatic-completion guidance
 - Background Tasks: simplify the start reminder so agents continue independent work or end the turn instead of polling task status while completion remains automatic.
 - Herdr Subagents: preserve Provider-error child sessions for in-pane correction, and stop queued work after a hard failure while already-running siblings finish.
 - Bundle the personal OpenAI 12-hour cache extension for GPT-6 OpenAI Responses payloads; exclude GPT-5.6 and leave `openai-codex` unchanged because the ChatGPT-authenticated Codex backend does not provide the public Responses API contract.

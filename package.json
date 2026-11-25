@@ -1,6 +1,6 @@
 {
   "name": "@maxiaochao/pi-toolkit",
-  "version": "0.15.8",
+  "version": "0.15.9",
   "description": "Personal pi coding agent toolkit: background tasks, scheduler, OpenAI cache policy, /btw, /cache_export, apply_patch, browser automation, and bundled theme/skills.",
   "type": "module",
   "workspaces": [
