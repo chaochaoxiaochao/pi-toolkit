@@ -24,9 +24,13 @@ try {
 	assert.equal(handler({
 		payload: { model: "gpt-6", prompt_cache_options: { ttl: "30m" } },
 	}, openAI("gpt-6")), undefined);
+	process.env.PI_CACHE_RETENTION = "none";
+	assert.equal(handler({
+		payload: { model: "gpt-6", prompt_cache_options: { ttl: "30m" } },
+	}, openAI("gpt-6")), undefined);
 
 	process.env.PI_CACHE_RETENTION = "long";
-	for (const id of ["gpt-6", "gpt-6.1-sol", "gpt-6.2-sol"]) {
+	for (const id of ["gpt-6", "gpt-6-sol", "gpt-6.1-sol", "gpt-6.2-sol"]) {
 		const payload = {
 			model: id,
 			prompt_cache_options: { mode: "implicit", ttl: "30m" },
@@ -43,10 +47,23 @@ try {
 		assert.equal(handler({ payload: result }, openAI(id)), undefined);
 	}
 
+	for (const id of ["gpt-5.5", "gpt-5.6", "gpt-5.6-sol", "gpt-6o", "gpt-image-2", "o3"]) {
+		assert.equal(handler({
+			payload: { model: id, prompt_cache_options: { ttl: "30m" } },
+		}, openAI(id)), undefined);
+	}
 	for (const id of ["gpt-5.5", "gpt-5.6", "gpt-5.6-sol", "gpt-6", "gpt-6.1-sol", "gpt-6o", "gpt-image-2", "o3"]) {
 		assert.equal(handler({
 			payload: { model: id, prompt_cache_key: "session-1" },
 		}, codex(id)), undefined);
+	}
+	for (const promptCacheOptions of [undefined, { mode: "explicit" }, { ttl: "1h" }]) {
+		assert.equal(handler({
+			payload: {
+				model: "gpt-6",
+				...(promptCacheOptions ? { prompt_cache_options: promptCacheOptions } : {}),
+			},
+		}, openAI("gpt-6")), undefined);
 	}
 	assert.equal(handler({
 		payload: {
