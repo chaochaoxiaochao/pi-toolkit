@@ -37,7 +37,11 @@ background_task({ action: "start", command: "sleep 10; printf 'checks complete\\
 
 The tool is fixed to `exposure: "model-only"`: the model calls it directly; Codemode and other tools cannot call it. There is no exposure setting.
 
-The tool declaration describes automatic completion notifications, concurrency and session lifetime. The action parameter explicitly permits `list` and `output` while tasks are still running. Each accepted start returns only its task data and this short, task-specific reminder:
+The model-visible tool description is:
+
+> Use background_task for long-running commands or standalone waits. Run up to two concurrent background shell tasks with automatic completion notifications. Tasks and logs are session-scoped and do not survive reload or exit.
+
+The action parameter explicitly permits `list` and `output` while tasks are still running. Each accepted start returns only its task data and this short, task-specific reminder:
 
 > Completion is reported automatically. Continue other work, or end the turn if nothing else remains; do not sleep, tail logs or query just to wait.
 
@@ -82,6 +86,14 @@ The preview is intentionally bounded, not a full log viewer. Use the retained lo
 
 The extension wraps Pi's exported native `FooterComponent`, found through the public TUI container tree; it does not copy usage accounting or patch host methods. A temporary zero-line widget captures that component before `setFooter()` clears its container, then is removed. Pi has no public footer-composition getter. Extensions that also replace the entire footer are therefore not composable: a replacement present at startup produces an explicit extension error, and one installed later can replace this footer. Use the built-in footer with `setStatus()` extensions such as Codex Edit. A host-provided composable/clickable status API would remove this constraint.
 
+## Progress turns
+
+After the parent agent settles, one session-scoped timer starts when one or more tasks are still running. If the parent stays idle for 30 minutes, the extension sends one combined progress turn for all running tasks. Each row includes the task ID, status, elapsed time, timeout, description, captured bytes, and byte growth since the previous progress report. It does not include log contents or log tails.
+
+> No action is required. Completion will be reported automatically.
+
+A new agent run clears the deadline. The timer restarts after that run settles if work remains. Completion delivery takes precedence over progress. A user interrupt suppresses both automatic progress and completion wakes until the next real user message. Terminal tasks, session replacement, reload, and shutdown remove progress scheduling.
+
 ## Completion delivery
 
 Completion, failure, cancellation, timeout and output-limit termination update the widget immediately. The extension holds pending completion metadata until it can deliver it safely:
@@ -115,6 +127,7 @@ Pi reports asynchronous message/run-start failures through its extension error c
 | --- | --- |
 | Model-visible output body | Last 100 lines or 8 KiB, whichever is reached first |
 | `structuredContent.output` | The same bounded tail; no separate 1 MiB program view |
+| Automatic progress log bodies | None; one combined 30-minute status and captured-byte delta |
 | Automatic completion log bodies | None; only status, log paths and progressive-inspection guidance |
 | Completion status/path text | 16 KiB defensive batch cap; remaining tasks stay pending |
 | Disk capture | 32 MiB per task, 256 MiB total per session |
@@ -140,7 +153,7 @@ The tool description is compact. This package adds no `promptGuidelines` or extr
 - Cancellation and runtime limits stop the native shell process group. Scripts must wait for their own work. Daemonized/detached commands (`nohup`, `setsid`, self-backgrounding processes), existing PID adoption, PTYs and interactive stdin are not supported.
 - This is a distinct **local execution** tool. A third-party sandbox or remote backend installed only for Bash does not automatically cover it. Enable it only where direct local shell execution is permitted.
 - It is not an OS sandbox: CPU/memory quotas, cleanup after SIGKILL/power loss, automatic retries, deadline renewal and persistence are out of scope. Native signal delivery and timers are best-effort.
-- Pending reminders and notification timers are cleared on session shutdown. Once a completion is delivered into conversation history, reading output does not erase that history. Messages queued by an older installed version cannot be selectively withdrawn by this version.
+- Pending reminders, progress timers and notification timers are cleared on session shutdown. Once a completion is delivered into conversation history, reading output does not erase that history. Messages queued by an older installed version cannot be selectively withdrawn by this version.
 
 ## Remove
 

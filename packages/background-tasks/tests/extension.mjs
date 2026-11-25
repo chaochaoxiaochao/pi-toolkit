@@ -8,7 +8,7 @@ import { fixture, flush } from "./helpers.mjs";
 
 const keys = new KeybindingsManager(TUI_KEYBINDINGS);
 
-function harness(mode = "tui", hasUI = true) {
+function harness(mode = "tui", hasUI = true, dependencies = {}) {
 	const f = fixture();
 	const handlers = new Map();
 	const commands = new Map();
@@ -62,7 +62,7 @@ function harness(mode = "tui", hasUI = true) {
 			messages.push({ message, options });
 		},
 	};
-	register(pi, { operations: f.operations, clock: f.clock, logRoot: f.root });
+	register(pi, { operations: f.operations, clock: f.clock, logRoot: f.root, ...dependencies });
 	return {
 		...f, handlers, commands, messages, notices, widgets, statuses, idleChecks, ctx, tui, native,
 		setIdle(value) { idle = value; },
@@ -424,6 +424,112 @@ test("idle wake batches current completions and a terminal read can remove the w
 	} finally { await h.close(); }
 });
 
+test("running tasks send one merged progress turn per 30 minutes of parent inactivity", async () => {
+	const interval = 30 * 60_000;
+	const h = harness("print", false);
+	try {
+		await h.handlers.get("session_start")({}, h.ctx);
+		for (const command of ["first", "second"]) {
+			await h.tool.execute(command, { action: "start", command, timeout: 7200 });
+		}
+		h.calls[0].onData(Buffer.from("first output"));
+		h.calls[1].onData(Buffer.from("two"));
+		h.handlers.get("agent_settled")({ aborted: false }, h.ctx);
+		h.clock.advance(interval - 1);
+		assert.equal(h.messages.length, 0);
+		h.clock.advance(1);
+		assert.equal(h.messages.length, 1);
+		const first = h.messages[0];
+		assert.equal(first.message.customType, "background-task-progress");
+		assert.equal(first.options.triggerTurn, true);
+		assert.equal(first.options.deliverAs, "steer");
+		assert.equal(first.message.details.tasks.length, 2);
+		assert.deepEqual(Object.values(first.message.details.byteDeltas).sort((a, b) => a - b), [3, 12]);
+		assert.match(first.message.content, /30m \/ 2h · "first" · 12 captured bytes \(\+12 since last report\)/);
+		assert.match(first.message.content, /30m \/ 2h · "second" · 3 captured bytes \(\+3 since last report\)/);
+		assert.match(first.message.content, /No action is required\. Completion will be reported automatically\./);
+		assert.doesNotMatch(first.message.content, /first output|Untrusted shell output|Captured log:/);
+
+		// The progress-triggered parent run settles and starts the next deadline.
+		h.handlers.get("agent_start")({}, h.ctx);
+		h.handlers.get("agent_settled")({ aborted: false }, h.ctx);
+		h.calls[0].onData(Buffer.from(" more"));
+		h.clock.advance(interval - 1);
+		// A new parent run must clear an already-armed progress deadline.
+		h.handlers.get("agent_start")({}, h.ctx);
+		h.clock.advance(interval);
+		assert.equal(h.messages.length, 1, "an active parent run clears the progress deadline");
+		h.handlers.get("agent_settled")({ aborted: false }, h.ctx);
+		h.clock.advance(interval);
+		assert.equal(h.messages.length, 2);
+		assert.equal(h.messages[1].message.details.tasks.length, 2);
+		assert.equal(h.messages[1].message.details.byteDeltas[first.message.details.tasks[0].id], 5);
+		assert.equal(h.messages[1].message.details.byteDeltas[first.message.details.tasks[1].id], 0);
+	} finally { await h.close(); }
+});
+
+test("busy sessions defer progress and error boundaries do not wake them later", async () => {
+	const interval = 30 * 60_000;
+	const h = harness("print", false, { progressIntervalMs: interval });
+	try {
+		await h.handlers.get("session_start")({}, h.ctx);
+		await h.tool.execute("start", { action: "start", command: "busy", timeout: 7200 });
+		h.handlers.get("agent_settled")({ aborted: false }, h.ctx);
+		h.setIdle(false);
+		h.clock.advance(interval);
+		assert.equal(h.messages.length, 0);
+		h.setIdle(true);
+		h.clock.advance(interval);
+		assert.equal(h.messages.filter(({ message }) => message.customType === "background-task-progress").length, 1);
+
+		h.handlers.get("agent_start")({}, h.ctx);
+		h.handlers.get("turn_end")({ entries: [], continue: false, outcome: "error" }, h.ctx);
+		h.handlers.get("agent_settled")({ aborted: false }, h.ctx);
+		h.clock.advance(interval * 2);
+		assert.equal(h.messages.filter(({ message }) => message.customType === "background-task-progress").length, 1);
+	} finally { await h.close(); }
+});
+
+test("an interrupted parent suppresses progress until the next user message", async () => {
+	const interval = 30 * 60_000;
+	const h = harness("print", false, { progressIntervalMs: interval });
+	try {
+		await h.handlers.get("session_start")({}, h.ctx);
+		await h.tool.execute("start", { action: "start", command: "interrupted", timeout: 7200 });
+		h.handlers.get("agent_settled")({ aborted: false }, h.ctx);
+		h.handlers.get("agent_start")({}, h.ctx);
+		h.handlers.get("agent_settled")({ aborted: true }, h.ctx);
+		h.clock.advance(interval * 2);
+		assert.equal(h.messages.length, 0);
+		h.handlers.get("before_agent_start")({ messageType: "custom", prompt: "other wake" }, h.ctx);
+		h.handlers.get("agent_start")({}, h.ctx);
+		h.handlers.get("agent_settled")({ aborted: false }, h.ctx);
+		h.clock.advance(interval);
+		assert.equal(h.messages.length, 0, "custom wakes do not release an interrupted parent");
+		h.handlers.get("before_agent_start")({ messageType: "user", prompt: "continue" }, h.ctx);
+		h.handlers.get("agent_start")({}, h.ctx);
+		h.handlers.get("agent_settled")({ aborted: false }, h.ctx);
+		h.clock.advance(interval);
+		assert.equal(h.messages.filter(({ message }) => message.customType === "background-task-progress").length, 1);
+	} finally { await h.close(); }
+});
+
+test("completion cancels the pending progress deadline", async () => {
+	const interval = 30 * 60_000;
+	const h = harness("print", false, { progressIntervalMs: interval });
+	try {
+		await h.handlers.get("session_start")({}, h.ctx);
+		await h.tool.execute("start", { action: "start", command: "finishes", timeout: 7200 });
+		h.handlers.get("agent_settled")({ aborted: false }, h.ctx);
+		h.clock.advance(interval - 1);
+		h.calls[0].resolve();
+		await flush();
+		h.clock.advance(interval + 1);
+		assert.equal(h.messages.filter(({ message }) => message.customType === "background-task-progress").length, 0);
+		assert.equal(h.messages.filter(({ message }) => message.customType === "background-task-finished").length, 1);
+	} finally { await h.close(); }
+});
+
 for (const outcome of ["aborted", "error"]) {
 	test(`${outcome} boundaries do not force continuation or replay a scheduled idle wake`, async () => {
 		const h = harness();
@@ -494,7 +600,7 @@ test("registration is compact, does not inject prompt rules or start session res
 	try {
 		assert.equal(h.tool.name, "background_task");
 		assert.equal(h.tool.exposure, "model-only");
-		assert.match(h.tool.description, /up to two concurrent background shell tasks/);
+		assert.equal(h.tool.description, "Use background_task for long-running commands or standalone waits. Run up to two concurrent background shell tasks with automatic completion notifications. Tasks and logs are session-scoped and do not survive reload or exit.");
 		assert.match(h.tool.parameters.properties.action.description, /start returns a task ID immediately/);
 		assert.equal(h.tool.parameters.properties.command.description, "Shell command for start; may be multi-line. Runs locally, with stdin closed. Stdout/stderr are saved to a unique per-task log; its path is reported on completion.");
 		assert.ok(h.tool.description.length < 500);
@@ -521,7 +627,7 @@ test("start keeps only task-specific guidance while the declaration describes li
 		assert.ok(!started.content[0].text.includes("session changes"));
 		assert.ok(!h.tool.description.includes(notice), "declaration must not duplicate the whole start reminder");
 		assert.match(h.tool.description, /automatic completion notifications/);
-		assert.match(h.tool.description, /session changes, reload, or exit/);
+		assert.match(h.tool.description, /session-scoped and do not survive reload or exit/);
 		assert.match(h.tool.parameters.properties.action.description, /list and output also work while tasks are running/);
 		assert.equal(started.structuredContent.guidance, undefined);
 		assert.equal(h.tool.outputSchema.properties.guidance, undefined);

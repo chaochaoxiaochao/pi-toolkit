@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add one combined progress turn after every 30 idle minutes while background tasks remain active.
+- Report task status, elapsed time, timeout, description, captured bytes and byte growth without injecting log contents.
+- Reset progress timing around parent runs, preserve interrupt suppression and completion precedence, and keep `promptGuidelines` undefined.
+- Put long-running-command selection guidance in the concise model-visible tool description.
+
 ## 2026-11-17 - v0.4.2
 
 - Keep multiline shell previews compact without changing script execution

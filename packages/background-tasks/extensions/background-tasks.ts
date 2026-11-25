@@ -9,6 +9,7 @@ import { BackgroundFooter, findNativeFooter, FINISHED_VISIBLE_MS, WIDGET_KEY, du
 
 const actions = ["start", "list", "output", "cancel"] as const;
 const startNotice = "Completion is reported automatically. Continue other work, or end the turn if nothing else remains; do not sleep, tail logs or query just to wait.";
+const PROGRESS_INTERVAL_MS = 30 * 60_000;
 // Bound model-visible status text when many completions accumulate.
 const NOTIFICATION_MAX_BYTES = 16 * 1024;
 type Action = typeof actions[number];
@@ -62,22 +63,69 @@ function completionText(task: TaskSnapshot): string {
 	return lines.join("\n");
 }
 
-export default function (pi: ExtensionAPI, dependencies: { operations?: BashOperations; clock?: Clock; logRoot?: string } = {}) {
+export default function (pi: ExtensionAPI, dependencies: {
+	operations?: BashOperations;
+	clock?: Clock;
+	logRoot?: string;
+	progressIntervalMs?: number;
+} = {}) {
 	const clock = dependencies.clock ?? systemClock;
+	const progressIntervalMs = dependencies.progressIntervalMs ?? PROGRESS_INTERVAL_MS;
+	if (!Number.isFinite(progressIntervalMs) || progressIntervalMs <= 0) throw new Error("Progress interval must be positive");
 	let manager: BackgroundTasks | undefined;
 	let context: ExtensionContext | undefined;
 	let generation = 0;
 	let timer: unknown;
 	let notificationTimer: unknown;
+	let progressTimer: unknown;
 	let completedNormally = true;
 	let interrupted = false;
 	const pending = new Map<string, TaskSnapshot>();
+	const progressBytes = new Map<string, number>();
 	let mounted: { footer: BackgroundFooter; tui: { requestRender(): void } } | undefined;
 	let panel: { close(): void } | undefined;
 
 	const clearNotificationTimer = () => {
 		if (notificationTimer !== undefined) clock.clearTimeout(notificationTimer);
 		notificationTimer = undefined;
+	};
+	const clearProgressTimer = () => {
+		if (progressTimer !== undefined) clock.clearTimeout(progressTimer);
+		progressTimer = undefined;
+	};
+	const runningTasks = () => manager?.list().tasks.filter((task) => task.status === "running") ?? [];
+	const scheduleProgress = () => {
+		clearProgressTimer();
+		if (interrupted || pending.size > 0 || runningTasks().length === 0) return;
+		const epoch = generation;
+		progressTimer = clock.setTimeout(() => {
+			progressTimer = undefined;
+			if (generation !== epoch || !context || !manager || interrupted || pending.size > 0) return;
+			const tasks = runningTasks();
+			if (tasks.length === 0) return;
+			if (!context.isIdle()) {
+				scheduleProgress();
+				return;
+			}
+			const deltas = new Map(tasks.map((task) => [task.id, task.bytes - (progressBytes.get(task.id) ?? 0)]));
+			const content = [
+				"[Background tasks still running]",
+				"",
+				...tasks.map((task) => `${formatTask(task)} · ${task.bytes} captured bytes (+${deltas.get(task.id)} since last report)`),
+				"",
+				"No action is required. Completion will be reported automatically.",
+			].join("\n");
+			try {
+				pi.sendMessage({
+					customType: "background-task-progress", display: true,
+					details: { tasks, byteDeltas: Object.fromEntries(deltas) },
+					content,
+				}, { triggerTurn: true, deliverAs: "steer" });
+				for (const task of tasks) progressBytes.set(task.id, task.bytes);
+			} catch (error) {
+				console.error(`Background progress notification failed: ${errorText(error)}`);
+			}
+		}, progressIntervalMs);
 	};
 	const takeNotification = () => {
 		clearNotificationTimer();
@@ -144,12 +192,17 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 		const message = takeNotification();
 		if (message) return { message };
 	});
+	pi.on("agent_start", clearProgressTimer);
 	pi.on("agent_settled", (event) => {
 		if (event.aborted) {
 			interrupted = true;
 			clearNotificationTimer();
+			clearProgressTimer();
+			return;
 		}
-		if (!event.aborted && completedNormally) scheduleNotification();
+		if (!completedNormally) return;
+		scheduleNotification();
+		scheduleProgress();
 	});
 
 	const openPanel = async () => {
@@ -206,7 +259,9 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 		context = undefined;
 		clearTimer();
 		clearNotificationTimer();
+		clearProgressTimer();
 		pending.clear();
+		progressBytes.clear();
 		completedNormally = true;
 		interrupted = false;
 		try {
@@ -225,9 +280,18 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 		const epoch = generation;
 		manager = new BackgroundTasks({
 			operations: dependencies.operations ?? createLocalBashOperations(), clock, logRoot: dependencies.logRoot,
-			onChange() { if (generation === epoch) refresh(); },
+			onChange() {
+				if (generation !== epoch) return;
+				refresh();
+				if (manager?.list().running === 0) {
+					clearProgressTimer();
+					progressBytes.clear();
+				}
+			},
 			onComplete(task) {
 				if (generation !== epoch || !context) return;
+				clearProgressTimer();
+				progressBytes.delete(task.id);
 				pending.set(task.id, task);
 				scheduleNotification();
 			},
@@ -288,7 +352,7 @@ export default function (pi: ExtensionAPI, dependencies: { operations?: BashOper
 	pi.registerTool({
 		name: "background_task", label: "Background task",
 		exposure: "model-only",
-		description: "Run up to two concurrent background shell tasks with automatic completion notifications. Tasks stop and captured logs are deleted on session changes, reload, or exit.",
+		description: "Use background_task for long-running commands or standalone waits. Run up to two concurrent background shell tasks with automatic completion notifications. Tasks and logs are session-scoped and do not survive reload or exit.",
 		parameters: Parameters, outputSchema: OutputSchema,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
 		async execute(_id, params, signal, _onUpdate, ctx) {
