@@ -1,3 +1,7 @@
+## 2026-11-25 - v0.15.10
+
+- herdr-subagents v0.12.0: Keep Provider errors recoverable and stop queued work after hard failures
+
 ## 2026-11-25 - v0.15.9
 
 - background-tasks v0.5.0: Add 30-minute aggregate progress turns and concise automatic-completion guidance

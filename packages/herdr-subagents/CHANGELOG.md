@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-11-25 - v0.12.0
 
+- Keep Provider errors recoverable and stop queued work after hard failures
 - Keep final Provider errors nonterminal as `waiting_interaction`. Preserve the child pane and session, keep the parent attached, and return to `working` when the user retries in the child.
 - Stop scheduling queued tasks after the first hard failure, including a failed response on a previously blocked lane. Cancel tasks that no worker has claimed, let already-running siblings finish, and report a failed run when none completed.
 
