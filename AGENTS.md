@@ -10,7 +10,8 @@ Issues are tracked in GitHub Issues; see `docs/agents/issue-tracker.md`. Use the
 pi-toolkit/
 ├── package.json                 # 主组合包；workspaces = packages/*
 ├── extensions/
-│   └── btw/                     # 主包独有实现与测试
+│   ├── btw/                     # 主包独有侧聊实现与测试
+│   └── openai-cache-12h/        # 主包独有 OpenAI 12 小时缓存策略
 ├── packages/
 │   ├── todo/                    # @maxiaochao/pi-todo 权威源码
 │   ├── claude-cage/             # 可选宿主 provider 与客机后台服务
@@ -32,10 +33,10 @@ pi-toolkit/
 
 ## 组织原则
 
-- `packages/*` 是子包功能实现的单一源码；根 manifest 直接加载默认启用子包的路径，不设置 wrapper。`extensions/` 只放主包独有的 BTW。
-- 主包 tarball 直接包含默认启用子包的运行源码，不依赖 npm 上的子包版本，因此主包与子包可以独立发版。默认启用 cache-export、codex-edit、herdr-subagents、scheduler、background-tasks、worktree；Claude Cage、Todo 与 OpenAI Account Pool 不在根 tarball 或默认 loadout 中。
+- `packages/*` 是子包功能实现的单一源码；根 manifest 直接加载默认启用子包的路径，不设置 wrapper。`extensions/` 只放主包独有功能，例如 BTW 与 OpenAI 12 小时缓存策略。
+- 主包 tarball 直接包含默认启用子包的运行源码，不依赖 npm 上的子包版本，因此主包与子包可以独立发版。默认启用 cache-export、codex-edit、herdr-subagents、scheduler、background-tasks、worktree，并加载主包独有的 BTW 与 OpenAI 12 小时缓存策略；Claude Cage、Todo 与 OpenAI Account Pool 不在根 tarball 或默认 loadout 中。
 - 用户在完整工具包和已内嵌的独立子包之间二选一；同时安装可能重复注册 extension、skill 或 bin。Claude Cage、Todo 与 OpenAI Account Pool 是例外，三者都不内嵌，可以与完整工具包一起安装。
-- BTW 保留在主包，不发布子包。
+- BTW 与 OpenAI 12 小时缓存策略保留在主包，不发布子包。
 - 每个子包必须包含 `package.json`、`README.md`、`TESTING.md`、`CHANGELOG.md`、确定性测试，以及适合该包的加载或集成检查。
 - 每个子包 README 必须说明功能、来源/设计动机、安装与更新、可复制示例，并引用真实实现生成的媒体。除 Herdr Subagents 外，每个子包包含 `docs/screenshot.png` 和 `docs/demo.gif`；Herdr Subagents 包含 `docs/screenshot.png` 和完整的 `docs/demo.webm`，README 通过 GitHub attachment URL 直接显示视频，不保留 GIF。执行 `node scripts/capture-package-media.mjs` 统一重生成媒体并进入 tarball。
 
@@ -46,7 +47,7 @@ pi-toolkit/
 - 开发中发现测试失败必须定位并处理；“改动前也失败”不是跳过验收、删除有效断言或宣告通过的依据。测试迁移须逐类核对覆盖去向。
 - 修改子包时先运行 `npm --prefix packages/<slug> test`，再运行其 README/TESTING 指定的 load test 和 `npm pack ./packages/<slug> --dry-run`。
 - 运行 `node scripts/capture-package-media.mjs` 后通过 `docs/package-media-gallery.html` 检查全部真实截图与动画；完整验收结果记录在 `docs/verification.md`。
-- 修改根入口、BTW、主题、全局指令或组合清单时运行 `npm test`、`npm run load-test` 和根目录 `npm pack --dry-run`。
+- 修改根入口、主包独有 Extension、主题、全局指令或组合清单时运行 `npm test`、`npm run load-test` 和根目录 `npm pack --dry-run`。
 - Codex Edit 必须加载 `packages/codex-edit/extensions/codex-edit.ts`；parser/matcher 改动必须覆盖重复 HTML/Markdown 区域、同路径多 update、多 hunk、多文件 patch，以及空 chunk、stale context 和冲突路径的安全失败。每个新生产问题先加入 `tests/comparison-cases.mjs`，且 native/released 两组对比都必须通过。`npm --prefix packages/codex-edit test` 必须从测试结果生成 `docs/test-report.md`，再转换为自包含 `docs/test-report.html`；提交和发版必须包含最新报告。冻结的 released baseline 保持不变。
 - Herdr Subagents persona 的 `extensions` 复用 Pi 原生来源语义；修改时验证覆盖优先级、历史续跑和显式包的附带资源，具体契约见子包 README 的 Explicit extension sources and Pi packages。
 - Herdr Subagents 必须运行全部确定性测试、加载 `packages/herdr-subagents/extensions/herdr-subagents.ts`，并在真实 Herdr 中验证只读并发批次和 tab 清理；媒体必须通过 `HERDR_MEDIA_WINDOW_ID=<window-id> node scripts/capture-package-media.mjs` 录制父 Pi 对话、逐一聚焦三个真实 Agent pane 和最终父会话结果，同时保留截图和完整 WebM 视频。
@@ -143,4 +144,5 @@ pi update npm:@maxiaochao/pi-worktree
 ## 迁移遗留
 
 - 删除旧全局扩展 `~/.pi/agent/extensions/todo.ts`，避免重复注册。
+- 删除旧全局扩展 `~/.pi/agent/extensions/openai-cache-12h`；该功能现由主包加载。
 - 从项目 `.pi/settings.json` 移除旧的 `../pi-cache-dashboard` 并删除该目录。

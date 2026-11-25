@@ -1,7 +1,7 @@
 {
   "name": "@maxiaochao/pi-toolkit",
   "version": "0.15.8",
-  "description": "Personal pi coding agent toolkit: background tasks, scheduler, /btw, /cache_export, apply_patch, browser automation, and bundled theme/skills.",
+  "description": "Personal pi coding agent toolkit: background tasks, scheduler, OpenAI cache policy, /btw, /cache_export, apply_patch, browser automation, and bundled theme/skills.",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -32,6 +32,7 @@
   },
   "pi": {
     "extensions": [
+      "./extensions/openai-cache-12h/index.ts",
       "./packages/cache-export/extensions/cache-export.ts",
       "./extensions/btw/index.ts",
       "./packages/codex-edit/extensions/codex-edit.ts",
@@ -61,11 +62,11 @@
     "ws": "^8.19.0"
   },
   "scripts": {
-    "test": "node tests/package-layout.mjs && node tests/release-check.mjs && node tests/post-release-check.mjs && npm --prefix packages/claude-cage test && npm --prefix packages/todo test && npm --prefix packages/cache-export test && npm --prefix packages/codex-edit test && npm --prefix packages/herdr-subagents test && npm --prefix packages/openai-account-pool test && npm --prefix packages/scheduler test && npm --prefix packages/background-tasks test && npm --prefix packages/worktree test && node --experimental-strip-types extensions/btw/tests/history.mjs && node --experimental-strip-types extensions/btw/tests/context.mjs",
+    "test": "node tests/package-layout.mjs && node tests/release-check.mjs && node tests/post-release-check.mjs && npm --prefix packages/claude-cage test && npm --prefix packages/todo test && npm --prefix packages/cache-export test && npm --prefix packages/codex-edit test && npm --prefix packages/herdr-subagents test && npm --prefix packages/openai-account-pool test && npm --prefix packages/scheduler test && npm --prefix packages/background-tasks test && npm --prefix packages/worktree test && node --experimental-strip-types extensions/openai-cache-12h/tests/cache-policy.mjs && node --experimental-strip-types extensions/btw/tests/history.mjs && node --experimental-strip-types extensions/btw/tests/context.mjs",
     "test:web-browser": "node tests/web-browser.mjs",
-    "test:root": "node tests/package-layout.mjs && node tests/release-check.mjs && node tests/post-release-check.mjs && node --experimental-strip-types extensions/btw/tests/history.mjs && node --experimental-strip-types extensions/btw/tests/context.mjs",
-    "load-test": "pi -ne -e ./packages/cache-export/extensions/cache-export.ts && pi -ne -e ./extensions/btw/index.ts && pi -ne -e ./packages/codex-edit/extensions/codex-edit.ts && pi -ne -e ./packages/herdr-subagents/extensions/herdr-subagents.ts && pi -ne -e ./packages/scheduler/extensions/scheduler.ts && pi -ne -e ./packages/background-tasks/extensions/background-tasks.ts && pi -ne -e ./packages/worktree/extensions/worktree.ts && npm --prefix packages/background-tasks run load-test -- --toolkit",
-    "load-test:root": "pi -ne -e ./extensions/btw/index.ts",
+    "test:root": "node tests/package-layout.mjs && node tests/release-check.mjs && node tests/post-release-check.mjs && node --experimental-strip-types extensions/openai-cache-12h/tests/cache-policy.mjs && node --experimental-strip-types extensions/btw/tests/history.mjs && node --experimental-strip-types extensions/btw/tests/context.mjs",
+    "load-test": "pi -ne -e ./extensions/openai-cache-12h/index.ts && pi -ne -e ./packages/cache-export/extensions/cache-export.ts && pi -ne -e ./extensions/btw/index.ts && pi -ne -e ./packages/codex-edit/extensions/codex-edit.ts && pi -ne -e ./packages/herdr-subagents/extensions/herdr-subagents.ts && pi -ne -e ./packages/scheduler/extensions/scheduler.ts && pi -ne -e ./packages/background-tasks/extensions/background-tasks.ts && pi -ne -e ./packages/worktree/extensions/worktree.ts && npm --prefix packages/background-tasks run load-test -- --toolkit",
+    "load-test:root": "pi -ne -e ./extensions/openai-cache-12h/index.ts -e ./extensions/btw/index.ts",
     "release:check": "node scripts/post-release-check.mjs",
     "eval:agents": "node evaluations/agents-md/run.mjs",
     "eval:agents:test": "node evaluations/agents-md/tests/run-tests.mjs",

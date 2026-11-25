@@ -49,6 +49,7 @@ for (const [slug, name, extension, bundled] of children) {
 }
 
 assert.deepEqual(root.pi.extensions, [
+  "./extensions/openai-cache-12h/index.ts",
   "./packages/cache-export/extensions/cache-export.ts",
   "./extensions/btw/index.ts",
   "./packages/codex-edit/extensions/codex-edit.ts",
@@ -57,6 +58,11 @@ assert.deepEqual(root.pi.extensions, [
   "./packages/background-tasks/extensions/background-tasks.ts",
   "./packages/worktree/extensions/worktree.ts",
 ]);
+assert.equal(existsSync("extensions/openai-cache-12h/index.ts"), true);
+assert.equal(existsSync("extensions/openai-cache-12h/tests/cache-policy.mjs"), true);
+for (const script of ["test", "test:root", "load-test", "load-test:root"]) {
+  assert.match(root.scripts[script], /extensions\/openai-cache-12h/);
+}
 assert.equal(root.scripts["load-test"].includes("./packages/background-tasks/extensions/background-tasks.ts"), true);
 assert.equal(root.peerDependencies["@earendil-works/pi-coding-agent"], ">=1.3.0");
 assert.equal(root.pi.skills.includes("./packages/worktree/skills"), true);

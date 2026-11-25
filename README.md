@@ -63,6 +63,20 @@ Root and child versions remain independent, but repository release tooling publi
 
 ## Toolkit-only features
 
+### OpenAI 12-hour prompt cache
+
+Set `PI_CACHE_RETENTION=long` before starting Pi to request OpenAI's 12-hour minimum prompt-cache lifetime:
+
+```bash
+export PI_CACHE_RETENTION=long
+```
+
+The toolkit upgrades existing OpenAI Responses payloads from `prompt_cache_options.ttl: "30m"` to `"12h"` for the GPT-6 model family. GPT-5.6 is intentionally excluded because the ChatGPT-authenticated Codex backend is not the public Responses API and does not provide equivalent evidence for this toolkit policy.
+
+This extension sends no extra model request and adds nothing to the conversation. OpenAI charges 12-hour cache writes at 2.5 times the ordinary input rate instead of 1.25 times for 30-minute writes; cache-read pricing is unchanged. Pi 1.6 can still estimate those writes with its 30-minute catalog rate, so use provider billing as the cost authority. ChatGPT-authenticated `openai-codex` requests are unchanged because that endpoint rejects `prompt_cache_options`, including for `gpt-5.6-sol`. Unsupported providers, other request shapes, and sessions without `PI_CACHE_RETENTION=long` are also unchanged.
+
+If you previously created a personal copy, remove `~/.pi/agent/extensions/openai-cache-12h` after updating the toolkit. Loading both copies is unnecessary, although the payload transformation is idempotent.
+
 ### `/btw`
 
 `/btw` opens a separate side-chat session that can inspect the main conversation and repository without entering the main context. Main and restored side history are seeded through SessionManager; subsequent questions reuse the side session. Closing it can optionally inject a summary. Use `Up` / `Down` for line scrolling and `PageUp` / `PageDown` for page scrolling.
@@ -96,7 +110,7 @@ Package-specific skills, such as `pi-worktree`, are documented by their child pa
 
 ## Repository
 
-This repository is an npm workspace. Child implementations live under `packages/*`; `extensions/` contains only the toolkit-only BTW module. Development, testing, media generation, and release rules are documented in [AGENTS.md](AGENTS.md).
+This repository is an npm workspace. Child implementations live under `packages/*`; `extensions/` contains toolkit-only modules such as BTW and the OpenAI 12-hour cache policy. Development, testing, media generation, and release rules are documented in [AGENTS.md](AGENTS.md).
 
 ### Post-release verification
 
