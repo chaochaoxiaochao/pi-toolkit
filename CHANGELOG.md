@@ -1,3 +1,7 @@
+## 2026-11-25 - v0.15.11
+
+- claude-cage v0.3.0: Integrate Pi cache warming and cap upstream cache breakpoints at four
+
 ## 2026-11-25 - v0.15.10
 
 - herdr-subagents v0.12.0: Keep Provider errors recoverable and stop queued work after hard failures

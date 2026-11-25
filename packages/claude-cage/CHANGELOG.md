@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-11-25 - v0.3.0
 
+- Integrate Pi cache warming and cap upstream cache breakpoints at four
 - Integrate with Pi's CacheWarmer using verified adaptive-thinking model metadata and one-hour retention.
 - Let real Cage turns and status, model-discovery, or setup commands cancel and preempt low-priority warming requests on the single guest connection.
 - Keep unsafe models out of warming, preserve cache usage entries, and document the authorized real A/W/B/C acceptance with no observed #34 signature.
