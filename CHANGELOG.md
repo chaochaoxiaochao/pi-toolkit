@@ -2,6 +2,8 @@
 
 - Herdr Subagents: preserve Provider-error child sessions for in-pane correction, and stop queued work after a hard failure while already-running siblings finish.
 - Bundle the personal OpenAI 12-hour cache extension for GPT-6 OpenAI Responses payloads; exclude GPT-5.6 and leave `openai-codex` unchanged because the ChatGPT-authenticated Codex backend does not provide the public Responses API contract.
+- Claude Cage: expose only verified one-hour cache metadata for adaptive-thinking models, reuse Pi's CacheWarmer, let real turns preempt warming, and pin upstream PR #41 to prevent five-cache-breakpoint 400 errors after warm system-prompt updates.
+- Background Tasks: send one aggregate status and captured-byte progress turn after every 30 idle minutes, without injecting log output.
 
 ## 2026-11-24 - v0.15.8
 
