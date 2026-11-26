@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2026-11-26 - v0.5.1
 
+- Compose footer statuses safely and prevent foreground waiting after background starts
 - Restore an explicit post-start guard: automatic completion resumes the agent, while Bash sleeps, log tails, and `list`/`output` calls used only to wait are prohibited.
 - Publish shell counts through Pi's keyed status interface and keep the clickable footer as a best-effort decorator.
 - Compose arbitrary peer statuses without extension-specific rules, drop the shortcut hint before truncating peer state, and keep shell counts visible on narrow rows.

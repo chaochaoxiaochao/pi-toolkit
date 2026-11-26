@@ -1,6 +1,6 @@
 {
   "name": "@maxiaochao/pi-background-tasks",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Session-scoped background shell tasks with progress and completion notifications for Pi.",
   "type": "module",
   "keywords": [
