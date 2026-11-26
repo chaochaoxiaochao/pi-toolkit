@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-11-26 - v0.2.0
 
+- Simplify schedule controls, remove manual trigger, add argument completion, and allow ID-free single cancellation
 - Simplify the Agent tool description and document each parameter directly in its schema.
 - Remove manual `trigger`; schedules now run only at their configured interval.
 - Add `/schedule` subcommand and cancellation-ID completion.
