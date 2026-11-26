@@ -57,6 +57,57 @@ const hasTtl = (data) => misses(data).some((miss) => miss.causes.some(([cause]) 
   assert.ok(!segmentMiss.causes.some(([cause]) => cause === "first request"), "a segment is not the session's first request");
 }
 {
+  for (const [ttl, seconds, expectedUnknown] of [["30m", 1800, false], ["12h", 43200, false], ["6h", null, true]]) {
+    const handlers = new Map(), entries = [];
+    register({
+      on: (name, handler) => handlers.set(name, handler),
+      appendEntry: (customType, data) => entries.push({ type: "custom", customType, data }),
+      registerCommand() {},
+    });
+    const ctx = { model: { provider: "openai", id: "gpt-6", api: "openai-responses", promptCache: { long: 43200 } } };
+    const message = request(0, 1, 50000);
+    message.message.provider = "openai";
+    message.message.model = "gpt-6";
+    message.message.api = "openai-responses";
+    if (ttl === "12h") message.message.responseModel = "gpt-6-fallback";
+    await handlers.get("turn_start")({}, ctx);
+    await handlers.get("before_provider_request")({ payload: { prompt_cache_options: { ttl } } }, ctx);
+    await handlers.get("message_end")({ message: message.message }, ctx);
+    entries.push(message);
+    const parsed = parseEntries(entries).requests[0];
+    assert.equal(parsed.policyReferenceSeconds, seconds,
+      `record the OpenAI ${ttl} TTL that was present in the provider payload`);
+    assert.equal(parsed.policy.hasUnknownTtl, expectedUnknown);
+    if (ttl === "12h") assert.equal(parsed.model, "gpt-6-fallback",
+      "policy correlation uses the requested model while route identity uses responseModel");
+  }
+}
+{
+  for (const [controls, expectedReference, expectedUnknown] of [
+    [[{ type: "ephemeral" }], 300, false],
+    [[{ type: "ephemeral", ttl: "1h" }, { type: "ephemeral", ttl: "2h" }], null, true],
+  ]) {
+    const handlers = new Map(), entries = [];
+    register({
+      on: (name, handler) => handlers.set(name, handler),
+      appendEntry: (customType, data) => entries.push({ type: "custom", customType, data }),
+      registerCommand() {},
+    });
+    const ctx = { model: { provider: "anthropic", id: "claude", api: "anthropic-messages", promptCache: { short: 300, long: 3600 } } };
+    const message = request(0, 1, 50000);
+    message.message.provider = "anthropic";
+    message.message.model = "claude";
+    message.message.api = "anthropic-messages";
+    await handlers.get("turn_start")({}, ctx);
+    await handlers.get("before_provider_request")({ payload: { system: controls.map((cache_control) => ({ cache_control })) } }, ctx);
+    await handlers.get("message_end")({ message: message.message }, ctx);
+    entries.push(message);
+    const parsed = parseEntries(entries).requests[0];
+    assert.equal(parsed.policyReferenceSeconds, expectedReference);
+    assert.equal(parsed.policy.hasUnknownTtl, expectedUnknown);
+  }
+}
+{
   const root = mkdtempSync(join(tmpdir(), "cache-evidence-"));
   try {
     const handlers = new Map(), entries = [], saved = [];
@@ -85,12 +136,15 @@ const hasTtl = (data) => misses(data).some((miss) => miss.causes.some(([cause]) 
     assert.match(JSON.stringify(misses(crossed)), /not an idle gap or a server expiry measurement/);
     const warm = { type: "usage", kind: "cache_warm", timestamp: iso(89990), provider: "p", model: "m", usage: usage(10000) };
     assert.equal(hasTtl(parseEntries([...entries, warm, longGap])), false, "do not use the main-request gap as if completed warming did not occur");
+    const staleWarm = { ...warm, timestamp: iso(480) };
+    assert.equal(hasTtl(parseEntries([...entries, staleWarm, longGap])), true,
+      "a completed warm does not suppress expiry after its own policy window passes");
     const mixedMessage = request(100000, 1, 50000, { cacheWrite: 10000, cacheWrite1h: 5000 });
     mixedMessage.message.api = "anthropic-messages";
     ctx.model.api = "anthropic-messages";
     await handlers.get("turn_start")({}, ctx);
     await handlers.get("before_provider_request")({ payload: { messages: [{ content: [
-      { text: "PRIVATE_TEXT", cache_control: { type: "ephemeral", ttl: "5m" } },
+      { text: "PRIVATE_TEXT", cache_control: { type: "ephemeral" } },
       { cache_control: { type: "ephemeral", ttl: "1h" } },
     ] }] } }, ctx);
     await handlers.get("message_end")({ message: mixedMessage.message }, ctx);
@@ -110,4 +164,21 @@ const hasTtl = (data) => misses(data).some((miss) => miss.causes.some(([cause]) 
     assert.doesNotMatch(JSON.stringify(saved), /PRIVATE/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
-console.log("PASS cache evidence: timing, unknown retention/reasoning, auxiliary usage, context edits, safe history, session cwd");
+{
+  const first = request(0, 1, 50000);
+  first.message.model = "alias";
+  first.message.responseModel = "actual-a";
+  const second = request(60, 1);
+  second.message.model = "alias";
+  second.message.responseModel = "actual-b";
+  const warm = { type: "usage", kind: "cache_warm", timestamp: iso(90), provider: "p", model: "actual-b", usage: usage(50000) };
+  const third = request(120, 1, 50000);
+  third.message.model = "alias";
+  third.message.responseModel = "actual-b";
+  const data = parseEntries([first, second, warm, third]);
+  assert.deepEqual(data.requests.map((entry) => entry.model), ["actual-a", "actual-b", "actual-b"]);
+  assert.equal(buildContextSegments(data.requests, data.events).length, 2);
+  assert.equal(data.requests[2].lastWarmAt, origin + 90000,
+    "cache warming uses the effective response model identity");
+}
+console.log("PASS cache evidence: timing, TTL payloads, warm expiry, response models, unknown retention/reasoning, auxiliary usage, context edits, safe history, session cwd");

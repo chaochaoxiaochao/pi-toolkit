@@ -38,7 +38,7 @@ export function parseEntries(entries) {
   let compactions = 0;
   let prevKey = null;
   const auxiliary = [];
-  const warmByKey = new Map();
+  const warmTimesByKey = new Map();
   let observedPolicy;
   let gapTools = []; // tool results accumulated since the previous request
 
@@ -57,17 +57,23 @@ export function parseEntries(entries) {
       auxiliary.push({ kind, timestamp: hhmmss(ts), beforeRequest: requests.length + 1,
         provider: e.provider ?? "Unknown", model: e.model ?? "Unknown", usage: e.usage ?? {} });
       if (kind === "cache_warm" && ((e.usage?.cacheRead ?? 0) + (e.usage?.cacheWrite ?? 0)) > 0) {
-        warmByKey.set(`${e.provider}/${e.model}`, timeMs(ts));
+        const warmAt = timeMs(ts);
+        if (warmAt !== null) {
+          const key = `${e.provider}/${e.model}`;
+          const times = warmTimesByKey.get(key) ?? [];
+          times.push(warmAt);
+          warmTimesByKey.set(key, times);
+        }
       }
       if (t === "usage") continue;
     }
     if (t === "context_edit" || t === "branch_summary") {
       addEvent(requests.length + 1, "context", t === "context_edit" ? "Context edit" : "Branch summary", ts);
-      warmByKey.clear();
+      warmTimesByKey.clear();
       continue;
     }
     if (t === "compaction") {
-      warmByKey.clear();
+      warmTimesByKey.clear();
       compactions += 1;
       addEvent(requests.length + 1, "compaction", "Compaction", ts);
       continue;
@@ -116,11 +122,15 @@ export function parseEntries(entries) {
 
     const num = requests.length + 1;
     const provider = m.provider || "?";
-    const model = m.model || "?";
+    const requestedModel = m.model || "?";
+    const model = m.responseModel || requestedModel;
     const api = m.api || "";
     const key = `${provider}/${model}`;
-    if (prevKey !== null && key !== prevKey && !events.some((ev) => ev.requestNumber === num && ev.kind === "model")) {
-      addEvent(num, "model", `Model changed to ${provider}/${model}`, ts);
+    const actualModelLabel = `Model changed to ${provider}/${model}`;
+    if (prevKey !== null && key !== prevKey) {
+      const existingModelEvent = events.findLast((event) => event.requestNumber === num && event.kind === "model");
+      if (existingModelEvent) existingModelEvent.label = actualModelLabel;
+      else addEvent(num, "model", actualModelLabel, ts);
     }
     prevKey = key;
 
@@ -131,7 +141,7 @@ export function parseEntries(entries) {
       ? startMs - previous.startMs : null;
     const idleMs = startMs !== null && previous?.endMs !== null && previous?.endMs !== undefined
       ? Math.max(0, startMs - previous.endMs) : null;
-    const policy = observedPolicy?.messageTimestamp === m.timestamp && observedPolicy?.provider === provider && observedPolicy?.model === model && observedPolicy?.api === api
+    const policy = observedPolicy?.messageTimestamp === m.timestamp && observedPolicy?.provider === provider && observedPolicy?.model === requestedModel && observedPolicy?.api === api
       ? observedPolicy.policy : null;
     observedPolicy = undefined;
     const references = new Set((Array.isArray(policy?.explicitTtlsSeconds) ? policy.explicitTtlsSeconds : [])
@@ -140,7 +150,15 @@ export function parseEntries(entries) {
     // Never propagate a guessed expiry or downgrade historical hits to five minutes.
     if (u.cacheWrite1h > 0) references.add(3600);
     const mixedWrites = u.cacheWrite1h > 0 && u.cacheWrite > u.cacheWrite1h;
-    const policyReferenceSeconds = !mixedWrites && references.size === 1 ? [...references][0] : null;
+    const policyReferenceSeconds = !mixedWrites && policy?.hasUnknownTtl !== true && references.size === 1
+      ? [...references][0] : null;
+    const warmTimes = warmTimesByKey.get(key) ?? [];
+    let lastWarmAt = null;
+    for (const warmAt of warmTimes) {
+      if ((startMs === null || warmAt <= startMs) && (lastWarmAt === null || warmAt > lastWarmAt)) {
+        lastWarmAt = warmAt;
+      }
+    }
 
     const cost = u.cost && typeof u.cost.total === "number" ? u.cost.total : null;
     requests.push({
@@ -149,7 +167,7 @@ export function parseEntries(entries) {
       timestamp: hhmmss(startMs) || "Unknown",
       startMs, durationMs, startGapMs, idleMs,
       endMs: startMs !== null && durationMs !== null ? startMs + durationMs : null,
-      lastWarmAt: warmByKey.get(key) ?? null,
+      lastWarmAt,
       policy, policyReferenceSeconds,
       provider,
       model,
@@ -414,10 +432,12 @@ export function analyzeMisses(requests, events) {
       }
     }
     if (prev && r.startMs !== null && prev.startMs !== null && r.startMs > prev.startMs) {
-      const warmed = r.lastWarmAt !== null && r.lastWarmAt > prev.startMs && r.lastWarmAt <= r.startMs;
+      const warmed = r.lastWarmAt !== null && r.lastWarmAt > prev.startMs;
+      const referenceStartMs = warmed ? r.lastWarmAt : prev.startMs;
       const reference = prev.policyReferenceSeconds;
-      if (!warmed && reference > 0 && (r.startMs - prev.startMs) / 1000 > reference && prefixReuse < PREFIX_REUSE_THRESHOLD && !causes.length) {
-        causes.push(["possible TTL expiry", `request-start gap ${((r.startMs - prev.startMs) / 60000).toFixed(1)}min crosses a recorded ${(reference / 60).toFixed(0)}min policy reference; not an idle gap or a server expiry measurement`]);
+      if (reference > 0 && (r.startMs - referenceStartMs) / 1000 > reference && prefixReuse < PREFIX_REUSE_THRESHOLD && !causes.length) {
+        const gapSource = warmed ? "gap since last completed warm" : "request-start gap";
+        causes.push(["possible TTL expiry", `${gapSource} ${((r.startMs - referenceStartMs) / 60000).toFixed(1)}min crosses a recorded ${(reference / 60).toFixed(0)}min policy reference; not an idle gap or a server expiry measurement`]);
       }
     }
     if (prev && prefixReuse < PREFIX_REUSE_THRESHOLD && !causes.length) {

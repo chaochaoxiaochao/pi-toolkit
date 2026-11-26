@@ -68,6 +68,7 @@ export default function (pi) {
     if (!ctx.model) return;
     const payload = event.payload ?? {};
     const explicitTtlsSeconds = new Set();
+    let hasUnknownTtl = false;
     const controls = [
       payload.cache_control,
       ...(Array.isArray(payload.system) ? payload.system.map((block) => block?.cache_control) : []),
@@ -76,8 +77,16 @@ export default function (pi) {
         Array.isArray(message?.content) ? message.content.map((block) => block?.cache_control) : []) : []),
     ];
     for (const control of controls) {
-      if (control?.type === "ephemeral" && control.ttl === "1h") explicitTtlsSeconds.add(3600);
-      if (control?.type === "ephemeral" && control.ttl === "5m") explicitTtlsSeconds.add(300);
+      if (control?.type !== "ephemeral") continue;
+      if (control.ttl === undefined || control.ttl === "5m") explicitTtlsSeconds.add(300);
+      else if (control.ttl === "1h") explicitTtlsSeconds.add(3600);
+      else hasUnknownTtl = true;
+    }
+    const promptCacheOptions = payload.prompt_cache_options;
+    if (promptCacheOptions && typeof promptCacheOptions === "object" && promptCacheOptions.ttl !== undefined) {
+      if (promptCacheOptions.ttl === "30m") explicitTtlsSeconds.add(1800);
+      else if (promptCacheOptions.ttl === "12h") explicitTtlsSeconds.add(43200);
+      else hasUnknownTtl = true;
     }
     const retention = ["in_memory", "24h"].includes(payload.prompt_cache_retention) ? payload.prompt_cache_retention : null;
     if (retention === "24h") explicitTtlsSeconds.add(86400);
@@ -90,7 +99,7 @@ export default function (pi) {
     observed = {
       provider: ctx.model.provider, model: ctx.model.id, api: ctx.model.api,
       observedAt: Date.now(),
-      policy: { retention, explicitTtlsSeconds: [...explicitTtlsSeconds], modelReference },
+      policy: { retention, explicitTtlsSeconds: [...explicitTtlsSeconds], hasUnknownTtl, modelReference },
     };
   });
   pi.on("message_end", (event) => {

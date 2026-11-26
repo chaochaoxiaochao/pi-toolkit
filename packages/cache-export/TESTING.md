@@ -9,8 +9,8 @@
 
 ## 用例数据
 
-- 47 个基础确定性断言：命中率阈值、保留期未知、可能原因、模型切换、compaction、segment 和退化输入。
-- `tests/evidence.mjs`：慢响应不冒充空闲、历史策略缺失/混合 TTL、不传播推算到期、真实保温 usage、context_edit、reasoning 未知、白名单无秘密、相对 cwd。
+- 51 个基础确定性断言：命中率阈值、保留期未知、可能原因、模型与 response model 切换、warm 后 TTL、compaction、segment 和退化输入。
+- `tests/evidence.mjs`：慢响应不冒充空闲、OpenAI 30m/12h、Anthropic 默认 5m 与 1h 混合策略、历史策略缺失、不传播推算到期、真实保温 usage、response model、context_edit、reasoning 未知、白名单无秘密、相对 cwd。
 - `tests/extension.mjs`：真实 Pi SDK、离线 provider 的 payload hook、assistant 关联和 session-relative 导出。用 `PI_TEST_BINARY` 选 Pi 1.4.0。
 - 21 个浏览器断言：原有 tooltip/断点/segment 验证，加真实 CDP 点击和键盘切换、主/辅助范围标签、Unknown reasoning 不画零线或零点。`CACHE_EXPORT_SCREENSHOT_DIR` 可保留真实截图。
 
@@ -21,3 +21,5 @@
 验证依据是输入 usage 与渲染结果、真实 SDK 事件和 Chrome 行为；不是 Pi 自带缓存推断，更不是对服务端实际 TTL 的校准。
 
 混合 TTL 回归同时包含 `cacheWrite1h` 为零、部分写入及全部写入的情况；所有已知混合策略均保持请求级 Unknown。只有写入计数揭示混合、没有 payload 历史时也不得推断为单一 1h。
+
+TTL 原因回归使用 `message.timestamp`，并验证完成 warm 后从 warm 记录时间重新计算策略参考窗口；`responseModel` 回归验证 segment、模型切换原因和 warm 关联使用实际响应模型。

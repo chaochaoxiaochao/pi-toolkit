@@ -79,6 +79,8 @@ npm pack ./packages/cache-export --dry-run
 
 扩展从启用后的 `before_provider_request` 观察已知 retention/TTL 枚举和模型 `promptCache` 参考值，在对应 assistant 消息结束时写入 `cache-export-request` 自定义记录。只存非秘密白名单字段；不存提示词、cache key、headers、URL 或凭据。不用当前配置补历史；hook 之后其他扩展仍可能修改请求。这些值只表示观察到的请求/策略参考，不证明服务端采用、续期或到期。混合 TTL、缺字段或未记录历史保持未知，不套用通用 5 分钟，也不把 OpenAI 公共 API 的期限直接套给 Codex 订阅接口。
 
+已知策略包括 Anthropic 默认 5 分钟和显式 1 小时，以及 OpenAI Responses 的 30 分钟和 12 小时 `prompt_cache_options`。服务商返回 fallback `responseModel` 时，segment、warm 关联和模型切换原因使用实际响应模型。完成的 cache warm 只从该次 warm 的记录时间重新开始策略参考窗口，不会永久排除后续 TTL 原因。
+
 已观察 usage/上下文事件、策略参考和可能原因分开表述。Pi 自带的缓存推断不是服务端真值，也不是本报告的校准标准。
 
 相对输出路径以当前 Pi session 的 cwd 为基准（包括切换后的 worktree）。

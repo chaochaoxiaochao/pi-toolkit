@@ -1,5 +1,14 @@
 # Package split verification
 
+## Cache Export cache-policy and miss-cause accuracy (2026-11-26, unreleased)
+
+- Compared the Pi adaptation with current `huggingface/tau` `session_usage.py`. Tau remains the source for the usage dashboard and reports request usage, hit rates, response routing and events; `src/tau-assets.ts` and the Tau-derived chart implementation were not changed. Cache-miss cause attribution remains a Pi-specific, explicitly rule-based enhancement.
+- Cache Export now records Anthropic's default 5-minute and explicit 1-hour cache controls, plus OpenAI Responses `prompt_cache_options` values of 30 minutes and 12 hours. Mixed or unrecognized TTL observations remain request-level Unknown.
+- Possible TTL expiry now measures from the latest completed cache warm at or before the main request start. A later streaming-phase warm is retained for the next request and cannot overwrite the current request's pre-start warm evidence.
+- Provider fallback responses use `responseModel ?? model` for cache-route segments, model-switch evidence and completed-warm correlation, while request-policy correlation still uses the requested model that produced the payload.
+- Cache Export passed 51 deterministic assertions, the evidence suite, the native Pi SDK test, and 21 real-Chrome assertions with zero skips. The package load check, nine-file child dry-run pack, 215-file root dry-run pack, full root `npm test`, and `git diff --check` passed.
+- Two independent read-only reviews checked the implementation against Pi 1.6.0 provider and cache-warmer behavior. Their findings on fallback event labels, post-start warming, undefined OpenAI TTL fields, unknown-TTL coverage and a redundant guard were fixed and reverified. Windows opening behavior and unrelated pre-existing review findings were outside this change.
+
 ## Background Tasks no-sleep guidance regression (2026-11-26, unreleased)
 
 - A real GPT-5.6 Sol session started a background dependency download, inspected it after five seconds, then issued foreground `sleep 40`, `sleep 60`, and `sleep 70` calls between repeated output reads. The task had already promised automatic completion delivery.

@@ -1,3 +1,7 @@
+## Unreleased
+
+- Cache Export: record observed OpenAI 30-minute/12-hour and Anthropic default-5-minute/1-hour cache policies, restart possible-TTL timing from completed cache warms, and use effective response models for cache-route diagnostics.
+
 ## 2026-11-26 - v0.15.13
 
 - scheduler v0.2.0: Simplify schedule controls, remove manual trigger, add argument completion, and allow ID-free single cancellation

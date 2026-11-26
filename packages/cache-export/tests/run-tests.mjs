@@ -14,10 +14,19 @@ function check(name, cond, detail = "") {
 
 // helpers -------------------------------------------------------------
 const T0 = "2026-01-01T00:00:00Z";
-function req({ cached, fresh, write = 0, write1h = 0, out = 100, min = 0, provider = "p", model = "m", api = "openai-responses", content = [] }) {
-  return { type: "message", timestamp: `2026-01-01T00:${String(min).padStart(2, "0")}:00Z`,
-    message: { role: "assistant", provider, model, api, stopReason: "stop", content,
+function req({ cached, fresh, write = 0, write1h = 0, out = 100, min = 0, provider = "p", model = "m", responseModel, api = "openai-responses", content = [], timed = true }) {
+  const timestamp = `2026-01-01T00:${String(min).padStart(2, "0")}:00Z`;
+  return { type: "message", timestamp,
+    message: { role: "assistant", provider, model, ...(responseModel ? { responseModel } : {}), api, stopReason: "stop", content,
+      ...(timed ? { timestamp: Date.parse(timestamp), durationMs: 1000 } : {}),
       usage: { input: fresh, cacheRead: cached, cacheWrite: write, cacheWrite1h: write1h, output: out } } };
+}
+function policyEntry(messageEntry, explicitTtlsSeconds) {
+  const { provider, model, api, timestamp } = messageEntry.message;
+  return { type: "custom", customType: "cache-export-request", data: {
+    provider, model, api, messageTimestamp: timestamp,
+    policy: { retention: null, explicitTtlsSeconds, hasUnknownTtl: false, modelReference: {} },
+  } };
 }
 function toolResult(text, tool = "bash") {
   return { type: "message", message: { role: "toolResult", toolName: tool, content: [{ type: "text", text }] } };
@@ -107,6 +116,24 @@ const hitOf = (r) => r.cached / (r.fresh + r.cached + r.cacheWrite);
   check("F only 1 miss total (request4)", m.misses.length === 1, `got ${m.misses.length}`);
 }
 
+// F2. provider fallback response models are effective cache routes --------
+{
+  const entries = [
+    req({ cached: 50000, fresh: 2000, min: 1, model: "alias", responseModel: "actual-a" }),
+    { type: "model_change", timestamp: "2026-01-01T00:01:30Z", provider: "p", modelId: "alias" },
+    req({ cached: 0, fresh: 52000, min: 2, model: "alias", responseModel: "actual-b" }),
+  ];
+  const d = parseEntries(entries);
+  const two = analyzeMisses(d.requests, d.events).misses.find((x) => x.number === 2);
+  check("F2 responseModel changes split Context segments",
+    d.requests.map((request) => request.model).join(",") === "actual-a,actual-b" &&
+      buildContextSegments(d.requests, d.events).length === 2 &&
+      d.events.filter((event) => event.kind === "model" && event.requestNumber === 2).length === 1);
+  check("F2 responseModel change is a model-switch miss cause",
+    two && two.causes.some(([cause, detail]) => cause === "model switch" && detail.includes("actual-b")),
+    JSON.stringify(two && two.causes));
+}
+
 // G. band boundaries ----------------------------------------------------
 {
   const mk3 = (cached, fresh) => Array.from({ length: 3 }, (_, i) => req({ cached, fresh, min: i + 1 }));
@@ -121,8 +148,8 @@ const hitOf = (r) => r.cached / (r.fresh + r.cached + r.cacheWrite);
 // H. Unknown historical timing/policy ---------------------------------------------
 {
   const entries = [
-    req({ cached: 50000, fresh: 2000, min: 1 }),
-    req({ cached: 5000, fresh: 15000, min: 40 }), // 39min gap same model, hit .25
+    req({ cached: 50000, fresh: 2000, min: 1, timed: false }),
+    req({ cached: 5000, fresh: 15000, min: 40, timed: false }), // historical request timing is absent
   ];
   const m = analyzeMisses(parseEntries(entries).requests, parseEntries(entries).events);
   check("H missing request timing/policy -> no invented TTL expiry", m.misses.length === 1 && !m.misses[0].causes.some(([c]) => c === "possible TTL expiry"),
@@ -131,8 +158,10 @@ const hitOf = (r) => r.cached / (r.fresh + r.cached + r.cacheWrite);
 
 // H2. long idle gap with retained prefix is new input, not TTL expiry -------
 {
+  const first = req({ cached: 0, fresh: 14000, min: 1 });
   const entries = [
-    req({ cached: 0, fresh: 14000, min: 1 }),
+    policyEntry(first, [300]),
+    first,
     toolResult("x".repeat(80000), "read"),
     req({ cached: 13824, fresh: 20000, min: 40 }),
   ];
@@ -183,6 +212,43 @@ const hitOf = (r) => r.cached / (r.fresh + r.cached + r.cacheWrite);
   check("H5 replacement without TTL metadata remains unknown",
     d.requests[1].policyReferenceSeconds === null && three && !three.causes.some(([cause]) => cause === "possible TTL expiry"),
     JSON.stringify({ reference: d.requests[1].policyReferenceSeconds, causes: three && three.causes }));
+}
+
+// H6. a completed warm only refreshes the TTL reference from its own time ----
+{
+  const first = req({ cached: 50000, fresh: 2000, min: 1 });
+  const entries = [
+    policyEntry(first, [300]),
+    first,
+    { type: "usage", kind: "cache_warm", timestamp: "2026-01-01T00:10:00Z", provider: "p", model: "m",
+      usage: { input: 0, cacheRead: 50000, cacheWrite: 0, output: 1 } },
+    req({ cached: 5000, fresh: 15000, min: 20 }),
+  ];
+  const d = parseEntries(entries);
+  const two = analyzeMisses(d.requests, d.events).misses.find((x) => x.number === 2);
+  check("H6 miss after warm crosses TTL from the warm time",
+    two && two.causes.some(([cause, detail]) => cause === "possible TTL expiry" && detail.includes("last completed warm")),
+    JSON.stringify(two && two.causes));
+}
+
+// H7. warming after a request starts does not apply to that request ----------
+{
+  const first = req({ cached: 50000, fresh: 2000, min: 1 });
+  const entries = [
+    policyEntry(first, [300]),
+    first,
+    { type: "usage", kind: "cache_warm", timestamp: "2026-01-01T00:18:00Z", provider: "p", model: "m",
+      usage: { input: 0, cacheRead: 50000, cacheWrite: 0, output: 1 } },
+    { type: "usage", kind: "cache_warm", timestamp: "2026-01-01T00:25:00Z", provider: "p", model: "m",
+      usage: { input: 0, cacheRead: 50000, cacheWrite: 0, output: 1 } },
+    req({ cached: 5000, fresh: 15000, min: 20 }),
+  ];
+  const d = parseEntries(entries);
+  const two = analyzeMisses(d.requests, d.events).misses.find((x) => x.number === 2);
+  check("H7 post-start warm does not replace the current request's last pre-start warm",
+    d.requests[1].lastWarmAt === Date.parse("2026-01-01T00:18:00Z") &&
+      two && !two.causes.some(([cause]) => cause === "possible TTL expiry"),
+    JSON.stringify({ lastWarmAt: d.requests[1].lastWarmAt, causes: two && two.causes }));
 }
 
 // I. cache rebuild (prev turn was a miss, same model) -------------------
