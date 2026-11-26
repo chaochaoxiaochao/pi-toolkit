@@ -8,7 +8,7 @@ import { BackgroundPanel } from "../src/panel.ts";
 import { BackgroundFooter, findNativeFooter, FINISHED_VISIBLE_MS, WIDGET_KEY, duration, taskStatusLabel, visibleTasks } from "../src/widget.ts";
 
 const actions = ["start", "list", "output", "cancel"] as const;
-const startNotice = "Completion is reported automatically. Continue independent work, or end the turn if none remains.";
+const startNotice = "Completion will resume you automatically. Continue independent work if any remains; otherwise end the turn now. Do not call Bash sleep, tail logs, or use list/output solely to wait.";
 const PROGRESS_INTERVAL_MS = 30 * 60_000;
 // Bound model-visible status text when many completions accumulate.
 const NOTIFICATION_MAX_BYTES = 16 * 1024;

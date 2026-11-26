@@ -1,5 +1,12 @@
 # Package split verification
 
+## Background Tasks no-sleep guidance regression (2026-11-26, unreleased)
+
+- A real GPT-5.6 Sol session started a background dependency download, inspected it after five seconds, then issued foreground `sleep 40`, `sleep 60`, and `sleep 70` calls between repeated output reads. The task had already promised automatic completion delivery.
+- Commit `3e445a1` had removed the explicit “do not sleep, tail logs or query just to wait” guard and replaced it with the weaker “continue independent work, or end the turn” reminder. The regression restores a direct completion contract: automatic completion resumes the agent; when no independent work remains, end the turn now; Bash sleeps, log tails, and `list`/`output` calls used only to wait are prohibited.
+- The longer reminder legitimately moved manual compaction onto Pi's split-turn path, which performs separate history and turn-prefix summaries. The interruption regression now accepts one or two native summary calls while still rejecting a retry loop; completion retention and one-time delivery assertions are unchanged.
+- All 100 Background Tasks tests passed, followed by the standalone load check and 29-file child dry-run pack. Full `npm test`, toolkit load testing, the 215-file root dry-run pack, and `git diff --check` also passed.
+
 ## Herdr recovery, cache policy, Cage warming, and Background Tasks progress (2026-11-25, unreleased)
 
 - **Herdr Subagents:** final Provider errors remain recoverable as `waiting_interaction`; a new child turn restores `working` without closing the pane or replacing the attempt. Hard failures stop unclaimed work while already-running siblings finish, including a failed response on a previously blocked lane. Blank final Provider diagnostics no longer reuse an older error. All 18 maintained test files passed. Source loading passed. Real Herdr passed one-child and two-child read-only runs with automatic tab cleanup. The child dry-run tarball contains 71 files.

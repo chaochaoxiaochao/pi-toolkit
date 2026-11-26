@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Background Tasks: restore explicit guidance to end the turn after starting background work instead of using Bash sleeps or polling solely to wait.
 - Background Tasks: publish shell counts through Pi's keyed status interface, compose arbitrary peer statuses, and treat the clickable footer as a self-detaching enhancement so other footer owners are not overwritten.
 - Remove the bundled `show-me` and `html-artifact` skills.
 

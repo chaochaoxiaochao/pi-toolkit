@@ -623,9 +623,12 @@ test("start keeps concise task-specific guidance while the declaration describes
 		await h.handlers.get("session_start")({}, h.ctx);
 		const started = await h.tool.execute("start", { action: "start", command: "sleep 60" });
 		const { task } = started.structuredContent;
-		const notice = "Completion is reported automatically. Continue independent work, or end the turn if none remains.";
+		const notice = "Completion will resume you automatically. Continue independent work if any remains; otherwise end the turn now. Do not call Bash sleep, tail logs, or use list/output solely to wait.";
 		assert.equal(task.status, "running");
 		assert.ok(started.content[0].text.includes(notice));
+		assert.match(started.content[0].text, /end the turn now/);
+		assert.match(started.content[0].text, /Do not call Bash sleep/);
+		assert.match(started.content[0].text, /list\/output solely to wait/);
 		assert.ok(!started.content[0].text.includes(task.log_path));
 		assert.ok(!started.content[0].text.includes("session changes"));
 		assert.ok(!h.tool.description.includes(notice), "declaration must not duplicate the whole start reminder");

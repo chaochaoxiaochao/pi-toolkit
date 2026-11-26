@@ -43,7 +43,7 @@ The model-visible tool description is:
 
 Each accepted start returns only its task data and this short, task-specific reminder:
 
-> Completion is reported automatically. Continue independent work, or end the turn if none remains.
+> Completion will resume you automatically. Continue independent work if any remains; otherwise end the turn now. Do not call Bash sleep, tail logs, or use list/output solely to wait.
 
 The whole reminder is not duplicated in the tool description or a `structuredContent.guidance` field. Start text does not advertise a full-log path; structured task metadata still retains `log_path`.
 

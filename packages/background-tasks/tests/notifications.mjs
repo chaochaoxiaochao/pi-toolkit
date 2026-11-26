@@ -36,7 +36,7 @@ test("native model receives distinct declaration and start guidance without Code
 		const records = readFileSync(events, "utf8").trim().split("\n").map((line) => JSON.parse(line));
 		const started = records.find((entry) => entry.event === "tool_end" && entry.name === "background_task");
 		assert.equal(started.isError, false);
-		const notice = "Completion is reported automatically. Continue independent work, or end the turn if none remains.";
+		const notice = "Completion will resume you automatically. Continue independent work if any remains; otherwise end the turn now. Do not call Bash sleep, tail logs, or use list/output solely to wait.";
 		assert.equal(started.result.structuredContent.guidance, undefined);
 		assert.equal(records.some((entry) => entry.event === "tool_end" && entry.name === "codemode"), false);
 		const requests = records.filter((entry) => entry.event === "request");
@@ -47,6 +47,7 @@ test("native model receives distinct declaration and start guidance without Code
 		assert.ok(!requests[0].backgroundDescription.includes(notice));
 		assert.ok(!requests[0].backgroundDescription.includes("Codemode:"));
 		assert.ok(requests[1].text.includes(notice), "the next model request sees the task-specific reminder");
+		assert.match(requests[1].text, /Do not call Bash sleep/);
 		assert.ok(!started.result.content[0].text.includes(started.result.structuredContent.task.log_path));
 	} finally { rmSync(directory, { recursive: true, force: true }); }
 });
