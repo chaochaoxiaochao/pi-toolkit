@@ -100,8 +100,6 @@ bash scripts/install.sh
 | Skill | Purpose |
 |---|---|
 | `web-browser` | Launch and automate an isolated Chrome/Chromium session through CDP |
-| `show-me` | Explain the current topic with the smallest useful visual |
-| `html-artifact` | Build self-contained HTML explainers and diagrams |
 | `mermaid` | Manually invoke `/skill:mermaid` to write Mermaid diagrams or text wireframes in Markdown documents; hidden from automatic model selection |
 | `herdr` | Control Herdr workspaces, tabs, panes, and agents |
 | `tapd` | Investigate and operate on TAPD items with workspace, evidence, and safe-download guardrails |

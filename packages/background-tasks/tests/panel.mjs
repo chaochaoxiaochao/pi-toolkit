@@ -3,7 +3,7 @@ import { unlinkSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import { BackgroundPanel } from "../src/panel.ts";
-import { BackgroundFooter } from "../src/widget.ts";
+import { BackgroundFooter, WIDGET_KEY } from "../src/widget.ts";
 import { fixture, flush } from "./helpers.mjs";
 
 const keys = new KeybindingsManager(TUI_KEYBINDINGS);
@@ -15,46 +15,53 @@ function panel(f) {
 	return { view, text: (width = 120) => view.render(width).join("\n"), get renders() { return renders; }, get closed() { return closed; } };
 }
 
-test("compact count, singular/plural, five-second retention and bounded mouse hit region", async () => {
-	const f = fixture();
-	try {
-		f.tasks.start({ command: "first" }, f.root);
-		let opened = 0;
-		let status = "", panelOpen = false;
-		const native = { render: () => ["path", "usage model", ...(status ? [status] : [])], invalidate() {} };
-		const widget = new BackgroundFooter(native, () => f.tasks.list().tasks, f.clock, theme, () => !!status, () => panelOpen, () => opened++);
-		assert.deepEqual(widget.render(120), ["path", "usage model", "1 shell · Alt+J"]);
-		assert.equal(widget.handleMouse(click(7, 2)), undefined);
-		assert.equal(widget.handleMouse(click(2, 1)), undefined);
-		assert.equal(widget.handleMouse(click(2, 2, "right")), undefined);
-		assert.equal(widget.handleMouse(click(2, 2)).handled, true);
-		assert.equal(opened, 1);
-		f.tasks.start({ command: "second" }, f.root);
-		assert.match(widget.render(120).at(-1), /^2 shells/);
-		f.calls[1].resolve(3); await flush();
-		assert.match(widget.render(120).at(-1), /^1 shell · 1 done/);
-		f.clock.advance(5000);
-		assert.equal(widget.render(120).at(-1), "1 shell · Alt+J");
-		status = "editor: apply_patch";
-		assert.equal(widget.render(120).at(-1), `${status} · 1 shell · Alt+J`);
-		assert.equal(widget.handleMouse(click(2, 2)), undefined, "editor status is not a shell click");
-		assert.equal(widget.handleMouse(click(23, 2)).handled, true);
-		panelOpen = true;
-		assert.deepEqual(widget.render(120), []);
-		assert.equal(widget.handleMouse(click(23, 2)), undefined);
-		panelOpen = false;
-		status = "中文状态".repeat(20);
-		for (const width of [0, 1, 8, 40]) {
-			const row = widget.render(width).at(-1);
-			assert.ok(visibleWidth(row) <= width);
-			if (width >= 8) assert.match(row, /1 shell/, "keep the count visible even if other statuses are long");
-		}
-		widget.invalidate();
-		assert.equal(widget.handleMouse(click(2, 2)), undefined, "resize/theme invalidation clears stale hit regions");
-		f.calls[0].resolve(); await flush();
-		f.clock.advance(5000);
-		assert.deepEqual(widget.render(120), native.render(120), "expired count leaves the native footer untouched");
-	} finally { await f.close(); }
+test("compact count, arbitrary peer statuses, narrow widths and bounded mouse hit region", () => {
+	let opened = 0;
+	let panelOpen = false;
+	const statuses = new Map([[WIDGET_KEY, "1 shell"]]);
+	const native = { render: () => ["path", "usage model", ...(statuses.size ? [[...statuses.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, text]) => text).join(" ")] : [])], invalidate() {} };
+	const widget = new BackgroundFooter(native, theme, () => statuses, () => panelOpen, () => opened++);
+	assert.deepEqual(widget.render(120), ["path", "usage model", "1 shell · Alt+J"]);
+	assert.equal(widget.handleMouse(click(7, 2)), undefined);
+	assert.equal(widget.handleMouse(click(2, 1)), undefined);
+	assert.equal(widget.handleMouse(click(2, 2, "right")), undefined);
+	assert.equal(widget.handleMouse(click(2, 2)).handled, true);
+	assert.equal(opened, 1);
+	statuses.set(WIDGET_KEY, "2 shells");
+	assert.match(widget.render(120).at(-1), /^2 shells/);
+	statuses.set(WIDGET_KEY, "1 shell · 1 done");
+	assert.match(widget.render(120).at(-1), /^1 shell · 1 done/);
+	statuses.set(WIDGET_KEY, "1 shell");
+	assert.equal(widget.render(120).at(-1), "1 shell · Alt+J");
+	statuses.set("codex-edit", "editor: apply_patch");
+	assert.equal(widget.render(120).at(-1), "editor: apply_patch · 1 shell · Alt+J");
+	assert.equal(widget.handleMouse(click(2, 2)), undefined, "editor status is not a shell click");
+	assert.equal(widget.handleMouse(click(23, 2)).handled, true);
+	assert.equal(widget.render(29).at(-1), "editor: apply_patch · 1 shell", "drop the shortcut before truncating a peer status");
+	statuses.set("scheduler", "2 schedules");
+	statuses.set("z-custom", "future\tstatus\nready");
+	statuses.set("zero-width", "\x1b[31m\x1b[0m");
+	assert.equal(widget.render(120).at(-1), "editor: apply_patch · 2 schedules · future status ready · 1 shell · Alt+J");
+	const compact = widget.render(30).at(-1);
+	assert.doesNotMatch(compact, /Alt\+J/, "drop the shortcut before peer statuses");
+	assert.match(compact, /1 shell$/, "keep the shell count visible after truncating peers");
+	const compactShell = visibleWidth(compact.slice(0, compact.indexOf("1 shell")));
+	assert.equal(widget.handleMouse(click(compactShell - 1, 2)), undefined);
+	assert.equal(widget.handleMouse(click(compactShell + 1, 2)).handled, true, "truncated peer text keeps the shell hit box aligned");
+	panelOpen = true;
+	assert.deepEqual(widget.render(120), []);
+	assert.equal(widget.handleMouse(click(23, 2)), undefined);
+	panelOpen = false;
+	statuses.set("z-custom", "中文状态".repeat(20));
+	for (const width of [0, 1, 8, 40]) {
+		const row = widget.render(width).at(-1);
+		assert.ok(visibleWidth(row) <= width);
+		if (width >= 8) assert.match(row, /1 shell/, "keep the count visible even if other statuses are long");
+	}
+	widget.invalidate();
+	assert.equal(widget.handleMouse(click(2, 2)), undefined, "resize/theme invalidation clears stale hit regions");
+	statuses.delete(WIDGET_KEY);
+	assert.deepEqual(widget.render(120), native.render(120), "missing shell status leaves the native footer untouched");
 });
 
 test("single shell opens aligned, compact details without changing the original script", async () => {

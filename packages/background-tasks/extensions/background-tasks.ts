@@ -5,7 +5,7 @@ import { stripVTControlCharacters } from "node:util";
 import { Type } from "typebox";
 import { BackgroundTasks, errorText, summary, systemClock, type Clock, type TaskSnapshot } from "../src/background-tasks.ts";
 import { BackgroundPanel } from "../src/panel.ts";
-import { BackgroundFooter, findNativeFooter, FINISHED_VISIBLE_MS, WIDGET_KEY, duration, visibleTasks } from "../src/widget.ts";
+import { BackgroundFooter, findNativeFooter, FINISHED_VISIBLE_MS, WIDGET_KEY, duration, taskStatusLabel, visibleTasks } from "../src/widget.ts";
 
 const actions = ["start", "list", "output", "cancel"] as const;
 const startNotice = "Completion is reported automatically. Continue independent work, or end the turn if none remains.";
@@ -238,14 +238,16 @@ export default function (pi: ExtensionAPI, dependencies: {
 			return;
 		}
 		const visible = visibleTasks(list.tasks, clock.now());
+		context.ui.setStatus(WIDGET_KEY, taskStatusLabel(visible));
 		mounted?.footer.invalidate();
 		mounted?.tui.requestRender();
-		if (visible.length === 0) {
+		const finished = visible.filter((task) => task.ended_at !== undefined);
+		if (finished.length === 0) {
 			clearTimer();
 			return;
 		}
 		if (timer === undefined) {
-			const delay = Math.min(1000, ...visible.filter((task) => task.ended_at !== undefined).map((task) => task.ended_at! + FINISHED_VISIBLE_MS - clock.now()));
+			const delay = Math.min(...finished.map((task) => task.ended_at! + FINISHED_VISIBLE_MS - clock.now()));
 			timer = clock.setTimeout(() => { timer = undefined; refresh(); }, Math.max(1, delay));
 		}
 	};
@@ -264,12 +266,13 @@ export default function (pi: ExtensionAPI, dependencies: {
 		progressBytes.clear();
 		completedNormally = true;
 		interrupted = false;
+		const activeFooter = mounted;
+		mounted = undefined;
 		try {
 			if (previousContext?.hasUI) {
 				previousContext.ui.setStatus(WIDGET_KEY, undefined);
-				if (previousContext.mode === "tui" && mounted) previousContext.ui.setFooter(undefined);
+				if (activeFooter) previousContext.ui.setFooter(undefined);
 			}
-			mounted = undefined;
 		} finally {
 			await previous?.shutdown();
 		}
@@ -302,10 +305,13 @@ export default function (pi: ExtensionAPI, dependencies: {
 			try {
 				ctx.ui.setWidget(WIDGET_KEY, (tui) => {
 					const native = findNativeFooter(tui.children);
-					if (!native) throw new Error("Background Tasks requires Pi's built-in footer; another extension has replaced it.");
+					if (!native) return { render: () => [], invalidate() {} };
 					ctx.ui.setFooter((footerTui, theme, data) => {
-						const footer = new BackgroundFooter(native, () => manager?.list().tasks ?? [], clock, theme,
-							() => data.getExtensionStatuses().size > 0, () => panel !== undefined, () => { void openPanel(); });
+						let footer: BackgroundFooter;
+						footer = new BackgroundFooter(native, theme, () => data.getExtensionStatuses(),
+							() => panel !== undefined, () => { void openPanel(); }, () => {
+								if (mounted?.footer === footer) mounted = undefined;
+							});
 						mounted = { footer, tui: footerTui };
 						return footer;
 					});

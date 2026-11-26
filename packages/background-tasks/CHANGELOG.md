@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Publish shell counts through Pi's keyed status interface and keep the clickable footer as a best-effort decorator.
+- Compose arbitrary peer statuses without extension-specific rules, drop the shortcut hint before truncating peer state, and keep shell counts visible on narrow rows.
+- Degrade safely when another extension owns or replaces the footer; preserve Alt+J access and never clear a later footer during reload or shutdown.
+- Remove the unnecessary one-second TUI repaint timer while tasks are only running.
+
 ## 2026-11-25 - v0.5.0
 
 - Add 30-minute aggregate progress turns and concise automatic-completion guidance

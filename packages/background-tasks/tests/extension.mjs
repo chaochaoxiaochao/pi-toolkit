@@ -19,11 +19,11 @@ function harness(mode = "tui", hasUI = true, dependencies = {}) {
 	const widgets = new Map([["scheduler", { render: () => ["Scheduler"] }], ["herdr-subagents", { render: () => ["Fleet"] }]]);
 	const statuses = new Map();
 	const idleChecks = [];
-	let tool, renders = 0, idle = true, failSend = false;
+	let tool, renders = 0, footerChanges = 0, idle = true, failSend = false;
 	const theme = { fg: (_color, text) => text, bold: (text) => text };
 	const native = Object.assign(Object.create(FooterComponent.prototype), {
 		render: (width) => ["fixture/path (main)", "↑42k fixture-model", ...(
-			statuses.size ? [Array.from(statuses.values()).join(" ")] : []
+			statuses.size ? [[...statuses.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, text]) => text).join(" ")] : []
 		)].map((line) => line.slice(0, width)),
 		invalidate() {},
 	});
@@ -37,10 +37,12 @@ function harness(mode = "tui", hasUI = true, dependencies = {}) {
 				widgets.set(key, factory(tui, theme));
 			},
 			setFooter(factory) {
+				footer?.dispose?.();
 				footer = undefined;
 				container.children = [];
 				if (factory) footer = factory(tui, theme, { getExtensionStatuses: () => statuses });
 				container.children = [footer ?? native];
+				footerChanges++;
 				tui.requestRender();
 			},
 			custom(factory) {
@@ -69,6 +71,7 @@ function harness(mode = "tui", hasUI = true, dependencies = {}) {
 		failNextSend() { failSend = true; },
 		get panel() { return panel; },
 		get footer() { return footer; },
+		get footerChanges() { return footerChanges; },
 		open() { void shortcuts.get("alt+j").handler(ctx); },
 		get tool() { return tool; }, get renders() { return renders; },
 		async close() {
@@ -657,6 +660,7 @@ test("tools, clean panel, bottom footer and idle notifications share the same se
 		parentSignal.abort();
 		assert.equal(h.calls[0].signal.aborted, false, "parent turn cancellation does not own the accepted background job");
 		assert.equal(h.widgets.has("background-tasks"), false, "no counter above the native footer");
+		assert.equal(h.clock.timers.size, 1, "a running task needs only its execution deadline, not a footer repaint timer");
 		h.clock.advance(1000);
 		const footer = h.footer;
 		h.statuses.set("codex-edit", "editor: apply_patch");
@@ -695,6 +699,34 @@ test("tools, clean panel, bottom footer and idle notifications share the same se
 		assert.equal(h.clock.timers.size, 0);
 		assert.equal((await h.tool.execute("history", { action: "output", id: job.id })).structuredContent.task.status, "failed");
 		assert.ok(h.renders > 0);
+	} finally { await h.close(); }
+});
+
+test("keyed TUI status follows staggered five-second completion expiry without running repaint timers", async () => {
+	const h = harness();
+	try {
+		await h.handlers.get("session_start")({}, h.ctx);
+		await h.tool.execute("first", { action: "start", command: "first" });
+		await h.tool.execute("second", { action: "start", command: "second" });
+		assert.equal(h.statuses.get("background-tasks"), "2 shells");
+		assert.equal(h.clock.timers.size, 2, "only the two execution deadlines run");
+		h.handlers.get("agent_settled")({ aborted: true });
+
+		h.calls[0].resolve();
+		await flush();
+		assert.equal(h.statuses.get("background-tasks"), "1 shell · 1 done");
+		h.clock.advance(3000);
+		h.calls[1].resolve();
+		await flush();
+		assert.equal(h.statuses.get("background-tasks"), "0 shells · 2 done");
+
+		h.clock.advance(2000);
+		assert.equal(h.statuses.get("background-tasks"), "0 shells · 1 done");
+		h.clock.advance(2999);
+		assert.equal(h.statuses.get("background-tasks"), "0 shells · 1 done");
+		h.clock.advance(1);
+		assert.equal(h.statuses.has("background-tasks"), false);
+		assert.equal(h.clock.timers.size, 0);
 	} finally { await h.close(); }
 });
 
@@ -806,12 +838,49 @@ test("footer count opens one local panel; shutdown closes it and clears refresh 
 	} finally { await h.close(); }
 });
 
-test("a pre-existing replacement footer fails visibly instead of silently losing the count", async () => {
+test("a pre-existing replacement footer keeps native status and Alt+J without taking footer ownership", async () => {
 	const h = harness();
 	try {
-		h.tui.children = [{ render: () => ["another footer"], invalidate() {} }];
-		await assert.rejects(h.handlers.get("session_start")({}, h.ctx), /requires Pi's built-in footer/);
+		const foreign = { render: () => ["another footer"], invalidate() {} };
+		h.tui.children = [foreign];
+		await h.handlers.get("session_start")({}, h.ctx);
+		await h.tool.execute("start", { action: "start", command: "first" });
 		assert.equal(h.footer, undefined);
 		assert.equal(h.widgets.has("background-tasks"), false, "temporary capture widget is cleaned on failure");
+		assert.equal(h.statuses.get("background-tasks"), "1 shell");
+		h.open();
+		assert.match(h.panel.render(140).join("\n"), /Command:  first/);
+		h.panel.handleInput("\x1b");
+		await flush();
+		const changes = h.footerChanges;
+		h.calls[0].resolve();
+		await h.handlers.get("session_shutdown")({}, h.ctx);
+		assert.equal(h.footerChanges, changes, "shutdown must not replace a footer it never owned");
+		assert.equal(h.statuses.has("background-tasks"), false);
+		assert.equal(h.tui.children[0], foreign);
+	} finally { await h.close(); }
+});
+
+test("a later replacement footer evicts the decorator without being clobbered on shutdown", async () => {
+	const h = harness();
+	try {
+		await h.handlers.get("session_start")({}, h.ctx);
+		await h.tool.execute("start", { action: "start", command: "first" });
+		const decorator = h.footer;
+		const foreign = { render: () => ["another footer"], invalidate() {} };
+		h.ctx.ui.setFooter(() => foreign);
+		assert.notEqual(h.footer, decorator);
+		assert.equal(h.footer, foreign);
+		assert.equal(h.statuses.get("background-tasks"), "1 shell");
+		h.open();
+		assert.match(h.panel.render(140).join("\n"), /Command:  first/);
+		h.panel.handleInput("\x1b");
+		await flush();
+		const changes = h.footerChanges;
+		h.calls[0].resolve();
+		await h.handlers.get("session_shutdown")({}, h.ctx);
+		assert.equal(h.footerChanges, changes, "shutdown must not clear a later footer owner");
+		assert.equal(h.footer, foreign);
+		assert.equal(h.statuses.has("background-tasks"), false);
 	} finally { await h.close(); }
 });

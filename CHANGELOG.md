@@ -1,3 +1,8 @@
+## Unreleased
+
+- Background Tasks: publish shell counts through Pi's keyed status interface, compose arbitrary peer statuses, and treat the clickable footer as a self-detaching enhancement so other footer owners are not overwritten.
+- Remove the bundled `show-me` and `html-artifact` skills.
+
 ## 2026-11-25 - v0.15.11
 
 - claude-cage v0.3.0: Integrate Pi cache warming and cap upstream cache breakpoints at four
