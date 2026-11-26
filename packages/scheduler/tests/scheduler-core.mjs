@@ -31,7 +31,7 @@ assert.throws(() => parseDuration("500ms"), /between 1s and 7d/);
 const clock = new FakeClock();
 const triggers = [];
 let changes = 0;
-const scheduler = new Scheduler({ clock, onTrigger: (schedule, source) => triggers.push({ schedule, source }), onChange: () => { changes += 1; } });
+const scheduler = new Scheduler({ clock, onTrigger: (schedule) => triggers.push(schedule), onChange: () => { changes += 1; } });
 const added = scheduler.add("5m", "Check CI and report only if finished or failed");
 assert.equal(added.id, "schedule-1");
 assert.equal(added.nextRunAt, 1_300_000);
@@ -39,7 +39,6 @@ assert.equal(scheduler.list().length, 1);
 
 clock.advance(300_000);
 assert.equal(triggers.length, 1);
-assert.equal(triggers[0].source, "timer");
 assert.equal(scheduler.list()[0].pending, true);
 assert.equal(scheduler.list()[0].nextRunAt, 1_600_000);
 
@@ -48,13 +47,12 @@ assert.equal(triggers.length, 1, "missed intervals coalesce while one prompt is 
 assert.equal(scheduler.list()[0].nextRunAt, 2_500_000, "absolute cadence skips missed intervals without drift");
 assert.equal(scheduler.acknowledge(added.id), true);
 assert.equal(scheduler.acknowledge(added.id), false);
-assert.equal(scheduler.trigger(added.id).ok, true);
-assert.equal(triggers.at(-1).source, "manual");
-assert.equal(scheduler.list()[0].nextRunAt, 2_500_000, "manual trigger preserves regular cadence");
-assert.deepEqual(scheduler.trigger(added.id).reason, "already-pending");
+clock.advance(300_000);
+assert.equal(triggers.length, 2, "the next interval triggers after acknowledgement");
 assert.equal(scheduler.releaseUndelivered(), 1);
 assert.equal(scheduler.releaseUndelivered(), 0);
-assert.equal(scheduler.trigger(added.id).ok, true, "a settled run releases a follow-up that never entered message_start");
+clock.advance(300_000);
+assert.equal(triggers.length, 3, "a settled run releases a follow-up that never entered message_start");
 
 assert.equal(scheduler.cancel(added.id), true);
 assert.equal(scheduler.cancel(added.id), false);

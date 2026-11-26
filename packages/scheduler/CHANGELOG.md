@@ -1,3 +1,10 @@
+## Unreleased
+
+- Simplify the Agent tool description and document each parameter directly in its schema.
+- Remove manual `trigger`; schedules now run only at their configured interval.
+- Add `/schedule` subcommand and cancellation-ID completion.
+- Allow `cancel` without an ID when exactly one schedule is active.
+
 ## 2026-11-17 - v0.1.2
 
 - Add a 20-second default interval for shorthand prompts

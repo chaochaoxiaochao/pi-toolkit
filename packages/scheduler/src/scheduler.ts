@@ -17,12 +17,6 @@ interface Schedule extends ScheduleSnapshot {
 	timer?: unknown;
 }
 
-export interface TriggerResult {
-	ok: boolean;
-	reason?: "not-found" | "already-pending";
-	schedule?: ScheduleSnapshot;
-}
-
 const DURATION_PART = /(\d+)(ms|s|m|h|d)/gy;
 const MAX_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -47,14 +41,14 @@ export function parseDuration(input: string): number {
 
 export class Scheduler {
 	private readonly clock: Clock;
-	private readonly onTrigger: (schedule: ScheduleSnapshot, source: "timer" | "manual") => void;
+	private readonly onTrigger: (schedule: ScheduleSnapshot) => void;
 	private readonly onChange: () => void;
 	private readonly schedules = new Map<string, Schedule>();
 	private nextId = 1;
 
 	constructor(options: {
 		clock: Clock;
-		onTrigger: (schedule: ScheduleSnapshot, source: "timer" | "manual") => void;
+		onTrigger: (schedule: ScheduleSnapshot) => void;
 		onChange?: () => void;
 	}) {
 		this.clock = options.clock;
@@ -84,14 +78,6 @@ export class Scheduler {
 		return [...this.schedules.values()]
 			.sort((left, right) => left.nextRunAt - right.nextRunAt || left.id.localeCompare(right.id))
 			.map((schedule) => this.snapshot(schedule));
-	}
-
-	trigger(id: string): TriggerResult {
-		const schedule = this.schedules.get(id);
-		if (!schedule) return { ok: false, reason: "not-found" };
-		if (schedule.pending) return { ok: false, reason: "already-pending", schedule: this.snapshot(schedule) };
-		this.fire(schedule, "manual");
-		return { ok: true, schedule: this.snapshot(schedule) };
 	}
 
 	cancel(id: string): boolean {
@@ -143,14 +129,14 @@ export class Scheduler {
 		const now = this.clock.now();
 		do schedule.nextRunAt += schedule.intervalMs;
 		while (schedule.nextRunAt <= now);
-		if (!schedule.pending) this.fire(schedule, "timer");
+		if (!schedule.pending) this.fire(schedule);
 		this.arm(schedule);
 		this.onChange();
 	}
 
-	private fire(schedule: Schedule, source: "timer" | "manual"): void {
+	private fire(schedule: Schedule): void {
 		schedule.pending = true;
-		this.onTrigger(this.snapshot(schedule), source);
+		this.onTrigger(this.snapshot(schedule));
 		this.onChange();
 	}
 

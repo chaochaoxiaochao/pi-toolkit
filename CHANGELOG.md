@@ -1,3 +1,7 @@
+## Unreleased
+
+- Scheduler: simplify the Agent tool schema, remove manual triggering, add `/schedule` argument completion, and allow ID-free cancellation when one schedule is active.
+
 ## 2026-11-26 - v0.15.12
 
 - background-tasks v0.5.1: Compose footer statuses safely and prevent foreground waiting after background starts

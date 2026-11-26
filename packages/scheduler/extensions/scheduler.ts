@@ -4,11 +4,15 @@ import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { Scheduler, systemClock, type ScheduleSnapshot } from "../src/scheduler.ts";
 
+const ACTIONS = ["add", "list", "cancel", "clear"] as const;
+
 const Params = Type.Object({
-	action: StringEnum(["add", "list", "trigger", "cancel", "clear"] as const),
-	every: Type.Optional(Type.String({ description: "Interval for add, for example 30s, 5m, or 1h30m" })),
-	prompt: Type.Optional(Type.String({ description: "Prompt delivered to the main agent on each trigger" })),
-	id: Type.Optional(Type.String({ description: "Schedule ID for trigger or cancel" })),
+	action: StringEnum(ACTIONS, {
+		description: "Action to perform: add, list, cancel, or clear",
+	}),
+	every: Type.Optional(Type.String({ description: "Repeat interval for add, for example 30s, 5m, or 1h30m" })),
+	prompt: Type.Optional(Type.String({ description: "Prompt sent to the main agent on each interval for add" })),
+	id: Type.Optional(Type.String({ description: "Schedule ID for cancel. Omit when only one schedule is active" })),
 });
 
 function formatTime(timestamp: number): string {
@@ -22,17 +26,35 @@ function formatList(schedules: ScheduleSnapshot[]): string {
 	).join("\n");
 }
 
-type ScheduleAction = "add" | "list" | "trigger" | "cancel" | "clear";
+type ScheduleAction = (typeof ACTIONS)[number];
 
 function parseCommand(input: string): { action: ScheduleAction; every?: string; prompt?: string; id?: string } {
 	const text = input.trim();
 	if (!text || text === "list") return { action: "list" };
 	const [action, first, ...rest] = text.split(/\s+/);
 	if (action === "add") return { action, every: first, prompt: rest.join(" ") };
-	if (action === "trigger" || action === "cancel") return { action, id: first };
+	if (action === "cancel") return { action, id: first };
 	if (action === "clear") return { action };
-	if (action === "list") throw new Error("usage: /schedule [prompt] | add <interval> <prompt> | list | trigger <id> | cancel <id> | clear");
+	if (action === "list") throw new Error("usage: /schedule [prompt] | add <interval> <prompt> | list | cancel [id] | clear");
+	if (action === "trigger") throw new Error("trigger is no longer supported");
 	return { action: "add", every: "20s", prompt: text };
+}
+
+function argumentCompletions(prefix: string, schedules: ScheduleSnapshot[]) {
+	const [action = "", idPrefix, ...extra] = prefix.trimStart().split(/\s+/);
+	if (extra.length > 0) return null;
+	if (idPrefix === undefined) {
+		if (ACTIONS.some((item) => item === action)) return [];
+		const items = ACTIONS
+			.filter((item) => item.startsWith(action))
+			.map((item) => ({ value: item, label: item }));
+		return items.length > 0 ? items : null;
+	}
+	if (action !== "cancel") return null;
+	const items = schedules
+		.filter((schedule) => schedule.id.startsWith(idPrefix))
+		.map((schedule) => ({ value: `cancel ${schedule.id}`, label: schedule.id, description: `${schedule.every} · ${schedule.prompt}` }));
+	return items.length > 0 ? items : null;
 }
 
 const WIDGET_KEY = "scheduler";
@@ -111,12 +133,12 @@ export default function (pi: ExtensionAPI) {
 	const scheduler = new Scheduler({
 		clock: systemClock,
 		onChange: refreshUI,
-		onTrigger(schedule, source) {
+		onTrigger(schedule) {
 			pi.sendMessage({
 				customType: "scheduler-trigger",
-				content: `[Scheduled prompt: ${schedule.id}; source=${source}]\n${schedule.prompt}`,
+				content: `[Scheduled prompt: ${schedule.id}]\n${schedule.prompt}`,
 				display: true,
-				details: { scheduleId: schedule.id, source, every: schedule.every },
+				details: { scheduleId: schedule.id, every: schedule.every },
 			}, { triggerTurn: true, deliverAs: "followUp" });
 		},
 	});
@@ -132,17 +154,15 @@ export default function (pi: ExtensionAPI) {
 			const count = scheduler.clear();
 			return count === 0 ? "No active schedules to clear." : `Cleared ${count} schedule${count === 1 ? "" : "s"}. Already queued prompts cannot be withdrawn.`;
 		}
-		if (!params.id) throw new Error(`${params.action} requires id`);
-		if (params.action === "cancel") {
-			if (!scheduler.cancel(params.id)) throw new Error(`unknown schedule: ${params.id}`);
-			return `Cancelled ${params.id}. Already queued prompts cannot be withdrawn.`;
+		let id = params.id;
+		if (!id) {
+			const schedules = scheduler.list();
+			if (schedules.length === 0) throw new Error("No active schedules to cancel.");
+			if (schedules.length > 1) throw new Error(`cancel requires id when multiple schedules are active: ${schedules.map((schedule) => schedule.id).join(", ")}`);
+			id = schedules[0].id;
 		}
-		const result = scheduler.trigger(params.id);
-		if (!result.ok) {
-			if (result.reason === "already-pending") throw new Error(`${params.id} already has a pending prompt`);
-			throw new Error(`unknown schedule: ${params.id}`);
-		}
-		return `Triggered ${params.id}; its regular next time is unchanged.`;
+		if (!scheduler.cancel(id)) throw new Error(`unknown schedule: ${id}`);
+		return `Cancelled ${id}. Already queued prompts cannot be withdrawn.`;
 	};
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -172,7 +192,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "schedule",
 		label: "Schedule",
-		description: "Manage session-scoped interval prompts for the main agent. Use add when the user asks the agent to check something repeatedly, cancel for one schedule, and clear for all schedules. Use trigger for one immediate check without changing the regular cadence. Schedules end with the current session.",
+		description: "Manage recurring prompts for the current session.",
 		parameters: Params,
 		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
 		async execute(_toolCallId, params) {
@@ -194,7 +214,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("schedule", {
-		description: "Add, list, trigger, cancel, or clear session-scoped interval prompts",
+		description: "Add, list, cancel, or clear session-scoped recurring prompts",
+		getArgumentCompletions: (prefix) => argumentCompletions(prefix, scheduler.list()),
 		handler: async (args, ctx) => {
 			try {
 				const text = perform(parseCommand(args));

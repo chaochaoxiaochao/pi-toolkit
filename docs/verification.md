@@ -7,6 +7,16 @@
 - The longer reminder legitimately moved manual compaction onto Pi's split-turn path, which performs separate history and turn-prefix summaries. The interruption regression now accepts one or two native summary calls while still rejecting a retry loop; completion retention and one-time delivery assertions are unchanged.
 - All 100 Background Tasks tests passed, followed by the standalone load check and 29-file child dry-run pack. Full `npm test`, toolkit load testing, the 215-file root dry-run pack, and `git diff --check` also passed.
 
+## Scheduler tool and command simplification (2026-11-26, unreleased)
+
+- The Agent tool now exposes only `add`, `list`, `cancel`, and `clear`. Its top-level description is one sentence, and the action, interval, prompt, and optional cancellation ID each carry their own schema description. Manual `trigger` and its core state-machine API were removed; timed messages no longer include a redundant trigger source.
+- Cancellation without an ID reports an empty state, selects the only active schedule, or requires an ID and names the candidates when multiple schedules exist. The retired `/schedule trigger` syntax fails visibly instead of becoming a repeating shorthand prompt.
+- Deterministic Scheduler tests passed for timed cadence, pending coalescing, follow-up acknowledgement and release, the revised tool schema, subcommand and ID completion, zero/one/multiple cancellation, widget coexistence, clear, and shutdown cleanup. The standalone load check and eight-file child dry-run pack passed.
+- A real Pi fullscreen TUI rendered through xterm.js in isolated headless Chrome verified that Tab completes `cancel`, Tab completes `schedule-1` after `/schedule cancel `, and `/schedule cancel` removes the sole active schedule. Screenshots and the result record are in `.cache/verification/scheduler-tab/`.
+- Scheduler media regenerated from the production state machine without tracked binary changes. In headless Chrome, `docs/package-media-gallery.html` loaded all 18 images at nonzero dimensions, including both 1280 × 858 Scheduler assets.
+- Full `npm test`, `npm run load-test`, root `npm pack --dry-run` (215 files), and `git diff --check` passed. No package installation, push, tag, publication, or release occurred.
+
+
 ## Herdr recovery, cache policy, Cage warming, and Background Tasks progress (2026-11-25, unreleased)
 
 - **Herdr Subagents:** final Provider errors remain recoverable as `waiting_interaction`; a new child turn restores `working` without closing the pane or replacing the attempt. Hard failures stop unclaimed work while already-running siblings finish, including a failed response on a previously blocked lane. Blank final Provider diagnostics no longer reuse an older error. All 18 maintained test files passed. Source loading passed. Real Herdr passed one-child and two-child read-only runs with automatic tab cleanup. The child dry-run tarball contains 71 files.
