@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2026-11-27 - v0.5.2
 
+- Add concise pre-call guidance for long-running shell commands and waits
 - Add a concise default tool-list entry and distinguish finite commands expected to exceed 30 seconds or long one-shot waits from quick Bash commands, without adding prompt guidelines or duplicating the post-start anti-polling reminder.
 
 ## 2026-11-26 - v0.5.1

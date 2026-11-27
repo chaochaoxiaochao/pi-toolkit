@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-11-27 - v0.15.15
 
+- background-tasks v0.5.2: Add concise pre-call guidance for long-running shell commands and waits
 - Background Tasks: list the tool beside Bash in Pi's default system prompt and clarify the pre-call boundary for finite commands expected to exceed 30 seconds or long one-shot waits, while preserving the separate post-start anti-polling reminder.
 
 ## 2026-11-27 - v0.15.14
