@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add a concise default tool-list entry and distinguish finite commands expected to exceed 30 seconds or long one-shot waits from quick Bash commands, without adding prompt guidelines or duplicating the post-start anti-polling reminder.
+
 ## 2026-11-26 - v0.5.1
 
 - Compose footer statuses safely and prevent foreground waiting after background starts

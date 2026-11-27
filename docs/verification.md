@@ -1,5 +1,13 @@
 # Package split verification
 
+## Background Tasks pre-call selection guidance (2026-11-27, unreleased)
+
+- Pi's default system prompt listed `bash` but omitted the active model-only `background_task` tool because the extension had no `promptSnippet`. The tool declaration still reached the model, but its pre-call description only said “long-running commands or standalone waits” and did not give a duration boundary or quick-Bash contrast.
+- The extension now adds one static tool-list line: “Run long-running shell commands or one-shot waits without blocking.” Its three-sentence declaration selects finite commands expected to exceed 30 seconds, such as full builds or test suites, and long one-shot waits; quick commands stay in Bash. The separate post-start reminder remains unchanged and continues to own the end-turn and no-sleep/no-poll instructions. `promptGuidelines` remains undefined.
+- A native Pi SDK regression uses the default tool loadout and verifies that `<tools>` lists `background_task` beside `bash`, while `<rules>` contains no background-task rule. The existing offline-provider regression now exposes both Bash and Background Tasks in the first model request and checks the concise declaration separately from the task-specific start reminder.
+- Two independent read-only reviews checked selection safety, prompt overlap, token cost, stale documentation, redundant guards and hidden fallbacks. Their findings removed categorical install/download and interactive-command advice, qualified waits as long and one-shot, made the `<rules>` assertion fail when the section is absent, added changelog/verification records, and exercised Pi's default tool selection instead of an explicit SDK tool list.
+- All 101 Background Tasks tests passed, followed by the standalone load check, 29-file child dry-run pack and `git diff --check`. Full root `npm test` passed, including 21 Cache Export browser E2E checks with zero skips; the toolkit load check registered exactly one Background Tasks tool; after removing the harness-generated untracked `skills/system` directory, the clean 215-file root dry-run pack and final `git diff --check` passed. No paid/live-model selection evaluation was run; the deterministic checks prove the exact prompt surfaces and lifecycle behavior, not model compliance.
+
 ## Cache Export cache-policy and miss-cause accuracy (2026-11-26, unreleased)
 
 - Compared the Pi adaptation with current `huggingface/tau` `session_usage.py`. Tau remains the source for the usage dashboard and reports request usage, hit rates, response routing and events; `src/tau-assets.ts` and the Tau-derived chart implementation were not changed. Cache-miss cause attribution remains a Pi-specific, explicitly rule-based enhancement.

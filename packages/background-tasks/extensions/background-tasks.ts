@@ -358,7 +358,8 @@ export default function (pi: ExtensionAPI, dependencies: {
 	pi.registerTool({
 		name: "background_task", label: "Background task",
 		exposure: "model-only",
-		description: "Use background_task for long-running commands or standalone waits. Run up to two concurrent background shell tasks with automatic completion notifications. Tasks and logs are session-scoped and do not survive reload or exit.",
+		description: "Use for finite commands expected to exceed 30 seconds (for example, full builds or test suites) or long one-shot waits; use bash for quick commands. Runs up to two concurrent tasks with automatic completion notifications. Tasks and logs are session-scoped and do not survive reload or exit.",
+		promptSnippet: "Run long-running shell commands or one-shot waits without blocking",
 		parameters: Parameters, outputSchema: OutputSchema,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
 		async execute(_id, params, signal, _onUpdate, ctx) {

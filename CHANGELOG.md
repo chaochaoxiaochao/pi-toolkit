@@ -1,3 +1,7 @@
+## Unreleased
+
+- Background Tasks: list the tool beside Bash in Pi's default system prompt and clarify the pre-call boundary for finite commands expected to exceed 30 seconds or long one-shot waits, while preserving the separate post-start anti-polling reminder.
+
 ## 2026-11-27 - v0.15.14
 
 - cache-export v0.1.2: Improve cache miss policy, warm timing, and response-model attribution

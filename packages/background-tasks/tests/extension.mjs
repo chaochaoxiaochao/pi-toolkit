@@ -603,7 +603,8 @@ test("registration is compact, does not inject prompt rules or start session res
 	try {
 		assert.equal(h.tool.name, "background_task");
 		assert.equal(h.tool.exposure, "model-only");
-		assert.equal(h.tool.description, "Use background_task for long-running commands or standalone waits. Run up to two concurrent background shell tasks with automatic completion notifications. Tasks and logs are session-scoped and do not survive reload or exit.");
+		assert.equal(h.tool.description, "Use for finite commands expected to exceed 30 seconds (for example, full builds or test suites) or long one-shot waits; use bash for quick commands. Runs up to two concurrent tasks with automatic completion notifications. Tasks and logs are session-scoped and do not survive reload or exit.");
+		assert.equal(h.tool.promptSnippet, "Run long-running shell commands or one-shot waits without blocking");
 		assert.match(h.tool.parameters.properties.action.description, /start returns a task ID immediately/);
 		assert.equal(h.tool.parameters.properties.command.description, "Shell command for start; may be multi-line. Runs locally, with stdin closed. Stdout/stderr are saved to a unique per-task log; its path is reported on completion.");
 		assert.ok(h.tool.description.length < 500);

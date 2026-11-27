@@ -29,7 +29,7 @@ test("native model receives distinct declaration and start guidance without Code
 			"--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-session", "--offline",
 			"-e", "builtin:codemode", "-e", fileURLToPath(new URL("../extensions/background-tasks.ts", import.meta.url)),
 			"-e", fileURLToPath(new URL("fixtures/provider.ts", import.meta.url)),
-			"--tools", "codemode,background_task", "--model", "bg-fixture/deterministic", "-p", "SMOKE_GUIDANCE",
+			"--tools", "bash,codemode,background_task", "--model", "bg-fixture/deterministic", "-p", "SMOKE_GUIDANCE",
 		], { cwd: directory, encoding: "utf8", timeout: 30000,
 			env: { ...process.env, PI_CODING_AGENT_DIR: directory, PI_OFFLINE: "1", BG_SMOKE_EVENTS: events }, stdio: ["ignore", "pipe", "pipe"] });
 		assert.match(output, /Main agent is ready/);
@@ -40,9 +40,11 @@ test("native model receives distinct declaration and start guidance without Code
 		assert.equal(started.result.structuredContent.guidance, undefined);
 		assert.equal(records.some((entry) => entry.event === "tool_end" && entry.name === "codemode"), false);
 		const requests = records.filter((entry) => entry.event === "request");
+		assert.deepEqual(requests[0].tools, ["bash", "codemode", "background_task"]);
 		assert.match(requests[0].backgroundCommandDescription, /Stdout\/stderr are saved to a unique per-task log; its path is reported on completion\./);
 		assert.match(requests[0].backgroundDescription, /automatic completion notifications/);
-		assert.match(requests[0].backgroundDescription, /Use background_task for long-running commands or standalone waits/);
+		assert.match(requests[0].backgroundDescription, /finite commands expected to exceed 30 seconds/);
+		assert.match(requests[0].backgroundDescription, /long one-shot waits; use bash for quick commands/);
 		assert.match(requests[0].backgroundDescription, /session-scoped and do not survive reload or exit/);
 		assert.ok(!requests[0].backgroundDescription.includes(notice));
 		assert.ok(!requests[0].backgroundDescription.includes("Codemode:"));
@@ -50,6 +52,39 @@ test("native model receives distinct declaration and start guidance without Code
 		assert.match(requests[1].text, /Do not call Bash sleep/);
 		assert.ok(!started.result.content[0].text.includes(started.result.structuredContent.task.log_path));
 	} finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("default system prompt lists background_task beside bash without adding prompt rules", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "pi-bg-system-prompt-"));
+	let session;
+	try {
+		const modelRuntime = await ModelRuntime.create({ authPath: join(directory, "auth.json"), modelsPath: join(directory, "models.json"), refreshOnCreate: false });
+		modelRuntime.registerProvider("bg-system-prompt", {
+			name: "Offline system-prompt fixture", baseUrl: "http://127.0.0.1:1", api: "bg-system-prompt", apiKey: "fixture-not-a-secret",
+			models: [{ id: "deterministic", name: "Offline fixture", reasoning: false, input: ["text"], contextWindow: 128000, maxTokens: 4096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
+			streamSimple() { throw new Error("No model request expected"); },
+		});
+		const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false }, cacheWarming: "off" });
+		const resourceLoader = new DefaultResourceLoader({
+			cwd: directory, agentDir: directory, settingsManager,
+			noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+			extensionFactories: [registerBackgroundTasks],
+		});
+		await resourceLoader.reload();
+		const created = await createAgentSession({
+			cwd: directory, agentDir: directory, modelRuntime, model: modelRuntime.getModel("bg-system-prompt", "deterministic"),
+			thinkingLevel: "off", resourceLoader, settingsManager, sessionManager: SessionManager.inMemory(directory),
+		});
+		session = created.session;
+		assert.deepEqual(created.extensionsResult.errors, []);
+		assert.match(session.systemPrompt, /<tools>[\s\S]*- bash: Execute bash commands[\s\S]*- background_task: Run long-running shell commands or one-shot waits without blocking[\s\S]*<\/tools>/);
+		const rules = session.systemPrompt.match(/<rules>([\s\S]*?)<\/rules>/);
+		assert.ok(rules, "default system prompt should contain a rules section");
+		assert.doesNotMatch(rules[1], /background_task|background task/i);
+	} finally {
+		session?.dispose();
+		rmSync(directory, { recursive: true, force: true });
+	}
 });
 
 test("real Pi receives accelerated progress turns until the background task completes", { timeout: 20000 }, async () => {

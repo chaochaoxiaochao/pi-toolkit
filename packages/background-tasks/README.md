@@ -32,14 +32,18 @@ The complete `@maxiaochao/pi-toolkit` package **bundles and enables Background T
 ## Agent tool
 
 ```text
-background_task({ action: "start", command: "sleep 10; printf 'checks complete\\n'", description: "Delayed check", timeout: 120 })
+background_task({ action: "start", command: "sleep 60; printf 'checks complete\\n'", description: "Delayed check", timeout: 120 })
 ```
 
 The tool is fixed to `exposure: "model-only"`: the model calls it directly; Codemode and other tools cannot call it. There is no exposure setting.
 
+The default system prompt lists the tool as:
+
+> Run long-running shell commands or one-shot waits without blocking
+
 The model-visible tool description is:
 
-> Use background_task for long-running commands or standalone waits. Run up to two concurrent background shell tasks with automatic completion notifications. Tasks and logs are session-scoped and do not survive reload or exit.
+> Use for finite commands expected to exceed 30 seconds (for example, full builds or test suites) or long one-shot waits; use bash for quick commands. Runs up to two concurrent tasks with automatic completion notifications. Tasks and logs are session-scoped and do not survive reload or exit.
 
 Each accepted start returns only its task data and this short, task-specific reminder:
 
@@ -140,11 +144,11 @@ Output streams to private temporary logs (directory 0700, files 0600 on Unix), w
 
 ## Bash and background execution
 
-Use Bash when you need a command's result before proceeding. Use `background_task` directly when the command should keep running after the model's turn ends. Completion notifies the model automatically. Inspect status with `list` or logs with `output` on demand, including while running and before any notification; do not add sleep or repeated polling to wait for completion.
+Use Bash for quick commands. Use `background_task` for finite commands expected to exceed 30 seconds or long one-shot waits. Continue only work that is independent of a running task; otherwise end the turn until completion notifies the model automatically. Inspect status with `list` or logs with `output` on demand, including while running and before any notification; do not add sleep or repeated polling to wait for completion.
 
 Codemode cannot call this model-only tool. Starting an unawaited Bash call in Codemode is not a substitute: Codemode cancels unfinished nested calls when its script ends.
 
-The tool description is compact. This package adds no `promptGuidelines` or extra global system-prompt rules.
+The one-line tool-list entry and tool description are static. This package adds no `promptGuidelines` or extra global system-prompt rules.
 
 ## Lifetime and scope
 
