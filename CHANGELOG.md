@@ -1,5 +1,6 @@
-## Unreleased
+## 2026-11-27 - v0.15.14
 
+- cache-export v0.1.2: Improve cache miss policy, warm timing, and response-model attribution
 - Cache Export: record observed OpenAI 30-minute/12-hour and Anthropic default-5-minute/1-hour cache policies, restart possible-TTL timing from completed cache warms, and use effective response models for cache-route diagnostics.
 
 ## 2026-11-26 - v0.15.13

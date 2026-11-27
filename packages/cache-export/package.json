@@ -1,6 +1,6 @@
 {
   "name": "@maxiaochao/pi-cache-export",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Interactive cache usage dashboard export for Pi sessions.",
   "type": "module",
   "keywords": [

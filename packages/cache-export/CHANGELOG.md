@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2026-11-27 - v0.1.2
 
+- Improve cache miss policy, warm timing, and response-model attribution
 - Record Anthropic default 5-minute and explicit 1-hour cache tiers, plus OpenAI Responses 30-minute and 12-hour prompt-cache options, while keeping mixed or unknown TTLs unknown.
 - Restart possible-TTL timing from the last completed cache warm instead of suppressing expiry attribution for the rest of the request gap.
 - Use Pi's effective `responseModel` for cache-route segments, model-switch attribution, and completed-warm correlation.
